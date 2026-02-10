@@ -1,29 +1,37 @@
 /**
- * Below are the colors that are used in the app. The colors are defined in the light and dark mode.
- * There are many other ways to style your app. For example, [Nativewind](https://www.nativewind.dev/), [Tamagui](https://tamagui.dev/), [unistyles](https://reactnativeunistyles.vercel.app), etc.
+ * UPLift theme — modern fitness palette with light and dark mode.
  */
 
 import { Platform } from 'react-native';
 
-const tintColorLight = '#0a7ea4';
-const tintColorDark = '#fff';
+// Primary accent: teal (energetic, clean)
+const primaryLight = '#0D9488';
+const primaryDark = '#2DD4BF';
 
 export const Colors = {
   light: {
-    text: '#11181C',
-    background: '#fff',
-    tint: tintColorLight,
-    icon: '#687076',
-    tabIconDefault: '#687076',
-    tabIconSelected: tintColorLight,
+    text: '#0F172A',
+    textMuted: '#64748B',
+    background: '#F8FAFC',
+    card: '#FFFFFF',
+    tint: primaryLight,
+    icon: '#64748B',
+    tabIconDefault: '#94A3B8',
+    tabIconSelected: primaryLight,
+    tabBarBackground: '#FFFFFF',
+    tabBarBorder: 'rgba(0,0,0,0.06)',
   },
   dark: {
-    text: '#ECEDEE',
-    background: '#151718',
-    tint: tintColorDark,
-    icon: '#9BA1A6',
-    tabIconDefault: '#9BA1A6',
-    tabIconSelected: tintColorDark,
+    text: '#F1F5F9',
+    textMuted: '#94A3B8',
+    background: '#0F172A',
+    card: '#1E293B',
+    tint: primaryDark,
+    icon: '#94A3B8',
+    tabIconDefault: '#64748B',
+    tabIconSelected: primaryDark,
+    tabBarBackground: '#1E293B',
+    tabBarBorder: 'rgba(255,255,255,0.08)',
   },
 };
 
