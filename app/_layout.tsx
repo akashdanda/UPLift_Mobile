@@ -18,6 +18,8 @@ function RootNavigator() {
     <Stack>
       <Stack.Protected guard={isLoggedIn}>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen name="edit-profile" options={{ title: 'Edit profile', presentation: 'modal' }} />
+        <Stack.Screen name="settings" options={{ title: 'Settings' }} />
       </Stack.Protected>
       <Stack.Protected guard={!isLoggedIn}>
         <Stack.Screen name="login" options={{ headerShown: false }} />

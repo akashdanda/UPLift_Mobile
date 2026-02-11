@@ -1,13 +1,15 @@
 import { AuthContext } from '@/hooks/use-auth-context'
+import type { Profile, ProfileUpdate } from '@/types/profile'
 import { signInWithGoogle as doSignInWithGoogle } from '@/lib/auth-oauth'
 import { supabase } from '@/lib/supabase'
 import type { Session } from '@supabase/supabase-js'
-import { PropsWithChildren, useCallback, useEffect, useState } from 'react'
+import { PropsWithChildren, useCallback, useEffect, useRef, useState } from 'react'
 
 export default function AuthProvider({ children }: PropsWithChildren) {
   const [session, setSession] = useState<Session | null>(null)
-  const [profile, setProfile] = useState<any>(null)
+  const [profile, setProfile] = useState<Profile | null>(null)
   const [isLoading, setIsLoading] = useState<boolean>(true)
+  const fetchProfileRef = useRef<() => Promise<void>>(async () => {})
 
   const signIn = useCallback(async (email: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({ email, password })
@@ -25,6 +27,40 @@ export default function AuthProvider({ children }: PropsWithChildren) {
 
   const signOut = useCallback(async () => {
     await supabase.auth.signOut()
+  }, [])
+
+  const fetchProfile = useCallback(async () => {
+    if (!session) return
+    try {
+      const { data } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', session.user.id)
+        .single()
+      setProfile((data as Profile) ?? null)
+    } catch {
+      setProfile(null)
+    }
+  }, [session])
+
+  fetchProfileRef.current = fetchProfile
+
+  const updateProfile = useCallback(
+    async (updates: ProfileUpdate) => {
+      if (!session) return { error: new Error('Not signed in') }
+      const { error } = await supabase.from('profiles').upsert(
+        { id: session.user.id, ...updates, updated_at: new Date().toISOString() },
+        { onConflict: 'id' }
+      )
+      if (error) return { error }
+      await fetchProfileRef.current()
+      return { error: null }
+    },
+    [session]
+  )
+
+  const refreshProfile = useCallback(async () => {
+    await fetchProfileRef.current()
   }, [])
 
   // Fetch the session once, and subscribe to auth state changes
@@ -67,7 +103,7 @@ export default function AuthProvider({ children }: PropsWithChildren) {
           .select('*')
           .eq('id', session.user.id)
           .single()
-        if (!cancelled) setProfile(data ?? null)
+        if (!cancelled) setProfile((data as Profile) ?? null)
       } catch {
         if (!cancelled) setProfile(null)
       }
@@ -88,6 +124,8 @@ export default function AuthProvider({ children }: PropsWithChildren) {
         signUp,
         signInWithGoogle,
         signOut,
+        updateProfile,
+        refreshProfile,
       }}
     >
       {children}
