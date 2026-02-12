@@ -1,3 +1,4 @@
+import Ionicons from '@expo/vector-icons/Ionicons'
 import { Image } from 'expo-image'
 import { router } from 'expo-router'
 import { useEffect, useState } from 'react'
@@ -49,6 +50,12 @@ function getInitials(
   return '?'
 }
 
+const MENU_ITEMS = [
+  { label: 'Edit profile', icon: 'person-outline' as const, route: '/edit-profile' },
+  { label: 'Friends', icon: 'people-outline' as const, route: '/friends' },
+  { label: 'Settings', icon: 'settings-outline' as const, route: '/settings' },
+]
+
 export default function ProfileScreen() {
   const { session, profile } = useAuthContext()
   const colorScheme = useColorScheme()
@@ -66,9 +73,17 @@ export default function ProfileScreen() {
   const displayName =
     (profile?.display_name && profile.display_name.trim()) ||
     (session ? getDisplayName(session) : '—')
+  const email = session?.user?.email ?? '—'
   const initials = getInitials(displayName, session)
 
-  // Zoom modal state
+  const stats = [
+    { value: profile?.workouts_count ?? 0, label: 'Workouts', color: colors.tint },
+    { value: profile?.streak ?? 0, label: 'Streak', color: colors.warm },
+    { value: profile?.groups_count ?? 0, label: 'Groups', color: colors.tint },
+    { value: profile?.friends_count ?? 0, label: 'Friends', color: colors.tint },
+  ]
+
+  // Zoom modal state (avatar pinch-to-zoom)
   const scale = useSharedValue(1)
   const savedScale = useSharedValue(1)
 
@@ -85,11 +100,9 @@ export default function ProfileScreen() {
       savedScale.value = scale.value
     })
 
-  const animatedImageStyle = useAnimatedStyle(() => {
-    return {
-      transform: [{ scale: scale.value }],
-    }
-  })
+  const animatedImageStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }))
 
   const handleOpenModal = () => {
     if (showAvatarImage) {
@@ -129,30 +142,19 @@ export default function ProfileScreen() {
           <ThemedText type="title" style={[styles.displayName, { color: colors.text }]}>
             {displayName}
           </ThemedText>
-          {profile?.bio && (
+          <ThemedText style={[styles.email, { color: colors.textMuted }]}>{email}</ThemedText>
+          {profile?.bio ? (
             <ThemedText style={[styles.bio, { color: colors.textMuted }]}>{profile.bio}</ThemedText>
-          )}
+          ) : null}
         </ThemedView>
 
         <View style={styles.statsRow}>
-          <View style={[styles.statBox, { backgroundColor: colors.card }]}>
-            <ThemedText type="defaultSemiBold" style={[styles.statValue, { color: colors.tint }]}>
-              {profile?.workouts_count ?? 0}
-            </ThemedText>
-            <ThemedText style={[styles.statLabel, { color: colors.textMuted }]}>Workouts</ThemedText>
-          </View>
-          <View style={[styles.statBox, { backgroundColor: colors.card }]}>
-            <ThemedText type="defaultSemiBold" style={[styles.statValue, { color: colors.tint }]}>
-              {profile?.streak ?? 0}
-            </ThemedText>
-            <ThemedText style={[styles.statLabel, { color: colors.textMuted }]}>Streak</ThemedText>
-          </View>
-          <View style={[styles.statBox, { backgroundColor: colors.card }]}>
-            <ThemedText type="defaultSemiBold" style={[styles.statValue, { color: colors.tint }]}>
-              {profile?.groups_count ?? 0}
-            </ThemedText>
-            <ThemedText style={[styles.statLabel, { color: colors.textMuted }]}>Groups</ThemedText>
-          </View>
+          {stats.map((s) => (
+            <View key={s.label} style={[styles.statBox, { backgroundColor: colors.card }]}>
+              <ThemedText style={[styles.statValue, { color: s.color }]}>{s.value}</ThemedText>
+              <ThemedText style={[styles.statLabel, { color: colors.textMuted }]}>{s.label}</ThemedText>
+            </View>
+          ))}
         </View>
 
         <ThemedView style={styles.section}>
@@ -160,46 +162,35 @@ export default function ProfileScreen() {
             Badges
           </ThemedText>
           <View style={[styles.badgesContainer, { backgroundColor: colors.card, borderColor: colors.tabBarBorder }]}>
-            {/* Badges will be displayed here */}
             <ThemedText style={[styles.emptyBadgesText, { color: colors.textMuted }]}>
               No badges yet. Keep working out to earn your first badge!
             </ThemedText>
           </View>
         </ThemedView>
 
-        <ThemedView style={styles.section}>
-          <ThemedText type="subtitle" style={[styles.sectionTitle, { color: colors.text }]}>
-            Account
-          </ThemedText>
-          <View style={[styles.menuCard, { backgroundColor: colors.card, borderColor: colors.tabBarBorder }]}>
-            <Pressable style={styles.menuItemWrap} onPress={() => router.push('/edit-profile')}>
-              <ThemedText style={[styles.menuItem, { color: colors.text }]}>Edit profile</ThemedText>
-            </Pressable>
+        <View style={[styles.menuCard, { backgroundColor: colors.card }]}>
+          {MENU_ITEMS.map((item, i) => (
             <Pressable
-              style={[styles.menuItemWrap, styles.menuItemBorder]}
-              onPress={() => router.push('/settings')}
+              key={item.label}
+              style={[
+                styles.menuItemWrap,
+                i < MENU_ITEMS.length - 1 && [styles.menuItemBorder, { borderBottomColor: colors.tabBarBorder }],
+              ]}
+              onPress={() => router.push(item.route as any)}
             >
-              <ThemedText style={[styles.menuItem, { color: colors.text }]}>Settings</ThemedText>
+              <Ionicons name={item.icon} size={20} color={colors.textMuted} style={{ marginRight: 14 }} />
+              <ThemedText style={[styles.menuItem, { color: colors.text }]}>{item.label}</ThemedText>
+              <Ionicons name="chevron-forward" size={18} color={colors.textMuted} style={{ marginLeft: 'auto' }} />
             </Pressable>
-            <Pressable
-              style={[styles.menuItemWrap, styles.menuItemBorder]}
-              onPress={() => router.push('/friends')}
-            >
-              <ThemedText style={[styles.menuItem, { color: colors.text }]}>Friends</ThemedText>
-            </Pressable>
-            <View style={styles.menuItemWrap}>
-              <ThemedText style={[styles.menuItem, { color: colors.textMuted }]}>Notifications</ThemedText>
-              <ThemedText style={[styles.menuItemHint, { color: colors.textMuted }]}>In Settings</ThemedText>
-            </View>
-          </View>
-        </ThemedView>
+          ))}
+        </View>
 
         <SignOutButton />
       </ScrollView>
 
       <Modal
         visible={isImageModalVisible}
-        transparent={true}
+        transparent
         animationType="fade"
         onRequestClose={handleCloseModal}
       >
@@ -226,41 +217,24 @@ export default function ProfileScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    padding: 24,
-    paddingBottom: 40,
-  },
-  header: {
-    alignItems: 'center',
-    marginBottom: 28,
-  },
+  container: { flex: 1 },
+  scrollView: { flex: 1 },
+  scrollContent: { padding: 24, paddingBottom: 40 },
+
+  header: { alignItems: 'center', marginBottom: 24 },
   avatarWrap: {
-    width: 88,
-    height: 88,
-    borderRadius: 44,
+    width: 96,
+    height: 96,
+    borderRadius: 48,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 12,
+    marginBottom: 14,
     overflow: 'hidden',
   },
-  avatarImage: {
-    width: 88,
-    height: 88,
-  },
-  avatarInitials: {
-    fontSize: 32,
-    fontWeight: '600',
-  },
-  displayName: {
-    marginBottom: 4,
-    textAlign: 'center',
-  },
+  avatarImage: { width: 96, height: 96 },
+  avatarInitials: { fontSize: 34, fontWeight: '700' },
+  displayName: { fontSize: 24, fontWeight: '800', textAlign: 'center', marginBottom: 4 },
+  email: { fontSize: 14 },
   bio: {
     fontSize: 15,
     textAlign: 'center',
@@ -268,50 +242,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     lineHeight: 20,
   },
-  statsRow: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 28,
-  },
+
+  statsRow: { flexDirection: 'row', gap: 10, marginBottom: 24 },
   statBox: {
     flex: 1,
-    padding: 16,
-    borderRadius: 14,
+    paddingVertical: 14,
+    borderRadius: 16,
     alignItems: 'center',
-    borderWidth: 1,
   },
-  statValue: {
-    fontSize: 24,
-  },
-  statLabel: {
-    marginTop: 4,
-    fontSize: 12,
-  },
-  section: {
-    marginBottom: 24,
-  },
-  sectionTitle: {
-    marginBottom: 12,
-  },
-  menuCard: {
-    borderRadius: 14,
-    borderWidth: 1,
-    overflow: 'hidden',
-  },
-  menuItemWrap: {
-    padding: 16,
-  },
-  menuItem: {
-    fontSize: 16,
-  },
-  menuItemHint: {
-    fontSize: 13,
-    marginTop: 2,
-  },
-  menuItemBorder: {
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(100, 116, 139, 0.2)',
-  },
+  statValue: { fontSize: 26, fontWeight: '800' },
+  statLabel: { marginTop: 2, fontSize: 11, opacity: 0.7 },
+
+  section: { marginBottom: 24 },
+  sectionTitle: { marginBottom: 12 },
   badgesContainer: {
     borderRadius: 14,
     borderWidth: 1,
@@ -320,11 +263,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  emptyBadgesText: {
-    fontSize: 14,
-    textAlign: 'center',
-    lineHeight: 20,
-  },
+  emptyBadgesText: { fontSize: 14, textAlign: 'center', lineHeight: 20 },
+
+  menuCard: { borderRadius: 16, overflow: 'hidden', marginBottom: 24 },
+  menuItemWrap: { flexDirection: 'row', alignItems: 'center', padding: 16 },
+  menuItem: { fontSize: 16 },
+  menuItemBorder: { borderBottomWidth: StyleSheet.hairlineWidth },
+
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.9)',
@@ -337,10 +282,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  zoomedImageContainer: {
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
+  zoomedImageContainer: { justifyContent: 'center', alignItems: 'center' },
   zoomedImage: {
     width: Dimensions.get('window').width * 0.8,
     height: Dimensions.get('window').width * 0.8,

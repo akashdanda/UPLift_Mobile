@@ -1,7 +1,9 @@
+import Ionicons from '@expo/vector-icons/Ionicons'
 import { Image } from 'expo-image'
 import { useFocusEffect } from '@react-navigation/native'
-import { useCallback, useState } from 'react'
-import { ActivityIndicator, ScrollView, StyleSheet, View } from 'react-native'
+import { useLocalSearchParams } from 'expo-router'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
 import { ThemedText } from '@/components/themed-text'
@@ -9,7 +11,14 @@ import { ThemedView } from '@/components/themed-view'
 import { Colors } from '@/constants/theme'
 import { useAuthContext } from '@/hooks/use-auth-context'
 import { useColorScheme } from '@/hooks/use-color-scheme'
-import { getCurrentMonthLabel, getLeaderboard, LEADERBOARD_POINTS, type LeaderboardRow } from '@/lib/leaderboard'
+import {
+  getCurrentMonthLabel,
+  getLeaderboard,
+  LEADERBOARD_POINTS,
+  type LeaderboardRow,
+  type LeaderboardScope,
+} from '@/lib/leaderboard'
+import { getMyGroups, type GroupWithMeta } from '@/lib/groups'
 
 function getDisplayName(row: LeaderboardRow): string {
   return row.display_name?.trim() || 'Anonymous'
@@ -28,24 +37,63 @@ export default function LeaderboardScreen() {
   const colorScheme = useColorScheme()
   const colors = Colors[colorScheme ?? 'light']
   const { session } = useAuthContext()
+  const params = useLocalSearchParams<{ scope?: string }>()
 
+  const [scope, setScope] = useState<LeaderboardScope>('friends')
+  const [groups, setGroups] = useState<GroupWithMeta[]>([])
+  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null)
   const [rows, setRows] = useState<LeaderboardRow[]>([])
   const [myRow, setMyRow] = useState<LeaderboardRow | undefined>(undefined)
   const [loading, setLoading] = useState(true)
+  const scopeChanged = useRef(false)
+
+  useEffect(() => {
+    const paramScope = params.scope
+    if (paramScope === 'friends' || paramScope === 'groups' || paramScope === 'global') {
+      setScope(paramScope)
+    }
+  }, [params.scope])
 
   const load = useCallback(() => {
     setLoading(true)
-    getLeaderboard(50, session?.user?.id)
+    const groupIdForScope = scope === 'groups' ? selectedGroupId ?? undefined : undefined
+    getLeaderboard(50, session?.user?.id, scope, groupIdForScope)
       .then(({ rows: r, myRow: m }) => {
         setRows(r)
         setMyRow(m)
       })
       .finally(() => setLoading(false))
+  }, [session?.user?.id, scope, selectedGroupId])
+
+  useEffect(() => {
+    if (!session?.user?.id) return
+    ;(async () => {
+      const myGroups = await getMyGroups(session.user.id)
+      setGroups(myGroups)
+      if (!selectedGroupId && myGroups.length > 0) {
+        setSelectedGroupId(myGroups[0].id)
+      }
+    })()
   }, [session?.user?.id])
 
   useFocusEffect(useCallback(() => load(), [load]))
+  useEffect(() => {
+    if (!scopeChanged.current) {
+      scopeChanged.current = true
+      return
+    }
+    load()
+  }, [scope])
 
   const myPoints = myRow?.points ?? 0
+
+  const showPointsInfo = useCallback(() => {
+    Alert.alert(
+      'How points work',
+      `workouts × ${LEADERBOARD_POINTS.workout} + streak × ${LEADERBOARD_POINTS.streak} + groups × ${LEADERBOARD_POINTS.group} + friends × ${LEADERBOARD_POINTS.friend}`,
+      [{ text: 'OK' }]
+    )
+  }, [])
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
@@ -58,13 +106,76 @@ export default function LeaderboardScreen() {
           <ThemedText type="title" style={[styles.title, { color: colors.text }]}>
             Leaderboard
           </ThemedText>
-          <ThemedText style={[styles.subtitle, { color: colors.textMuted }]}>
-            {getCurrentMonthLabel()} — resets monthly
-          </ThemedText>
-          <ThemedText style={[styles.subtitle, { color: colors.textMuted, marginTop: 2 }]}>
-            Points: workouts×{LEADERBOARD_POINTS.workout} + streak×{LEADERBOARD_POINTS.streak} + groups×
-            {LEADERBOARD_POINTS.group} + friends×{LEADERBOARD_POINTS.friend}
-          </ThemedText>
+          <View style={styles.headerRow}>
+            <ThemedText style={[styles.subtitle, { color: colors.textMuted }]}>
+              {getCurrentMonthLabel()} — resets monthly
+            </ThemedText>
+            <Pressable
+              onPress={showPointsInfo}
+              hitSlop={12}
+              style={({ pressed }) => [
+                styles.infoButton,
+                { backgroundColor: colors.textMuted + '18' },
+                pressed && styles.infoButtonPressed,
+              ]}
+            >
+              <Ionicons name="information-circle-outline" size={20} color={colors.textMuted} />
+            </Pressable>
+          </View>
+          <View style={[styles.tabs, { backgroundColor: colors.card, borderColor: colors.tabBarBorder }]}>
+            {(['friends', 'groups', 'global'] as const).map((s) => (
+              <Pressable
+                key={s}
+                onPress={() => setScope(s)}
+                style={[
+                  styles.tab,
+                  scope === s && { backgroundColor: colors.tint, borderColor: colors.tint },
+                  scope !== s && { borderColor: colors.tabBarBorder },
+                ]}
+              >
+                <ThemedText
+                  type="defaultSemiBold"
+                  style={[styles.tabLabel, { color: scope === s ? '#fff' : colors.textMuted }]}
+                >
+                  {s === 'friends' ? 'Friends' : s === 'groups' ? 'Groups' : 'Global'}
+                </ThemedText>
+              </Pressable>
+            ))}
+          </View>
+          {scope === 'groups' && groups.length > 0 && (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.groupChipsContainer}
+            >
+              {groups.map((g) => {
+                const selected = g.id === selectedGroupId
+                return (
+                  <Pressable
+                    key={g.id}
+                    onPress={() => setSelectedGroupId(g.id)}
+                    style={[
+                      styles.groupChip,
+                      {
+                        backgroundColor: selected ? colors.tint : colors.card,
+                        borderColor: selected ? colors.tint : colors.tabBarBorder,
+                      },
+                    ]}
+                  >
+                    <ThemedText
+                      style={[
+                        styles.groupChipLabel,
+                        { color: selected ? '#fff' : colors.textMuted },
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {g.name}
+                    </ThemedText>
+                  </Pressable>
+                )
+              })}
+            </ScrollView>
+          )}
         </ThemedView>
 
         {session && (
@@ -98,7 +209,11 @@ export default function LeaderboardScreen() {
           ) : rows.length === 0 ? (
             <ThemedView style={[styles.emptyCard, { backgroundColor: colors.card, borderColor: colors.tabBarBorder }]}>
               <ThemedText style={[styles.emptyText, { color: colors.textMuted }]}>
-                No one on the board yet. Log workouts, build streaks, join groups and add friends to earn points.
+                {scope === 'friends'
+                  ? 'Add friends to see how you rank among them.'
+                  : scope === 'groups'
+                    ? 'Join groups to see how you rank with other members.'
+                    : 'No one on the board yet. Log workouts, build streaks, join groups and add friends to earn points.'}
               </ThemedText>
             </ThemedView>
           ) : (
@@ -158,7 +273,47 @@ const styles = StyleSheet.create({
   content: { padding: 20, paddingBottom: 40 },
   header: { marginBottom: 20 },
   title: { marginBottom: 4 },
-  subtitle: { fontSize: 14 },
+  headerRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  subtitle: { fontSize: 14, flex: 1 },
+  infoButton: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  infoButtonPressed: { opacity: 0.7 },
+  tabs: {
+    flexDirection: 'row',
+    marginTop: 16,
+    padding: 4,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  tab: {
+    flex: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    alignItems: 'center',
+  },
+  tabLabel: { fontSize: 13 },
+  groupChipsContainer: {
+    marginTop: 10,
+    paddingHorizontal: 2,
+    columnGap: 8,
+  },
+  groupChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    marginRight: 8,
+  },
+  groupChipLabel: {
+    fontSize: 12,
+  },
   myCard: {
     padding: 16,
     borderRadius: 14,
