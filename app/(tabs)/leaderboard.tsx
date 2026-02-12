@@ -1,7 +1,8 @@
+import Ionicons from '@expo/vector-icons/Ionicons'
 import { Image } from 'expo-image'
 import { useFocusEffect } from '@react-navigation/native'
 import { useCallback, useState } from 'react'
-import { ActivityIndicator, ScrollView, StyleSheet, View } from 'react-native'
+import { ActivityIndicator, Alert, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
 import { ThemedText } from '@/components/themed-text'
@@ -47,6 +48,14 @@ export default function LeaderboardScreen() {
 
   const myPoints = myRow?.points ?? 0
 
+  const showPointsInfo = useCallback(() => {
+    Alert.alert(
+      'How points work',
+      `workouts × ${LEADERBOARD_POINTS.workout} + streak × ${LEADERBOARD_POINTS.streak} + groups × ${LEADERBOARD_POINTS.group} + friends × ${LEADERBOARD_POINTS.friend}`,
+      [{ text: 'OK' }]
+    )
+  }, [])
+
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
       <ScrollView
@@ -58,13 +67,22 @@ export default function LeaderboardScreen() {
           <ThemedText type="title" style={[styles.title, { color: colors.text }]}>
             Leaderboard
           </ThemedText>
-          <ThemedText style={[styles.subtitle, { color: colors.textMuted }]}>
-            {getCurrentMonthLabel()} — resets monthly
-          </ThemedText>
-          <ThemedText style={[styles.subtitle, { color: colors.textMuted, marginTop: 2 }]}>
-            Points: workouts×{LEADERBOARD_POINTS.workout} + streak×{LEADERBOARD_POINTS.streak} + groups×
-            {LEADERBOARD_POINTS.group} + friends×{LEADERBOARD_POINTS.friend}
-          </ThemedText>
+          <View style={styles.headerRow}>
+            <ThemedText style={[styles.subtitle, { color: colors.textMuted }]}>
+              {getCurrentMonthLabel()} — resets monthly
+            </ThemedText>
+            <Pressable
+              onPress={showPointsInfo}
+              hitSlop={12}
+              style={({ pressed }) => [
+                styles.infoButton,
+                { backgroundColor: colors.textMuted + '18' },
+                pressed && styles.infoButtonPressed,
+              ]}
+            >
+              <Ionicons name="information-circle-outline" size={20} color={colors.textMuted} />
+            </Pressable>
+          </View>
         </ThemedView>
 
         {session && (
@@ -158,7 +176,16 @@ const styles = StyleSheet.create({
   content: { padding: 20, paddingBottom: 40 },
   header: { marginBottom: 20 },
   title: { marginBottom: 4 },
-  subtitle: { fontSize: 14 },
+  headerRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  subtitle: { fontSize: 14, flex: 1 },
+  infoButton: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  infoButtonPressed: { opacity: 0.7 },
   myCard: {
     padding: 16,
     borderRadius: 14,
