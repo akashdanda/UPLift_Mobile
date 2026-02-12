@@ -1,8 +1,15 @@
-import { useFocusEffect } from '@react-navigation/native'
 import { Image } from 'expo-image'
-import { router } from 'expo-router'
+import { useLocalSearchParams } from 'expo-router'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Dimensions, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native'
+import {
+  ActivityIndicator,
+  Dimensions,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  View,
+} from 'react-native'
 import { Gesture, GestureDetector } from 'react-native-gesture-handler'
 import Animated, {
   useAnimatedStyle,
@@ -12,57 +19,34 @@ import Animated, {
 } from 'react-native-reanimated'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
-import SignOutButton from '@/components/social-auth-buttons/sign-out-button'
 import { ThemedText } from '@/components/themed-text'
 import { ThemedView } from '@/components/themed-view'
 import { Colors } from '@/constants/theme'
-import { useAuthContext } from '@/hooks/use-auth-context'
 import { useColorScheme } from '@/hooks/use-color-scheme'
 import { supabase } from '@/lib/supabase'
+import type { Profile } from '@/types/profile'
 
-function getDisplayName(session: { user: { user_metadata?: { full_name?: string }; email?: string } }): string {
-  const name = session.user.user_metadata?.full_name
-  if (name && typeof name === 'string') return name
-  const email = session.user.email
-  if (email) return email.split('@')[0] ?? email
-  return 'Athlete'
-}
-
-function getAvatarUrl(
-  profile: { avatar_url?: string | null } | null,
-  session: { user: { user_metadata?: { avatar_url?: string }; email?: string } } | null
-): string | null {
-  if (profile?.avatar_url) return profile.avatar_url
-  if (session?.user?.user_metadata?.avatar_url) return session.user.user_metadata.avatar_url
-  return null
-}
-
-function getInitials(
-  displayName: string,
-  session: { user: { user_metadata?: { full_name?: string }; email?: string } } | null
-): string {
-  if (displayName && displayName !== '—') {
+function getInitials(displayName: string | null): string {
+  if (displayName?.trim()) {
     const parts = displayName.trim().split(/\s+/)
     if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
     if (parts[0]?.length >= 2) return parts[0].slice(0, 2).toUpperCase()
     if (parts[0]?.[0]) return parts[0][0].toUpperCase()
   }
-  if (session?.user?.email) return session.user.email.slice(0, 2).toUpperCase()
   return '?'
 }
 
-export default function ProfileScreen() {
-  const { session, profile } = useAuthContext()
+export default function FriendProfileScreen() {
+  const { id } = useLocalSearchParams<{ id: string }>()
   const colorScheme = useColorScheme()
   const colors = Colors[colorScheme ?? 'light']
 
-  const avatarUrl = getAvatarUrl(profile, session)
-  const [avatarLoadError, setAvatarLoadError] = useState(false)
-  const [isImageModalVisible, setIsImageModalVisible] = useState(false)
-  const showAvatarImage = avatarUrl && !avatarLoadError
-
+  const [profile, setProfile] = useState<Profile | null>(null)
+  const [loading, setLoading] = useState(true)
   const [monthWorkoutDates, setMonthWorkoutDates] = useState<Set<string>>(new Set())
+  const [isImageModalVisible, setIsImageModalVisible] = useState(false)
 
+  // Calendar calculations
   const today = useMemo(() => new Date(), [])
   const todayDateString = useMemo(() => {
     const y = today.getFullYear()
@@ -70,14 +54,10 @@ export default function ProfileScreen() {
     const d = String(today.getDate()).padStart(2, '0')
     return `${y}-${m}-${d}`
   }, [today])
-  const signupDateString = useMemo(() => {
-    if (!profile?.created_at) return null
-    return profile.created_at.slice(0, 10)
-  }, [profile?.created_at])
   const year = today.getFullYear()
-  const month = today.getMonth() // 0-11
+  const month = today.getMonth()
   const daysInMonth = new Date(year, month + 1, 0).getDate()
-  const firstDayOfWeek = new Date(year, month, 1).getDay() // 0-6 Sun-Sat
+  const firstDayOfWeek = new Date(year, month, 1).getDay()
   const monthLabel = useMemo(
     () =>
       new Intl.DateTimeFormat('en-US', {
@@ -87,9 +67,14 @@ export default function ProfileScreen() {
     [today]
   )
 
-  // Fetch workouts for current month for calendar
+  const signupDateString = useMemo(() => {
+    if (!profile?.created_at) return null
+    return profile.created_at.slice(0, 10)
+  }, [profile?.created_at])
+
+  // Fetch friend's workouts for the calendar
   const fetchMonthWorkouts = useCallback(async () => {
-    if (!session) return
+    if (!id) return
     const y = year
     const m = String(month + 1).padStart(2, '0')
     const start = `${y}-${m}-01`
@@ -98,7 +83,7 @@ export default function ProfileScreen() {
     const { data, error } = await supabase
       .from('workouts')
       .select('workout_date')
-      .eq('user_id', session.user.id)
+      .eq('user_id', id)
       .gte('workout_date', start)
       .lte('workout_date', end)
 
@@ -112,27 +97,38 @@ export default function ProfileScreen() {
       }
     }
     setMonthWorkoutDates(dates)
-  }, [session, year, month, daysInMonth])
+  }, [id, year, month, daysInMonth])
 
+  // Fetch profile
+  useEffect(() => {
+    if (!id) {
+      setLoading(false)
+      return
+    }
+    let cancelled = false
+    ;(async () => {
+      const { data, error } = await supabase.from('profiles').select('*').eq('id', id).single()
+      if (cancelled) return
+      if (error || !data) {
+        setProfile(null)
+      } else {
+        setProfile(data as Profile)
+      }
+      setLoading(false)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [id])
+
+  // Fetch workouts once profile is loaded
   useEffect(() => {
     void fetchMonthWorkouts()
   }, [fetchMonthWorkouts])
 
-  // Refresh calendar when screen comes into focus (e.g., after posting a workout)
-  useFocusEffect(
-    useCallback(() => {
-      void fetchMonthWorkouts()
-    }, [fetchMonthWorkouts])
-  )
-
-  useEffect(() => {
-    setAvatarLoadError(false)
-  }, [avatarUrl])
-
-  const displayName =
-    (profile?.display_name && profile.display_name.trim()) ||
-    (session ? getDisplayName(session) : '—')
-  const initials = getInitials(displayName, session)
+  const displayName = profile?.display_name || 'Athlete'
+  const initials = useMemo(() => getInitials(profile?.display_name ?? null), [profile?.display_name])
+  const showAvatarImage = !!profile?.avatar_url
 
   // Zoom modal state
   const scale = useSharedValue(1)
@@ -171,22 +167,39 @@ export default function ProfileScreen() {
     savedScale.value = 1
   }
 
+  if (loading) {
+    return (
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['bottom']}>
+        <View style={styles.centered}>
+          <ActivityIndicator size="large" color={colors.tint} />
+        </View>
+      </SafeAreaView>
+    )
+  }
+
+  if (!profile) {
+    return (
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['bottom']}>
+        <View style={styles.centered}>
+          <ThemedText style={{ color: colors.textMuted }}>Profile not found.</ThemedText>
+        </View>
+      </SafeAreaView>
+    )
+  }
+
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['bottom']}>
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
+        {/* Header: Avatar, Name, Bio */}
         <ThemedView style={styles.header}>
           <Pressable onPress={handleOpenModal} disabled={!showAvatarImage}>
             <View style={[styles.avatarWrap, { backgroundColor: colors.tint + '25' }]}>
               {showAvatarImage ? (
-                <Image
-                  source={{ uri: avatarUrl! }}
-                  style={styles.avatarImage}
-                  onError={() => setAvatarLoadError(true)}
-                />
+                <Image source={{ uri: profile.avatar_url! }} style={styles.avatarImage} />
               ) : (
                 <ThemedText style={[styles.avatarInitials, { color: colors.tint }]}>{initials}</ThemedText>
               )}
@@ -195,11 +208,12 @@ export default function ProfileScreen() {
           <ThemedText type="title" style={[styles.displayName, { color: colors.text }]}>
             {displayName}
           </ThemedText>
-          {profile?.bio && (
+          {profile.bio && (
             <ThemedText style={[styles.bio, { color: colors.textMuted }]}>{profile.bio}</ThemedText>
           )}
         </ThemedView>
 
+        {/* Activity Calendar */}
         <ThemedView style={styles.section}>
           <ThemedText type="subtitle" style={[styles.sectionTitle, { color: colors.text }]}>
             Activity
@@ -273,69 +287,42 @@ export default function ProfileScreen() {
           </View>
         </ThemedView>
 
+        {/* Stats */}
         <View style={styles.statsRow}>
           <View style={[styles.statBox, { backgroundColor: colors.card }]}>
             <ThemedText type="defaultSemiBold" style={[styles.statValue, { color: colors.tint }]}>
-              {profile?.workouts_count ?? 0}
+              {profile.workouts_count ?? 0}
             </ThemedText>
             <ThemedText style={[styles.statLabel, { color: colors.textMuted }]}>Workouts</ThemedText>
           </View>
           <View style={[styles.statBox, { backgroundColor: colors.card }]}>
             <ThemedText type="defaultSemiBold" style={[styles.statValue, { color: colors.tint }]}>
-              {profile?.streak ?? 0}
+              {profile.streak ?? 0}
             </ThemedText>
             <ThemedText style={[styles.statLabel, { color: colors.textMuted }]}>Streak</ThemedText>
           </View>
           <View style={[styles.statBox, { backgroundColor: colors.card }]}>
             <ThemedText type="defaultSemiBold" style={[styles.statValue, { color: colors.tint }]}>
-              {profile?.groups_count ?? 0}
+              {profile.groups_count ?? 0}
             </ThemedText>
             <ThemedText style={[styles.statLabel, { color: colors.textMuted }]}>Groups</ThemedText>
           </View>
         </View>
 
+        {/* Badges */}
         <ThemedView style={styles.section}>
           <ThemedText type="subtitle" style={[styles.sectionTitle, { color: colors.text }]}>
             Badges
           </ThemedText>
           <View style={[styles.badgesContainer, { backgroundColor: colors.card, borderColor: colors.tabBarBorder }]}>
-            {/* Badges will be displayed here */}
             <ThemedText style={[styles.emptyBadgesText, { color: colors.textMuted }]}>
               No badges yet. Keep working out to earn your first badge!
             </ThemedText>
           </View>
         </ThemedView>
-
-        <ThemedView style={styles.section}>
-          <ThemedText type="subtitle" style={[styles.sectionTitle, { color: colors.text }]}>
-            Account
-          </ThemedText>
-          <View style={[styles.menuCard, { backgroundColor: colors.card, borderColor: colors.tabBarBorder }]}>
-            <Pressable style={styles.menuItemWrap} onPress={() => router.push('/edit-profile')}>
-              <ThemedText style={[styles.menuItem, { color: colors.text }]}>Edit profile</ThemedText>
-            </Pressable>
-            <Pressable
-              style={[styles.menuItemWrap, styles.menuItemBorder]}
-              onPress={() => router.push('/settings')}
-            >
-              <ThemedText style={[styles.menuItem, { color: colors.text }]}>Settings</ThemedText>
-            </Pressable>
-            <Pressable
-              style={[styles.menuItemWrap, styles.menuItemBorder]}
-              onPress={() => router.push('/friends')}
-            >
-              <ThemedText style={[styles.menuItem, { color: colors.text }]}>Friends</ThemedText>
-            </Pressable>
-            <View style={styles.menuItemWrap}>
-              <ThemedText style={[styles.menuItem, { color: colors.textMuted }]}>Notifications</ThemedText>
-              <ThemedText style={[styles.menuItemHint, { color: colors.textMuted }]}>In Settings</ThemedText>
-            </View>
-          </View>
-        </ThemedView>
-
-        <SignOutButton />
       </ScrollView>
 
+      {/* Photo zoom modal */}
       <Modal
         visible={isImageModalVisible}
         transparent={true}
@@ -349,7 +336,7 @@ export default function ProfileScreen() {
                 <Animated.View style={[styles.zoomedImageContainer, animatedImageStyle]}>
                   {showAvatarImage && (
                     <Image
-                      source={{ uri: avatarUrl! }}
+                      source={{ uri: profile.avatar_url! }}
                       style={styles.zoomedImage}
                       contentFit="cover"
                     />
@@ -374,6 +361,11 @@ const styles = StyleSheet.create({
   scrollContent: {
     padding: 24,
     paddingBottom: 40,
+  },
+  centered: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   header: {
     alignItems: 'center',
@@ -407,6 +399,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     lineHeight: 20,
   },
+  section: {
+    marginBottom: 24,
+  },
+  sectionTitle: {
+    marginBottom: 12,
+  },
   statsRow: {
     flexDirection: 'row',
     gap: 12,
@@ -426,44 +424,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
     fontSize: 12,
   },
-  section: {
-    marginBottom: 24,
-  },
-  sectionTitle: {
-    marginBottom: 12,
-  },
-  menuCard: {
-    borderRadius: 14,
-    borderWidth: 1,
-    overflow: 'hidden',
-  },
-  menuItemWrap: {
-    padding: 16,
-  },
-  menuItem: {
-    fontSize: 16,
-  },
-  menuItemHint: {
-    fontSize: 13,
-    marginTop: 2,
-  },
-  menuItemBorder: {
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(100, 116, 139, 0.2)',
-  },
-  badgesContainer: {
-    borderRadius: 14,
-    borderWidth: 1,
-    padding: 20,
-    minHeight: 100,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  emptyBadgesText: {
-    fontSize: 14,
-    textAlign: 'center',
-    lineHeight: 20,
-  },
+  // Calendar styles
   calendarCard: {
     borderRadius: 14,
     borderWidth: 1,
@@ -533,6 +494,21 @@ const styles = StyleSheet.create({
   calendarLegendLabel: {
     fontSize: 12,
   },
+  // Badges
+  badgesContainer: {
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 20,
+    minHeight: 100,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyBadgesText: {
+    fontSize: 14,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  // Photo zoom modal
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.9)',

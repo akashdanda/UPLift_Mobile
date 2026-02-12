@@ -237,8 +237,9 @@ export default function GroupsScreen() {
           ) : (
             <View style={styles.list}>
               {myGroups.map((g) => (
-                <View
+                <Pressable
                   key={g.id}
+                  onPress={() => router.push(`/group-detail?id=${g.id}`)}
                   style={[styles.groupCard, { backgroundColor: colors.card, borderColor: colors.tabBarBorder }]}
                 >
                   <View style={styles.groupCardMain}>
@@ -265,7 +266,10 @@ export default function GroupsScreen() {
                     {g.created_by === userId && (
                       <Pressable
                         style={[styles.deleteButton, { borderColor: '#ef4444' }]}
-                        onPress={() => handleDelete(g)}
+                        onPress={(e) => {
+                          e.stopPropagation()
+                          handleDelete(g)
+                        }}
                         disabled={actingId === g.id}
                       >
                         <ThemedText style={[styles.deleteButtonText, { color: '#ef4444' }]}>Delete</ThemedText>
@@ -273,13 +277,16 @@ export default function GroupsScreen() {
                     )}
                     <Pressable
                       style={[styles.leaveButton, { borderColor: colors.tabBarBorder }]}
-                      onPress={() => handleLeave(g)}
+                      onPress={(e) => {
+                        e.stopPropagation()
+                        handleLeave(g)
+                      }}
                       disabled={actingId === g.id}
                     >
                       <ThemedText style={[styles.leaveButtonText, { color: colors.textMuted }]}>Leave</ThemedText>
                     </Pressable>
                   </View>
-                </View>
+                </Pressable>
               ))}
             </View>
           )}

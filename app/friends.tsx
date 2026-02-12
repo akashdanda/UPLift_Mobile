@@ -1,5 +1,6 @@
 import { Image } from 'expo-image'
 import { useFocusEffect } from '@react-navigation/native'
+import { router } from 'expo-router'
 import { useCallback, useState } from 'react'
 import {
   ActivityIndicator,
@@ -285,7 +286,11 @@ export default function FriendsScreen() {
         ) : (
           <View style={[styles.listCard, { backgroundColor: colors.card, borderColor: colors.tabBarBorder }]}>
             {friends.map((friend) => (
-              <View key={friend.id} style={[styles.friendRow, { borderBottomColor: colors.tabBarBorder }]}>
+              <Pressable
+                key={friend.id}
+                style={[styles.friendRow, { borderBottomColor: colors.tabBarBorder }]}
+                onPress={() => router.push(`/friend-profile?id=${friend.id}`)}
+              >
                 <View style={[styles.avatarSmall, { backgroundColor: colors.tint + '25' }]}>
                   {friend.avatar_url ? (
                     <Image source={{ uri: friend.avatar_url }} style={styles.avatarSmallImage} />
@@ -305,12 +310,15 @@ export default function FriendsScreen() {
                 </View>
                 <Pressable
                   style={[styles.removeButton, { borderColor: colors.tabBarBorder }]}
-                  onPress={() => handleUnfriend(friend)}
+                  onPress={(e) => {
+                    e.stopPropagation()
+                    handleUnfriend(friend)
+                  }}
                   disabled={actingId === friend.id}
                 >
                   <ThemedText style={[styles.removeButtonText, { color: colors.textMuted }]}>Remove</ThemedText>
                 </Pressable>
-              </View>
+              </Pressable>
             ))}
           </View>
         )}
