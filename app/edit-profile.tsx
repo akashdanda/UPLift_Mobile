@@ -67,6 +67,7 @@ export default function EditProfileScreen() {
 
   const [displayName, setDisplayName] = useState('')
   const [fullName, setFullName] = useState('')
+  const [bio, setBio] = useState('')
   const [saving, setSaving] = useState(false)
   const [uploadingPhoto, setUploadingPhoto] = useState(false)
   // Show new photo immediately after upload (before profile refetch)
@@ -81,6 +82,7 @@ export default function EditProfileScreen() {
   useEffect(() => {
     setDisplayName(getInitialDisplayName(session, profile))
     setFullName(getInitialFullName(session, profile))
+    setBio(profile?.bio || '')
     setLocalAvatarUrl(null)
     setAvatarLoadError(false)
   }, [session, profile])
@@ -124,6 +126,7 @@ export default function EditProfileScreen() {
     const { error } = await updateProfile({
       display_name: displayName.trim() || null,
       full_name: fullName.trim() || null,
+      bio: bio.trim() || null,
     })
     setSaving(false)
     if (error) {
@@ -199,6 +202,24 @@ export default function EditProfileScreen() {
               editable={!saving}
             />
           </View>
+          <View style={styles.section}>
+            <ThemedText style={[styles.label, { color: colors.textMuted }]}>Bio</ThemedText>
+            <TextInput
+              style={[
+                styles.input,
+                styles.textArea,
+                { backgroundColor: colors.card, color: colors.text, borderColor: colors.tabBarBorder },
+              ]}
+              placeholder="Tell us about yourself..."
+              placeholderTextColor={colors.textMuted}
+              value={bio}
+              onChangeText={setBio}
+              editable={!saving}
+              multiline
+              numberOfLines={4}
+              textAlignVertical="top"
+            />
+          </View>
 
           <Pressable
             style={({ pressed }) => [
@@ -247,6 +268,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 14,
     fontSize: 16,
+  },
+  textArea: {
+    minHeight: 100,
+    paddingTop: 14,
   },
   button: {
     borderRadius: 14,

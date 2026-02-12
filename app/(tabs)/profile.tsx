@@ -1,8 +1,15 @@
 import { Image } from 'expo-image'
 import { router } from 'expo-router'
 import { useEffect, useState } from 'react'
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native'
+import { Dimensions, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
+import { Gesture, GestureDetector } from 'react-native-gesture-handler'
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+  withTiming,
+} from 'react-native-reanimated'
 
 import SignOutButton from '@/components/social-auth-buttons/sign-out-button'
 import { ThemedText } from '@/components/themed-text'
@@ -49,6 +56,7 @@ export default function ProfileScreen() {
 
   const avatarUrl = getAvatarUrl(profile, session)
   const [avatarLoadError, setAvatarLoadError] = useState(false)
+  const [isImageModalVisible, setIsImageModalVisible] = useState(false)
   const showAvatarImage = avatarUrl && !avatarLoadError
 
   useEffect(() => {
@@ -58,8 +66,44 @@ export default function ProfileScreen() {
   const displayName =
     (profile?.display_name && profile.display_name.trim()) ||
     (session ? getDisplayName(session) : '—')
-  const email = session?.user?.email ?? '—'
   const initials = getInitials(displayName, session)
+
+  // Zoom modal state
+  const scale = useSharedValue(1)
+  const savedScale = useSharedValue(1)
+
+  const pinchGesture = Gesture.Pinch()
+    .onUpdate((e) => {
+      scale.value = savedScale.value * e.scale
+    })
+    .onEnd(() => {
+      if (scale.value < 1) {
+        scale.value = withSpring(1)
+      } else if (scale.value > 3) {
+        scale.value = withSpring(3)
+      }
+      savedScale.value = scale.value
+    })
+
+  const animatedImageStyle = useAnimatedStyle(() => {
+    return {
+      transform: [{ scale: scale.value }],
+    }
+  })
+
+  const handleOpenModal = () => {
+    if (showAvatarImage) {
+      setIsImageModalVisible(true)
+      scale.value = 1
+      savedScale.value = 1
+    }
+  }
+
+  const handleCloseModal = () => {
+    setIsImageModalVisible(false)
+    scale.value = withTiming(1)
+    savedScale.value = 1
+  }
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
@@ -69,21 +113,25 @@ export default function ProfileScreen() {
         showsVerticalScrollIndicator={false}
       >
         <ThemedView style={styles.header}>
-          <View style={[styles.avatarWrap, { backgroundColor: colors.tint + '25' }]}>
-            {showAvatarImage ? (
-              <Image
-                source={{ uri: avatarUrl! }}
-                style={styles.avatarImage}
-                onError={() => setAvatarLoadError(true)}
-              />
-            ) : (
-              <ThemedText style={[styles.avatarInitials, { color: colors.tint }]}>{initials}</ThemedText>
-            )}
-          </View>
+          <Pressable onPress={handleOpenModal} disabled={!showAvatarImage}>
+            <View style={[styles.avatarWrap, { backgroundColor: colors.tint + '25' }]}>
+              {showAvatarImage ? (
+                <Image
+                  source={{ uri: avatarUrl! }}
+                  style={styles.avatarImage}
+                  onError={() => setAvatarLoadError(true)}
+                />
+              ) : (
+                <ThemedText style={[styles.avatarInitials, { color: colors.tint }]}>{initials}</ThemedText>
+              )}
+            </View>
+          </Pressable>
           <ThemedText type="title" style={[styles.displayName, { color: colors.text }]}>
             {displayName}
           </ThemedText>
-          <ThemedText style={[styles.email, { color: colors.textMuted }]}>{email}</ThemedText>
+          {profile?.bio && (
+            <ThemedText style={[styles.bio, { color: colors.textMuted }]}>{profile.bio}</ThemedText>
+          )}
         </ThemedView>
 
         <View style={styles.statsRow}>
@@ -106,6 +154,18 @@ export default function ProfileScreen() {
             <ThemedText style={[styles.statLabel, { color: colors.textMuted }]}>Groups</ThemedText>
           </View>
         </View>
+
+        <ThemedView style={styles.section}>
+          <ThemedText type="subtitle" style={[styles.sectionTitle, { color: colors.text }]}>
+            Badges
+          </ThemedText>
+          <View style={[styles.badgesContainer, { backgroundColor: colors.card, borderColor: colors.tabBarBorder }]}>
+            {/* Badges will be displayed here */}
+            <ThemedText style={[styles.emptyBadgesText, { color: colors.textMuted }]}>
+              No badges yet. Keep working out to earn your first badge!
+            </ThemedText>
+          </View>
+        </ThemedView>
 
         <ThemedView style={styles.section}>
           <ThemedText type="subtitle" style={[styles.sectionTitle, { color: colors.text }]}>
@@ -136,6 +196,31 @@ export default function ProfileScreen() {
 
         <SignOutButton />
       </ScrollView>
+
+      <Modal
+        visible={isImageModalVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={handleCloseModal}
+      >
+        <Pressable style={styles.modalOverlay} onPress={handleCloseModal}>
+          <View style={styles.modalContent} pointerEvents="box-none">
+            <Pressable onPress={(e) => e.stopPropagation()}>
+              <GestureDetector gesture={pinchGesture}>
+                <Animated.View style={[styles.zoomedImageContainer, animatedImageStyle]}>
+                  {showAvatarImage && (
+                    <Image
+                      source={{ uri: avatarUrl! }}
+                      style={styles.zoomedImage}
+                      contentFit="cover"
+                    />
+                  )}
+                </Animated.View>
+              </GestureDetector>
+            </Pressable>
+          </View>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   )
 }
@@ -176,8 +261,12 @@ const styles = StyleSheet.create({
     marginBottom: 4,
     textAlign: 'center',
   },
-  email: {
+  bio: {
     fontSize: 15,
+    textAlign: 'center',
+    marginTop: 8,
+    paddingHorizontal: 24,
+    lineHeight: 20,
   },
   statsRow: {
     flexDirection: 'row',
@@ -222,5 +311,40 @@ const styles = StyleSheet.create({
   menuItemBorder: {
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(100, 116, 139, 0.2)',
+  },
+  badgesContainer: {
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 20,
+    minHeight: 100,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyBadgesText: {
+    fontSize: 14,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.9)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    width: '100%',
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  zoomedImageContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  zoomedImage: {
+    width: Dimensions.get('window').width * 0.8,
+    height: Dimensions.get('window').width * 0.8,
+    borderRadius: (Dimensions.get('window').width * 0.8) / 2,
+    overflow: 'hidden',
   },
 })

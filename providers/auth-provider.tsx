@@ -32,6 +32,9 @@ export default function AuthProvider({ children }: PropsWithChildren) {
   const fetchProfile = useCallback(async () => {
     if (!session) return
     try {
+      // Check and reset streak if no workout today
+      await supabase.rpc('check_and_reset_streak', { user_id_param: session.user.id })
+      
       const { data } = await supabase
         .from('profiles')
         .select('*')
@@ -98,6 +101,9 @@ export default function AuthProvider({ children }: PropsWithChildren) {
     let cancelled = false
     void (async () => {
       try {
+        // Check and reset streak if no workout today
+        await supabase.rpc('check_and_reset_streak', { user_id_param: session.user.id })
+        
         const { data } = await supabase
           .from('profiles')
           .select('*')
