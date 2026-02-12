@@ -6,6 +6,7 @@ export type Profile = {
   workouts_count: number
   streak: number
   groups_count: number
+  friends_count?: number // added for leaderboard; run run-leaderboard-friends-count-in-dashboard.sql
   notifications_enabled: boolean
   created_at: string
   updated_at: string

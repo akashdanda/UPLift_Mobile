@@ -50,24 +50,11 @@ CREATE INDEX IF NOT EXISTS idx_group_members_user_id ON public.group_members(use
 
 ALTER TABLE public.group_members ENABLE ROW LEVEL SECURITY;
 
--- Helper: group IDs the current user is a member of (avoids RLS recursion)
-CREATE OR REPLACE FUNCTION public.my_group_ids()
-RETURNS SETOF UUID
-LANGUAGE plpgsql
-SECURITY DEFINER
-STABLE
-SET search_path = public
-AS $$
-BEGIN
-  SET LOCAL row_security = off;
-  RETURN QUERY SELECT group_id FROM public.group_members WHERE user_id = auth.uid();
-END;
-$$;
-
--- Read: members of a group can see all members of that group
-CREATE POLICY "Members can read group members"
+-- Any authenticated user can read group memberships (needed for member counts, etc.)
+CREATE POLICY "Authenticated can read group members"
   ON public.group_members FOR SELECT
-  USING (group_id IN (SELECT public.my_group_ids()));
+  TO authenticated
+  USING (true);
 
 -- Join: add yourself to a public group or to a group you created
 CREATE POLICY "Users can join public or own groups"

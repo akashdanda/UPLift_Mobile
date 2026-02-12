@@ -1,102 +1,200 @@
-import { StyleSheet, ScrollView, View } from 'react-native';
+import { Image } from 'expo-image'
+import { useFocusEffect } from '@react-navigation/native'
+import { useCallback, useState } from 'react'
+import { ActivityIndicator, ScrollView, StyleSheet, View } from 'react-native'
+import { SafeAreaView } from 'react-native-safe-area-context'
 
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors } from '@/constants/theme';
+import { ThemedText } from '@/components/themed-text'
+import { ThemedView } from '@/components/themed-view'
+import { Colors } from '@/constants/theme'
+import { useAuthContext } from '@/hooks/use-auth-context'
+import { useColorScheme } from '@/hooks/use-color-scheme'
+import { getCurrentMonthLabel, getLeaderboard, LEADERBOARD_POINTS, type LeaderboardRow } from '@/lib/leaderboard'
+
+function getDisplayName(row: LeaderboardRow): string {
+  return row.display_name?.trim() || 'Anonymous'
+}
+
+function getInitials(displayName: string): string {
+  if (displayName && displayName !== 'Anonymous') {
+    const parts = displayName.trim().split(/\s+/)
+    if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+    if (parts[0]?.[0]) return parts[0][0].toUpperCase()
+  }
+  return '?'
+}
 
 export default function LeaderboardScreen() {
-  const colorScheme = useColorScheme();
-  const colors = Colors[colorScheme ?? 'light'];
+  const colorScheme = useColorScheme()
+  const colors = Colors[colorScheme ?? 'light']
+  const { session } = useAuthContext()
 
-  const placeholderRanks = [
-    { rank: 1, name: 'Top lifter', points: '2,450' },
-    { rank: 2, name: 'Second place', points: '2,120' },
-    { rank: 3, name: 'Third place', points: '1,890' },
-  ];
+  const [rows, setRows] = useState<LeaderboardRow[]>([])
+  const [myRow, setMyRow] = useState<LeaderboardRow | undefined>(undefined)
+  const [loading, setLoading] = useState(true)
+
+  const load = useCallback(() => {
+    setLoading(true)
+    getLeaderboard(50, session?.user?.id)
+      .then(({ rows: r, myRow: m }) => {
+        setRows(r)
+        setMyRow(m)
+      })
+      .finally(() => setLoading(false))
+  }, [session?.user?.id])
+
+  useFocusEffect(useCallback(() => load(), [load]))
+
+  const myPoints = myRow?.points ?? 0
 
   return (
-    <ScrollView
-      style={[styles.scrollView, { backgroundColor: colors.background }]}
-      contentContainerStyle={styles.content}
-      showsVerticalScrollIndicator={false}>
-      <ThemedView style={styles.header}>
-        <ThemedText type="title" style={styles.title}>
-          Leaderboard
-        </ThemedText>
-        <ThemedText style={styles.subtitle}>Compete and climb the ranks</ThemedText>
-      </ThemedView>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+      >
+        <ThemedView style={styles.header}>
+          <ThemedText type="title" style={[styles.title, { color: colors.text }]}>
+            Leaderboard
+          </ThemedText>
+          <ThemedText style={[styles.subtitle, { color: colors.textMuted }]}>
+            {getCurrentMonthLabel()} — resets monthly
+          </ThemedText>
+          <ThemedText style={[styles.subtitle, { color: colors.textMuted, marginTop: 2 }]}>
+            Points: workouts×{LEADERBOARD_POINTS.workout} + streak×{LEADERBOARD_POINTS.streak} + groups×
+            {LEADERBOARD_POINTS.group} + friends×{LEADERBOARD_POINTS.friend}
+          </ThemedText>
+        </ThemedView>
 
-      <ThemedView style={styles.section}>
-        <ThemedText type="subtitle" style={styles.sectionTitle}>
-          This week
-        </ThemedText>
-        {placeholderRanks.map(({ rank, name, points }) => (
-          <ThemedView
-            key={rank}
-            style={[styles.row, rank <= 3 && { backgroundColor: colors.tint + '12' }]}>
-            <ThemedText type="defaultSemiBold" style={styles.rank}>
-              #{rank}
+        {session && (
+          <ThemedView style={[styles.myCard, { backgroundColor: colors.tint + '18', borderColor: colors.tint + '40' }]}>
+            <ThemedText type="defaultSemiBold" style={[styles.myCardTitle, { color: colors.text }]}>
+              Your score
             </ThemedText>
-            <ThemedText style={styles.name}>{name}</ThemedText>
-            <ThemedText type="defaultSemiBold" style={[styles.points, { color: colors.tint }]}>
-              {points} pts
+            <ThemedText type="title" style={[styles.myPoints, { color: colors.tint }]}>
+              {myPoints} pts
             </ThemedText>
+            {myRow ? (
+              <ThemedText style={[styles.myRank, { color: colors.textMuted }]}>
+                Rank #{myRow.rank} this month
+              </ThemedText>
+            ) : (
+              <ThemedText style={[styles.myRank, { color: colors.textMuted }]}>
+                No activity this month yet — log a workout to get on the board
+              </ThemedText>
+            )}
           </ThemedView>
-        ))}
-      </ThemedView>
+        )}
 
-      <ThemedView style={[styles.placeholderCard, { borderColor: colors.tint + '40' }]}>
-        <ThemedText style={{ color: colors.icon, textAlign: 'center' }}>
-          Connect Supabase to load real leaderboard data. You can rank by workouts completed,
-          points, or group challenges.
-        </ThemedText>
-      </ThemedView>
-    </ScrollView>
-  );
+        <ThemedView style={styles.section}>
+          <ThemedText type="subtitle" style={[styles.sectionTitle, { color: colors.text }]}>
+            Top athletes
+          </ThemedText>
+          {loading ? (
+            <View style={styles.loadingRow}>
+              <ActivityIndicator size="large" color={colors.tint} />
+            </View>
+          ) : rows.length === 0 ? (
+            <ThemedView style={[styles.emptyCard, { backgroundColor: colors.card, borderColor: colors.tabBarBorder }]}>
+              <ThemedText style={[styles.emptyText, { color: colors.textMuted }]}>
+                No one on the board yet. Log workouts, build streaks, join groups and add friends to earn points.
+              </ThemedText>
+            </ThemedView>
+          ) : (
+            <View style={styles.list}>
+              {rows.map((row) => {
+                const isMe = session?.user?.id === row.id
+                const name = getDisplayName(row)
+                return (
+                  <View
+                    key={row.id}
+                    style={[
+                      styles.row,
+                      { backgroundColor: colors.card, borderColor: colors.tabBarBorder },
+                      row.rank <= 3 && { backgroundColor: colors.tint + '12', borderColor: colors.tint + '30' },
+                      isMe && { borderColor: colors.tint, borderWidth: 2 },
+                    ]}
+                  >
+                    <ThemedText type="defaultSemiBold" style={[styles.rank, { color: colors.textMuted }]}>
+                      #{row.rank}
+                    </ThemedText>
+                    <View style={[styles.avatar, { backgroundColor: colors.tint + '25' }]}>
+                      {row.avatar_url ? (
+                        <Image source={{ uri: row.avatar_url }} style={styles.avatarImage} />
+                      ) : (
+                        <ThemedText style={[styles.avatarInitials, { color: colors.tint }]}>
+                          {getInitials(name)}
+                        </ThemedText>
+                      )}
+                    </View>
+                    <View style={styles.nameBlock}>
+                      <ThemedText type="defaultSemiBold" style={[styles.name, { color: colors.text }]} numberOfLines={1}>
+                        {name}
+                        {isMe ? ' (you)' : ''}
+                      </ThemedText>
+                      <ThemedText style={[styles.statsLine, { color: colors.textMuted }]}>
+                        {row.workouts_count} workouts · {row.streak} streak · {row.groups_count} groups ·{' '}
+                        {row.friends_count} friends
+                      </ThemedText>
+                    </View>
+                    <ThemedText type="defaultSemiBold" style={[styles.points, { color: colors.tint }]}>
+                      {row.points}
+                    </ThemedText>
+                  </View>
+                )
+              })}
+            </View>
+          )}
+        </ThemedView>
+      </ScrollView>
+    </SafeAreaView>
+  )
 }
 
 const styles = StyleSheet.create({
-  scrollView: {
-    flex: 1,
-  },
-  content: {
-    padding: 20,
-    paddingBottom: 40,
-  },
-  header: {
+  container: { flex: 1 },
+  scrollView: { flex: 1 },
+  content: { padding: 20, paddingBottom: 40 },
+  header: { marginBottom: 20 },
+  title: { marginBottom: 4 },
+  subtitle: { fontSize: 14 },
+  myCard: {
+    padding: 16,
+    borderRadius: 14,
+    borderWidth: 1,
     marginBottom: 24,
   },
-  title: {
-    marginBottom: 4,
-  },
-  subtitle: {
-    opacity: 0.8,
-  },
-  section: {
-    marginBottom: 24,
-  },
-  sectionTitle: {
-    marginBottom: 12,
-  },
+  myCardTitle: { fontSize: 14, marginBottom: 4 },
+  myPoints: { fontSize: 28 },
+  myRank: { fontSize: 13, marginTop: 4 },
+  section: { marginBottom: 24 },
+  sectionTitle: { marginBottom: 12 },
+  loadingRow: { paddingVertical: 32, alignItems: 'center' },
+  emptyCard: { padding: 24, borderRadius: 14, borderWidth: 1 },
+  emptyText: { textAlign: 'center', lineHeight: 22 },
+  list: { gap: 10 },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 8,
-  },
-  rank: {
-    width: 40,
-  },
-  name: {
-    flex: 1,
-  },
-  points: {},
-  placeholderCard: {
-    padding: 20,
+    padding: 12,
     borderRadius: 12,
     borderWidth: 1,
-    borderStyle: 'dashed',
   },
-});
+  rank: { width: 36, fontSize: 14 },
+  avatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+    marginLeft: 8,
+  },
+  avatarImage: { width: 40, height: 40 },
+  avatarInitials: { fontSize: 14, fontWeight: '600' },
+  nameBlock: { flex: 1, marginLeft: 12, minWidth: 0 },
+  name: { fontSize: 15 },
+  statsLine: { fontSize: 11, marginTop: 2 },
+  points: { fontSize: 16, marginLeft: 8 },
+})

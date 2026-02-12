@@ -8,6 +8,7 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   TextInput,
   View,
 } from 'react-native'
@@ -26,6 +27,7 @@ export default function CreateGroupScreen() {
 
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
+  const [isPublic, setIsPublic] = useState(true)
   const [saving, setSaving] = useState(false)
 
   const handleCreate = async () => {
@@ -36,7 +38,7 @@ export default function CreateGroupScreen() {
     }
     if (!session) return
     setSaving(true)
-    const { group, error } = await createGroup(session.user.id, trimmed, description.trim() || null)
+    const { error } = await createGroup(session.user.id, trimmed, description.trim() || null, isPublic)
     setSaving(false)
     if (error) {
       Alert.alert('Error', error.message)
@@ -87,6 +89,20 @@ export default function CreateGroupScreen() {
             numberOfLines={3}
             editable={!saving}
           />
+          <View style={[styles.toggleRow, { borderColor: colors.tabBarBorder }]}>
+            <View style={styles.toggleInfo}>
+              <ThemedText style={[styles.toggleLabel, { color: colors.text }]}>Public group</ThemedText>
+              <ThemedText style={[styles.toggleHint, { color: colors.textMuted }]}>
+                {isPublic ? 'Anyone can discover and join' : 'Only invited people can join'}
+              </ThemedText>
+            </View>
+            <Switch
+              value={isPublic}
+              onValueChange={setIsPublic}
+              trackColor={{ true: colors.tint, false: colors.tabBarBorder }}
+            />
+          </View>
+
           <Pressable
             style={[styles.button, { backgroundColor: colors.tint }]}
             onPress={handleCreate}
@@ -118,6 +134,16 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   inputMultiline: { minHeight: 88, textAlignVertical: 'top' },
+  toggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    marginBottom: 20,
+    borderBottomWidth: 1,
+  },
+  toggleInfo: { flex: 1 },
+  toggleLabel: { fontSize: 16, fontWeight: '600' },
+  toggleHint: { fontSize: 13, marginTop: 2 },
   button: {
     borderRadius: 14,
     paddingVertical: 16,

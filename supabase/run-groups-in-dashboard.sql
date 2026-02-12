@@ -56,24 +56,14 @@ CREATE POLICY "Creators can delete own group"
 -- 4) Group members RLS and policies
 ALTER TABLE public.group_members ENABLE ROW LEVEL SECURITY;
 
--- Bypass RLS inside the function to avoid infinite recursion when policy calls this
-CREATE OR REPLACE FUNCTION public.my_group_ids()
-RETURNS SETOF UUID
-LANGUAGE plpgsql
-SECURITY DEFINER
-STABLE
-SET search_path = public
-AS $$
-BEGIN
-  SET LOCAL row_security = off;
-  RETURN QUERY SELECT group_id FROM public.group_members WHERE user_id = auth.uid();
-END;
-$$;
-
+-- Drop the old recursive policy first, then the function it depends on
 DROP POLICY IF EXISTS "Members can read group members" ON public.group_members;
-CREATE POLICY "Members can read group members"
+DROP FUNCTION IF EXISTS public.my_group_ids();
+-- Simple non-recursive policy: any authenticated user can read group memberships
+CREATE POLICY "Authenticated can read group members"
   ON public.group_members FOR SELECT
-  USING (group_id IN (SELECT public.my_group_ids()));
+  TO authenticated
+  USING (true);
 
 DROP POLICY IF EXISTS "Users can join public or own groups" ON public.group_members;
 CREATE POLICY "Users can join public or own groups"
