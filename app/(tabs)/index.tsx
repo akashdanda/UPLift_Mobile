@@ -9,8 +9,29 @@ import { ThemedView } from '@/components/themed-view';
 import { Colors } from '@/constants/theme';
 import { useAuthContext } from '@/hooks/use-auth-context';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { getFriendsWorkouts, type FeedItem } from '@/lib/feed';
 import { supabase } from '@/lib/supabase';
 import type { Workout } from '@/types/workout';
+
+function formatFeedDate(workoutDate: string): string {
+  const d = new Date(workoutDate + 'Z');
+  const today = new Date();
+  const isToday = d.toDateString() === today.toDateString();
+  if (isToday) return 'Today';
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (d.toDateString() === yesterday.toDateString()) return 'Yesterday';
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+function getInitials(displayName: string | null): string {
+  if (displayName?.trim()) {
+    const parts = displayName.trim().split(/\s+/);
+    if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+    if (parts[0]?.[0]) return parts[0][0].toUpperCase();
+  }
+  return '?';
+}
 
 function getTodayLocalDate(): string {
   const d = new Date();
@@ -22,11 +43,13 @@ export default function HomeScreen() {
   const colors = Colors[colorScheme ?? 'light'];
   const { session } = useAuthContext();
   const [todayWorkout, setTodayWorkout] = useState<Workout | null>(null);
+  const [feedItems, setFeedItems] = useState<FeedItem[]>([]);
 
   useFocusEffect(
     useCallback(() => {
       if (!session) {
         setTodayWorkout(null);
+        setFeedItems([]);
         return;
       }
       const today = getTodayLocalDate();
@@ -37,6 +60,7 @@ export default function HomeScreen() {
         .eq('workout_date', today)
         .maybeSingle()
         .then(({ data }) => setTodayWorkout((data as Workout) ?? null));
+      getFriendsWorkouts(session.user.id).then(setFeedItems);
     }, [session])
   );
 
@@ -98,12 +122,54 @@ export default function HomeScreen() {
       )}
 
       <ThemedView style={styles.section}>
-        <ThemedText type="subtitle" style={styles.sectionTitle}>
+        <ThemedText type="subtitle" style={[styles.sectionTitle, { color: colors.text }]}>
           Feed
         </ThemedText>
-        <ThemedView style={[styles.feedPlaceholder, { backgroundColor: colors.background }]}>
-          <ThemedText style={{ color: colors.icon }}>Recent activity from your groups will appear here.</ThemedText>
-        </ThemedView>
+        <ThemedText style={[styles.feedSubtitle, { color: colors.textMuted }]}>
+          Friends&apos; daily workouts
+        </ThemedText>
+        {feedItems.length === 0 ? (
+          <ThemedView style={[styles.feedPlaceholder, { backgroundColor: colors.card, borderColor: colors.tabBarBorder }]}>
+            <ThemedText style={[styles.feedEmpty, { color: colors.textMuted }]}>
+              Add friends from Profile → Friends to see their workout posts here.
+            </ThemedText>
+          </ThemedView>
+        ) : (
+          <View style={styles.feedList}>
+            {feedItems.map((item) => (
+              <View
+                key={item.workout.id}
+                style={[styles.feedCard, { backgroundColor: colors.card, borderColor: colors.tabBarBorder }]}
+              >
+                <View style={styles.feedCardHeader}>
+                  <View style={[styles.feedAvatar, { backgroundColor: colors.tint + '25' }]}>
+                    {item.avatar_url ? (
+                      <Image source={{ uri: item.avatar_url }} style={styles.feedAvatarImage} />
+                    ) : (
+                      <ThemedText style={[styles.feedAvatarInitials, { color: colors.tint }]}>
+                        {getInitials(item.display_name)}
+                      </ThemedText>
+                    )}
+                  </View>
+                  <View style={styles.feedCardMeta}>
+                    <ThemedText style={[styles.feedName, { color: colors.text }]}>
+                      {item.display_name || 'Anonymous'}
+                    </ThemedText>
+                    <ThemedText style={[styles.feedDate, { color: colors.textMuted }]}>
+                      {formatFeedDate(item.workout.workout_date)}
+                    </ThemedText>
+                  </View>
+                </View>
+                <Image source={{ uri: item.workout.image_url }} style={styles.feedImage} />
+                {item.workout.caption ? (
+                  <ThemedText style={[styles.feedCaption, { color: colors.text }]}>
+                    {item.workout.caption}
+                  </ThemedText>
+                ) : null}
+              </View>
+            ))}
+          </View>
+        )}
       </ThemedView>
     </ScrollView>
   );
@@ -172,14 +238,69 @@ const styles = StyleSheet.create({
     padding: 16,
     fontSize: 14,
   },
+  feedSubtitle: {
+    fontSize: 14,
+    marginBottom: 12,
+  },
   feedPlaceholder: {
     padding: 24,
-    borderRadius: 12,
+    borderRadius: 14,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 120,
+    minHeight: 100,
+  },
+  feedEmpty: {
+    textAlign: 'center',
+    fontSize: 14,
+  },
+  feedList: {
+    gap: 16,
+  },
+  feedCard: {
+    borderRadius: 16,
+    overflow: 'hidden',
     borderWidth: 1,
-    borderStyle: 'dashed',
-    borderColor: '#68707640',
+  },
+  feedCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+  },
+  feedAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+    marginRight: 12,
+  },
+  feedAvatarImage: {
+    width: 40,
+    height: 40,
+  },
+  feedAvatarInitials: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  feedCardMeta: {
+    flex: 1,
+  },
+  feedName: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  feedDate: {
+    fontSize: 13,
+    marginTop: 2,
+  },
+  feedImage: {
+    width: '100%',
+    aspectRatio: 1,
+  },
+  feedCaption: {
+    padding: 12,
+    fontSize: 15,
   },
 });
