@@ -1,6 +1,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons'
 import { Image } from 'expo-image'
 import { useFocusEffect } from '@react-navigation/native'
+import { useLocalSearchParams } from 'expo-router'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
@@ -36,14 +37,22 @@ export default function LeaderboardScreen() {
   const colorScheme = useColorScheme()
   const colors = Colors[colorScheme ?? 'light']
   const { session } = useAuthContext()
+  const params = useLocalSearchParams<{ scope?: string }>()
 
-  const [scope, setScope] = useState<LeaderboardScope>('global')
+  const [scope, setScope] = useState<LeaderboardScope>('friends')
   const [groups, setGroups] = useState<GroupWithMeta[]>([])
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null)
   const [rows, setRows] = useState<LeaderboardRow[]>([])
   const [myRow, setMyRow] = useState<LeaderboardRow | undefined>(undefined)
   const [loading, setLoading] = useState(true)
   const scopeChanged = useRef(false)
+
+  useEffect(() => {
+    const paramScope = params.scope
+    if (paramScope === 'friends' || paramScope === 'groups' || paramScope === 'global') {
+      setScope(paramScope)
+    }
+  }, [params.scope])
 
   const load = useCallback(() => {
     setLoading(true)
@@ -56,7 +65,6 @@ export default function LeaderboardScreen() {
       .finally(() => setLoading(false))
   }, [session?.user?.id, scope, selectedGroupId])
 
-  // Load user's groups once when we have a session
   useEffect(() => {
     if (!session?.user?.id) return
     ;(async () => {

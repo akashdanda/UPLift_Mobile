@@ -1,3 +1,4 @@
+import Ionicons from '@expo/vector-icons/Ionicons'
 import { Image } from 'expo-image'
 import { router } from 'expo-router'
 import { useEffect, useState } from 'react'
@@ -6,7 +7,6 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 
 import SignOutButton from '@/components/social-auth-buttons/sign-out-button'
 import { ThemedText } from '@/components/themed-text'
-import { ThemedView } from '@/components/themed-view'
 import { Colors } from '@/constants/theme'
 import { useAuthContext } from '@/hooks/use-auth-context'
 import { useColorScheme } from '@/hooks/use-color-scheme'
@@ -42,6 +42,12 @@ function getInitials(
   return '?'
 }
 
+const MENU_ITEMS = [
+  { label: 'Edit profile', icon: 'person-outline' as const, route: '/edit-profile' },
+  { label: 'Friends', icon: 'people-outline' as const, route: '/friends' },
+  { label: 'Settings', icon: 'settings-outline' as const, route: '/settings' },
+]
+
 export default function ProfileScreen() {
   const { session, profile } = useAuthContext()
   const colorScheme = useColorScheme()
@@ -61,6 +67,13 @@ export default function ProfileScreen() {
   const email = session?.user?.email ?? '—'
   const initials = getInitials(displayName, session)
 
+  const stats = [
+    { value: profile?.workouts_count ?? 0, label: 'Workouts', color: colors.tint },
+    { value: profile?.streak ?? 0, label: 'Streak', color: colors.warm },
+    { value: profile?.groups_count ?? 0, label: 'Groups', color: colors.tint },
+    { value: profile?.friends_count ?? 0, label: 'Friends', color: colors.tint },
+  ]
+
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
       <ScrollView
@@ -68,8 +81,9 @@ export default function ProfileScreen() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        <ThemedView style={styles.header}>
-          <View style={[styles.avatarWrap, { backgroundColor: colors.tint + '25' }]}>
+        {/* Avatar + name */}
+        <View style={styles.header}>
+          <View style={[styles.avatarWrap, { backgroundColor: colors.tint + '20' }]}>
             {showAvatarImage ? (
               <Image
                 source={{ uri: avatarUrl! }}
@@ -84,55 +98,37 @@ export default function ProfileScreen() {
             {displayName}
           </ThemedText>
           <ThemedText style={[styles.email, { color: colors.textMuted }]}>{email}</ThemedText>
-        </ThemedView>
-
-        <View style={styles.statsRow}>
-          <View style={[styles.statBox, { backgroundColor: colors.card }]}>
-            <ThemedText type="defaultSemiBold" style={[styles.statValue, { color: colors.tint }]}>
-              {profile?.workouts_count ?? 0}
-            </ThemedText>
-            <ThemedText style={[styles.statLabel, { color: colors.textMuted }]}>Workouts</ThemedText>
-          </View>
-          <View style={[styles.statBox, { backgroundColor: colors.card }]}>
-            <ThemedText type="defaultSemiBold" style={[styles.statValue, { color: colors.tint }]}>
-              {profile?.streak ?? 0}
-            </ThemedText>
-            <ThemedText style={[styles.statLabel, { color: colors.textMuted }]}>Streak</ThemedText>
-          </View>
-          <View style={[styles.statBox, { backgroundColor: colors.card }]}>
-            <ThemedText type="defaultSemiBold" style={[styles.statValue, { color: colors.tint }]}>
-              {profile?.groups_count ?? 0}
-            </ThemedText>
-            <ThemedText style={[styles.statLabel, { color: colors.textMuted }]}>Groups</ThemedText>
-          </View>
         </View>
 
-        <ThemedView style={styles.section}>
-          <ThemedText type="subtitle" style={[styles.sectionTitle, { color: colors.text }]}>
-            Account
-          </ThemedText>
-          <View style={[styles.menuCard, { backgroundColor: colors.card, borderColor: colors.tabBarBorder }]}>
-            <Pressable style={styles.menuItemWrap} onPress={() => router.push('/edit-profile')}>
-              <ThemedText style={[styles.menuItem, { color: colors.text }]}>Edit profile</ThemedText>
-            </Pressable>
-            <Pressable
-              style={[styles.menuItemWrap, styles.menuItemBorder]}
-              onPress={() => router.push('/settings')}
-            >
-              <ThemedText style={[styles.menuItem, { color: colors.text }]}>Settings</ThemedText>
-            </Pressable>
-            <Pressable
-              style={[styles.menuItemWrap, styles.menuItemBorder]}
-              onPress={() => router.push('/friends')}
-            >
-              <ThemedText style={[styles.menuItem, { color: colors.text }]}>Friends</ThemedText>
-            </Pressable>
-            <View style={styles.menuItemWrap}>
-              <ThemedText style={[styles.menuItem, { color: colors.textMuted }]}>Notifications</ThemedText>
-              <ThemedText style={[styles.menuItemHint, { color: colors.textMuted }]}>In Settings</ThemedText>
+        {/* Stats */}
+        <View style={styles.statsRow}>
+          {stats.map((s) => (
+            <View key={s.label} style={[styles.statBox, { backgroundColor: colors.card }]}>
+              <ThemedText style={[styles.statValue, { color: s.color }]}>
+                {s.value}
+              </ThemedText>
+              <ThemedText style={[styles.statLabel, { color: colors.textMuted }]}>{s.label}</ThemedText>
             </View>
-          </View>
-        </ThemedView>
+          ))}
+        </View>
+
+        {/* Menu */}
+        <View style={[styles.menuCard, { backgroundColor: colors.card }]}>
+          {MENU_ITEMS.map((item, i) => (
+            <Pressable
+              key={item.label}
+              style={[
+                styles.menuItemWrap,
+                i < MENU_ITEMS.length - 1 && [styles.menuItemBorder, { borderBottomColor: colors.tabBarBorder }],
+              ]}
+              onPress={() => router.push(item.route as any)}
+            >
+              <Ionicons name={item.icon} size={20} color={colors.textMuted} style={{ marginRight: 14 }} />
+              <ThemedText style={[styles.menuItem, { color: colors.text }]}>{item.label}</ThemedText>
+              <Ionicons name="chevron-forward" size={18} color={colors.textMuted} style={{ marginLeft: 'auto' }} />
+            </Pressable>
+          ))}
+        </View>
 
         <SignOutButton />
       </ScrollView>
@@ -141,86 +137,44 @@ export default function ProfileScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    padding: 24,
-    paddingBottom: 40,
-  },
-  header: {
-    alignItems: 'center',
-    marginBottom: 28,
-  },
+  container: { flex: 1 },
+  scrollView: { flex: 1 },
+  scrollContent: { padding: 24, paddingBottom: 40 },
+
+  // Header
+  header: { alignItems: 'center', marginBottom: 24 },
   avatarWrap: {
-    width: 88,
-    height: 88,
-    borderRadius: 44,
+    width: 96,
+    height: 96,
+    borderRadius: 48,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 12,
+    marginBottom: 14,
     overflow: 'hidden',
   },
-  avatarImage: {
-    width: 88,
-    height: 88,
-  },
-  avatarInitials: {
-    fontSize: 32,
-    fontWeight: '600',
-  },
-  displayName: {
-    marginBottom: 4,
-    textAlign: 'center',
-  },
-  email: {
-    fontSize: 15,
-  },
-  statsRow: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 28,
-  },
+  avatarImage: { width: 96, height: 96 },
+  avatarInitials: { fontSize: 34, fontWeight: '700' },
+  displayName: { fontSize: 24, fontWeight: '800', textAlign: 'center', marginBottom: 4 },
+  email: { fontSize: 14 },
+
+  // Stats
+  statsRow: { flexDirection: 'row', gap: 10, marginBottom: 24 },
   statBox: {
     flex: 1,
-    padding: 16,
-    borderRadius: 14,
+    paddingVertical: 14,
+    borderRadius: 16,
     alignItems: 'center',
-    borderWidth: 1,
   },
-  statValue: {
-    fontSize: 24,
-  },
-  statLabel: {
-    marginTop: 4,
-    fontSize: 12,
-  },
-  section: {
-    marginBottom: 24,
-  },
-  sectionTitle: {
-    marginBottom: 12,
-  },
-  menuCard: {
-    borderRadius: 14,
-    borderWidth: 1,
-    overflow: 'hidden',
-  },
+  statValue: { fontSize: 26, fontWeight: '800' },
+  statLabel: { marginTop: 2, fontSize: 11, opacity: 0.7 },
+
+  // Menu
+  menuCard: { borderRadius: 16, overflow: 'hidden', marginBottom: 24 },
   menuItemWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
     padding: 16,
   },
-  menuItem: {
-    fontSize: 16,
-  },
-  menuItemHint: {
-    fontSize: 13,
-    marginTop: 2,
-  },
-  menuItemBorder: {
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(100, 116, 139, 0.2)',
-  },
+  menuItem: { fontSize: 16 },
+  menuItemBorder: { borderBottomWidth: StyleSheet.hairlineWidth },
 })

@@ -1,8 +1,10 @@
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useFocusEffect } from '@react-navigation/native';
+import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { Image } from 'expo-image';
-import { Pressable, StyleSheet, ScrollView, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -14,14 +16,11 @@ import { supabase } from '@/lib/supabase';
 import type { Workout } from '@/types/workout';
 
 function formatFeedDate(workoutDate: string): string {
-  // workout_date comes from Supabase as 'YYYY-MM-DD'
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(workoutDate);
   if (!match) return '';
   const year = Number(match[1]);
-  const monthIndex = Number(match[2]) - 1; // 0-based
+  const monthIndex = Number(match[2]) - 1;
   const day = Number(match[3]);
-
-  // Construct using year/month/day to avoid string parsing issues that can yield Invalid Date
   const d = new Date(year, monthIndex, day);
   if (Number.isNaN(d.getTime())) return '';
 
@@ -32,11 +31,9 @@ function formatFeedDate(workoutDate: string): string {
     a.getDate() === b.getDate();
 
   if (sameDay(d, today)) return 'Today';
-
   const yesterday = new Date(today);
   yesterday.setDate(yesterday.getDate() - 1);
   if (sameDay(d, yesterday)) return 'Yesterday';
-
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
@@ -57,7 +54,7 @@ function getTodayLocalDate(): string {
 export default function HomeScreen() {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
-  const { session } = useAuthContext();
+  const { session, profile } = useAuthContext();
   const [todayWorkout, setTodayWorkout] = useState<Workout | null>(null);
   const [feedItems, setFeedItems] = useState<FeedItem[]>([]);
 
@@ -80,208 +77,223 @@ export default function HomeScreen() {
     }, [session])
   );
 
+  const streak = profile?.streak ?? 0;
+
   return (
-    <ScrollView
-      style={[styles.scrollView, { backgroundColor: colors.background }]}
-      contentContainerStyle={styles.content}
-      showsVerticalScrollIndicator={false}>
-      <ThemedView style={styles.header}>
-        <ThemedText type="title" style={styles.greeting}>
-          UPLift
-        </ThemedText>
-        <ThemedText style={styles.subtitle}>Your fitness community</ThemedText>
-      </ThemedView>
+    <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]} edges={['top']}>
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Header */}
+        <View style={styles.headerRow}>
+          <View style={{ flex: 1 }}>
+            <ThemedText type="title" style={styles.greeting}>
+              UPLift
+            </ThemedText>
+            <ThemedText style={[styles.headerSub, { color: colors.textMuted }]}>
+              Your fitness community
+            </ThemedText>
+          </View>
+        </View>
 
-      <ThemedView style={[styles.card, { backgroundColor: colors.tint + '18' }]}>
-        <ThemedText type="subtitle" style={styles.cardTitle}>
-          Today&apos;s focus
-        </ThemedText>
-        <ThemedText style={styles.cardText}>
-          Log a workout, join a challenge, or cheer on your friends. Stay consistent and climb the
-          leaderboard.
-        </ThemedText>
-      </ThemedView>
+        {/* Streak banner */}
+        <View style={[styles.streakBanner, { backgroundColor: colors.warm + '15' }]}>
+          <Ionicons name="flame" size={28} color={colors.warm} />
+          <View style={styles.streakText}>
+            <ThemedText type="defaultSemiBold" style={[styles.streakValue, { color: colors.warm }]}>
+              {streak > 0 ? `${streak} day streak` : 'No streak yet'}
+            </ThemedText>
+            <ThemedText style={[styles.streakHint, { color: colors.textMuted }]}>
+              {streak > 0
+                ? 'Keep it going — log today to stay on fire'
+                : 'Log your first workout to start a streak'}
+            </ThemedText>
+          </View>
+        </View>
 
-      <ThemedView style={styles.section}>
-        <ThemedText type="subtitle" style={styles.sectionTitle}>
-          Quick actions
-        </ThemedText>
+        {/* Quick actions */}
         <View style={styles.quickActions}>
           <Pressable
-            style={[styles.actionCard, { borderColor: colors.tint + '40' }]}
+            style={({ pressed }) => [
+              styles.actionPill,
+              { backgroundColor: todayWorkout ? colors.tint : colors.tint },
+              pressed && styles.actionPillPressed,
+            ]}
             onPress={() => router.push('/log-workout')}
           >
-            <ThemedText type="defaultSemiBold">Log workout</ThemedText>
-            <ThemedText style={styles.actionHint}>
-              {todayWorkout ? "Today's logged ✓" : 'Take a photo, post once a day'}
+            <Ionicons
+              name={todayWorkout ? 'checkmark-circle' : 'camera'}
+              size={18}
+              color="#fff"
+            />
+            <ThemedText style={styles.actionPillText}>
+              {todayWorkout ? 'Logged' : 'Log workout'}
             </ThemedText>
           </Pressable>
-          <ThemedView style={[styles.actionCard, { borderColor: colors.tint + '40' }]}>
-            <ThemedText type="defaultSemiBold">Active challenges</ThemedText>
-            <ThemedText style={styles.actionHint}>See leaderboard</ThemedText>
-          </ThemedView>
-        </View>
-      </ThemedView>
-
-      {todayWorkout && (
-        <ThemedView style={[styles.section, styles.todaySection]}>
-          <ThemedText type="subtitle" style={styles.sectionTitle}>
-            Today&apos;s workout
-          </ThemedText>
-          <View style={[styles.todayCard, { backgroundColor: colors.card }]}>
-            <Image source={{ uri: todayWorkout.image_url }} style={styles.todayImage} />
-            {todayWorkout.caption ? (
-              <ThemedText style={[styles.todayCaption, { color: colors.textMuted }]}>{todayWorkout.caption}</ThemedText>
-            ) : null}
-          </View>
-        </ThemedView>
-      )}
-
-      <ThemedView style={styles.section}>
-        <ThemedText type="subtitle" style={[styles.sectionTitle, { color: colors.text }]}>
-          Feed
-        </ThemedText>
-        <ThemedText style={[styles.feedSubtitle, { color: colors.textMuted }]}>
-          Friends&apos; daily workouts
-        </ThemedText>
-        {feedItems.length === 0 ? (
-          <ThemedView style={[styles.feedPlaceholder, { backgroundColor: colors.card, borderColor: colors.tabBarBorder }]}>
-            <ThemedText style={[styles.feedEmpty, { color: colors.textMuted }]}>
-              Add friends from Profile → Friends to see their workout posts here.
+          <Pressable
+            style={({ pressed }) => [
+              styles.actionPillOutline,
+              { borderColor: colors.tint + '50', backgroundColor: colors.cardElevated },
+              pressed && styles.actionPillPressed,
+            ]}
+            onPress={() => router.push({ pathname: '/leaderboard', params: { scope: 'global' } })}
+          >
+            <Ionicons name="trophy" size={18} color={colors.tint} />
+            <ThemedText style={[styles.actionPillTextOutline, { color: colors.text }]}>
+              Top athletes
             </ThemedText>
-          </ThemedView>
-        ) : (
-          <View style={styles.feedList}>
-            {feedItems.map((item) => (
-              <View
-                key={item.workout.id}
-                style={[styles.feedCard, { backgroundColor: colors.card, borderColor: colors.tabBarBorder }]}
-              >
-                <View style={styles.feedCardHeader}>
-                  <View style={[styles.feedAvatar, { backgroundColor: colors.tint + '25' }]}>
-                    {item.avatar_url ? (
-                      <Image source={{ uri: item.avatar_url }} style={styles.feedAvatarImage} />
-                    ) : (
-                      <ThemedText style={[styles.feedAvatarInitials, { color: colors.tint }]}>
-                        {getInitials(item.display_name)}
-                      </ThemedText>
-                    )}
-                  </View>
-                  <View style={styles.feedCardMeta}>
-                    <ThemedText style={[styles.feedName, { color: colors.text }]}>
-                      {item.display_name || 'Anonymous'}
-                    </ThemedText>
-                    <ThemedText style={[styles.feedDate, { color: colors.textMuted }]}>
-                      {formatFeedDate(item.workout.workout_date)}
-                    </ThemedText>
-                  </View>
-                </View>
-                <Image source={{ uri: item.workout.image_url }} style={styles.feedImage} />
-                {item.workout.caption ? (
-                  <ThemedText style={[styles.feedCaption, { color: colors.text }]}>
-                    {item.workout.caption}
+          </Pressable>
+        </View>
+
+        {/* Today's workout */}
+        {todayWorkout && (
+          <View style={styles.section}>
+            <ThemedText type="subtitle" style={[styles.sectionTitle, { color: colors.text }]}>
+              Today&apos;s workout
+            </ThemedText>
+            <View style={[styles.todayCard, { backgroundColor: colors.card }]}>
+              <Image source={{ uri: todayWorkout.image_url }} style={styles.todayImage} />
+              {todayWorkout.caption ? (
+                <View style={styles.captionRow}>
+                  <ThemedText style={[styles.todayCaption, { color: colors.text }]}>
+                    {todayWorkout.caption}
                   </ThemedText>
-                ) : null}
-              </View>
-            ))}
+                </View>
+              ) : null}
+            </View>
           </View>
         )}
-      </ThemedView>
-    </ScrollView>
+
+        {/* Feed */}
+        <View style={styles.section}>
+          <ThemedText type="subtitle" style={[styles.sectionTitle, { color: colors.text }]}>
+            Feed
+          </ThemedText>
+          {feedItems.length === 0 ? (
+            <View style={[styles.emptyCard, { backgroundColor: colors.cardElevated }]}>
+              <Ionicons name="people-outline" size={32} color={colors.textMuted + '60'} style={{ marginBottom: 8 }} />
+              <ThemedText style={[styles.emptyText, { color: colors.textMuted }]}>
+                Add friends to see their workout posts here
+              </ThemedText>
+            </View>
+          ) : (
+            <View style={styles.feedList}>
+              {feedItems.map((item) => (
+                <View
+                  key={item.workout.id}
+                  style={[styles.feedCard, { backgroundColor: colors.card }]}
+                >
+                  <View style={styles.feedCardHeader}>
+                    <View style={[styles.feedAvatar, { backgroundColor: colors.tint + '20' }]}>
+                      {item.avatar_url ? (
+                        <Image source={{ uri: item.avatar_url }} style={styles.feedAvatarImage} />
+                      ) : (
+                        <ThemedText style={[styles.feedAvatarInitials, { color: colors.tint }]}>
+                          {getInitials(item.display_name)}
+                        </ThemedText>
+                      )}
+                    </View>
+                    <View style={styles.feedCardMeta}>
+                      <ThemedText type="defaultSemiBold" style={[styles.feedName, { color: colors.text }]}>
+                        {item.display_name || 'Anonymous'}
+                      </ThemedText>
+                      <ThemedText style={[styles.feedDate, { color: colors.textMuted }]}>
+                        {formatFeedDate(item.workout.workout_date)}
+                      </ThemedText>
+                    </View>
+                  </View>
+                  <Image source={{ uri: item.workout.image_url }} style={styles.feedImage} />
+                  {item.workout.caption ? (
+                    <ThemedText style={[styles.feedCaption, { color: colors.text }]}>
+                      {item.workout.caption}
+                    </ThemedText>
+                  ) : null}
+                </View>
+              ))}
+            </View>
+          )}
+        </View>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  scrollView: {
-    flex: 1,
-  },
-  content: {
-    padding: 20,
-    paddingBottom: 40,
-  },
-  header: {
-    marginBottom: 24,
-  },
-  greeting: {
-    marginBottom: 4,
-  },
-  subtitle: {
-    opacity: 0.8,
-  },
-  card: {
-    padding: 20,
-    borderRadius: 16,
-    marginBottom: 24,
-  },
-  cardTitle: {
-    marginBottom: 8,
-  },
-  cardText: {
-    opacity: 0.9,
-    lineHeight: 22,
-  },
-  section: {
-    marginBottom: 24,
-  },
-  sectionTitle: {
-    marginBottom: 12,
-  },
-  quickActions: {
+  safe: { flex: 1 },
+  scrollView: { flex: 1 },
+  content: { padding: 20, paddingBottom: 40 },
+
+  // Header
+  headerRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
+  greeting: { fontSize: 28, fontWeight: '800' },
+  headerSub: { fontSize: 14, marginTop: 2 },
+
+  // Streak banner
+  streakBanner: {
     flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderRadius: 16,
+    marginBottom: 20,
     gap: 12,
   },
-  actionCard: {
+  streakText: { flex: 1 },
+  streakValue: { fontSize: 17 },
+  streakHint: { fontSize: 13, marginTop: 2 },
+
+  // Quick actions — pill buttons
+  quickActions: { flexDirection: 'row', gap: 10, marginBottom: 24 },
+  actionPill: {
     flex: 1,
-    padding: 16,
-    borderRadius: 12,
-    borderWidth: 1,
-  },
-  actionHint: {
-    marginTop: 4,
-    fontSize: 12,
-    opacity: 0.7,
-  },
-  todaySection: {},
-  todayCard: {
-    borderRadius: 16,
-    overflow: 'hidden',
-  },
-  todayImage: {
-    width: '100%',
-    aspectRatio: 1,
-  },
-  todayCaption: {
-    padding: 16,
-    fontSize: 14,
-  },
-  feedSubtitle: {
-    fontSize: 14,
-    marginBottom: 12,
-  },
-  feedPlaceholder: {
-    padding: 24,
-    borderRadius: 14,
-    borderWidth: 1,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 100,
+    gap: 6,
+    paddingVertical: 14,
+    borderRadius: 999,
   },
-  feedEmpty: {
-    textAlign: 'center',
-    fontSize: 14,
-  },
-  feedList: {
-    gap: 16,
-  },
-  feedCard: {
-    borderRadius: 16,
-    overflow: 'hidden',
+  actionPillOutline: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 14,
+    borderRadius: 999,
     borderWidth: 1,
   },
+  actionPillPressed: { opacity: 0.8 },
+  actionPillText: { color: '#fff', fontSize: 14, fontWeight: '600' },
+  actionPillTextOutline: { fontSize: 14, fontWeight: '600' },
+
+  // Sections
+  section: { marginBottom: 24 },
+  sectionTitle: { fontSize: 20, fontWeight: '700', marginBottom: 12 },
+
+  // Today's workout
+  todayCard: { borderRadius: 20, overflow: 'hidden' },
+  todayImage: { width: '100%', aspectRatio: 1 },
+  captionRow: { padding: 14 },
+  todayCaption: { fontSize: 15, lineHeight: 22 },
+
+  // Empty state
+  emptyCard: {
+    padding: 32,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyText: { textAlign: 'center', fontSize: 14, lineHeight: 22 },
+
+  // Feed
+  feedList: { gap: 16 },
+  feedCard: { borderRadius: 20, overflow: 'hidden' },
   feedCardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 12,
+    padding: 14,
   },
   feedAvatar: {
     width: 40,
@@ -292,31 +304,11 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     marginRight: 12,
   },
-  feedAvatarImage: {
-    width: 40,
-    height: 40,
-  },
-  feedAvatarInitials: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  feedCardMeta: {
-    flex: 1,
-  },
-  feedName: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  feedDate: {
-    fontSize: 13,
-    marginTop: 2,
-  },
-  feedImage: {
-    width: '100%',
-    aspectRatio: 1,
-  },
-  feedCaption: {
-    padding: 12,
-    fontSize: 15,
-  },
+  feedAvatarImage: { width: 40, height: 40 },
+  feedAvatarInitials: { fontSize: 14, fontWeight: '600' },
+  feedCardMeta: { flex: 1 },
+  feedName: { fontSize: 15 },
+  feedDate: { fontSize: 12, marginTop: 1 },
+  feedImage: { width: '100%', aspectRatio: 1 },
+  feedCaption: { padding: 14, fontSize: 15, lineHeight: 22 },
 });
