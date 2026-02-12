@@ -14,13 +14,29 @@ import { supabase } from '@/lib/supabase';
 import type { Workout } from '@/types/workout';
 
 function formatFeedDate(workoutDate: string): string {
-  const d = new Date(workoutDate + 'Z');
+  // workout_date comes from Supabase as 'YYYY-MM-DD'
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(workoutDate);
+  if (!match) return '';
+  const year = Number(match[1]);
+  const monthIndex = Number(match[2]) - 1; // 0-based
+  const day = Number(match[3]);
+
+  // Construct using year/month/day to avoid string parsing issues that can yield Invalid Date
+  const d = new Date(year, monthIndex, day);
+  if (Number.isNaN(d.getTime())) return '';
+
   const today = new Date();
-  const isToday = d.toDateString() === today.toDateString();
-  if (isToday) return 'Today';
+  const sameDay = (a: Date, b: Date) =>
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate();
+
+  if (sameDay(d, today)) return 'Today';
+
   const yesterday = new Date(today);
   yesterday.setDate(yesterday.getDate() - 1);
-  if (d.toDateString() === yesterday.toDateString()) return 'Yesterday';
+  if (sameDay(d, yesterday)) return 'Yesterday';
+
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 

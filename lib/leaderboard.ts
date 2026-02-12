@@ -1,4 +1,8 @@
+import { getFriends } from '@/lib/friends'
+import { getGroupMemberIds, getGroupPeerIds } from '@/lib/groups'
 import { supabase } from '@/lib/supabase'
+
+export type LeaderboardScope = 'global' | 'friends' | 'groups'
 
 /** Weights for unified points (adjust to tune leaderboard) */
 const POINTS = {
@@ -79,9 +83,25 @@ function computeStreak(workoutDates: string[], dateEnd: string): number {
 /** Fetch leaderboard for the current month (resets every month). Returns top 50 + current user's row if not in top. */
 export async function getLeaderboard(
   limit = 50,
-  currentUserId?: string
+  currentUserId?: string,
+  scope: LeaderboardScope = 'global',
+  groupIdForScope?: string
 ): Promise<{ rows: LeaderboardRow[]; myRow?: LeaderboardRow }> {
   const { dateStart, dateEnd, tsStart, tsEnd } = getMonthBounds()
+
+  let allowedIds: Set<string> | null = null
+  if (scope === 'friends' && currentUserId) {
+    const friends = await getFriends(currentUserId)
+    allowedIds = new Set([currentUserId, ...friends.map((f) => f.id)])
+  } else if (scope === 'groups') {
+    if (groupIdForScope) {
+      const memberIds = await getGroupMemberIds(groupIdForScope)
+      allowedIds = memberIds.length ? new Set(memberIds) : new Set()
+    } else if (currentUserId) {
+      const peerIds = await getGroupPeerIds(currentUserId)
+      allowedIds = new Set(peerIds)
+    }
+  }
 
   const [workoutsRes, groupMembersRes, friendshipsRes] = await Promise.all([
     supabase
@@ -155,9 +175,12 @@ export async function getLeaderboard(
   })
 
   rows.sort((a, b) => b.points - a.points)
-  const ranked = rows.map((r, i) => ({ ...r, rank: i + 1 })) as LeaderboardRow[]
+  let ranked = rows.map((r, i) => ({ ...r, rank: i + 1 })) as LeaderboardRow[]
+  if (allowedIds?.size) {
+    ranked = ranked.filter((r) => allowedIds!.has(r.id))
+    ranked = ranked.map((r, i) => ({ ...r, rank: i + 1 }))
+  }
   const top = ranked.slice(0, limit)
-
   const myRow = currentUserId ? ranked.find((r) => r.id === currentUserId) : undefined
   return { rows: top, myRow }
 }

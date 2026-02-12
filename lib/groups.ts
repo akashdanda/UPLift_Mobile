@@ -3,6 +3,32 @@ import type { Group } from '@/types/group'
 
 export type GroupWithMeta = Group & { member_count?: number }
 
+/** User IDs that share at least one group with the given user (including the user) */
+export async function getGroupPeerIds(userId: string): Promise<string[]> {
+  const { data: myMemberships } = await supabase
+    .from('group_members')
+    .select('group_id')
+    .eq('user_id', userId)
+  if (!myMemberships?.length) return [userId]
+  const groupIds = myMemberships.map((m) => m.group_id)
+  const { data: members } = await supabase
+    .from('group_members')
+    .select('user_id')
+    .in('group_id', groupIds)
+  const ids = [...new Set((members ?? []).map((m) => m.user_id))]
+  return ids.length ? ids : [userId]
+}
+
+/** User IDs in a specific group (members of that group) */
+export async function getGroupMemberIds(groupId: string): Promise<string[]> {
+  const { data: members } = await supabase
+    .from('group_members')
+    .select('user_id')
+    .eq('group_id', groupId)
+  const ids = [...new Set((members ?? []).map((m) => m.user_id))]
+  return ids
+}
+
 /** Groups the user is a member of */
 export async function getMyGroups(userId: string): Promise<GroupWithMeta[]> {
   const { data: memberships } = await supabase
