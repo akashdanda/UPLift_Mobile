@@ -1,13 +1,44 @@
-import { StyleSheet, ScrollView, View } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
+import { router } from 'expo-router';
+import { useCallback, useState } from 'react';
+import { Image } from 'expo-image';
+import { Pressable, StyleSheet, ScrollView, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
+import { useAuthContext } from '@/hooks/use-auth-context';
+import { useColorScheme } from '@/hooks/use-color-scheme';
+import { supabase } from '@/lib/supabase';
+import type { Workout } from '@/types/workout';
+
+function getTodayLocalDate(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
 
 export default function HomeScreen() {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
+  const { session } = useAuthContext();
+  const [todayWorkout, setTodayWorkout] = useState<Workout | null>(null);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!session) {
+        setTodayWorkout(null);
+        return;
+      }
+      const today = getTodayLocalDate();
+      supabase
+        .from('workouts')
+        .select('*')
+        .eq('user_id', session.user.id)
+        .eq('workout_date', today)
+        .maybeSingle()
+        .then(({ data }) => setTodayWorkout((data as Workout) ?? null));
+    }, [session])
+  );
 
   return (
     <ScrollView
@@ -36,16 +67,35 @@ export default function HomeScreen() {
           Quick actions
         </ThemedText>
         <View style={styles.quickActions}>
-          <ThemedView style={[styles.actionCard, { borderColor: colors.tint + '40' }]}>
+          <Pressable
+            style={[styles.actionCard, { borderColor: colors.tint + '40' }]}
+            onPress={() => router.push('/log-workout')}
+          >
             <ThemedText type="defaultSemiBold">Log workout</ThemedText>
-            <ThemedText style={styles.actionHint}>Track your session</ThemedText>
-          </ThemedView>
+            <ThemedText style={styles.actionHint}>
+              {todayWorkout ? "Today's logged ✓" : 'Take a photo, post once a day'}
+            </ThemedText>
+          </Pressable>
           <ThemedView style={[styles.actionCard, { borderColor: colors.tint + '40' }]}>
             <ThemedText type="defaultSemiBold">Active challenges</ThemedText>
             <ThemedText style={styles.actionHint}>See leaderboard</ThemedText>
           </ThemedView>
         </View>
       </ThemedView>
+
+      {todayWorkout && (
+        <ThemedView style={[styles.section, styles.todaySection]}>
+          <ThemedText type="subtitle" style={styles.sectionTitle}>
+            Today&apos;s workout
+          </ThemedText>
+          <View style={[styles.todayCard, { backgroundColor: colors.card }]}>
+            <Image source={{ uri: todayWorkout.image_url }} style={styles.todayImage} />
+            {todayWorkout.caption ? (
+              <ThemedText style={[styles.todayCaption, { color: colors.textMuted }]}>{todayWorkout.caption}</ThemedText>
+            ) : null}
+          </View>
+        </ThemedView>
+      )}
 
       <ThemedView style={styles.section}>
         <ThemedText type="subtitle" style={styles.sectionTitle}>
@@ -108,6 +158,19 @@ const styles = StyleSheet.create({
     marginTop: 4,
     fontSize: 12,
     opacity: 0.7,
+  },
+  todaySection: {},
+  todayCard: {
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  todayImage: {
+    width: '100%',
+    aspectRatio: 1,
+  },
+  todayCaption: {
+    padding: 16,
+    fontSize: 14,
   },
   feedPlaceholder: {
     padding: 24,

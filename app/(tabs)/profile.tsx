@@ -121,6 +121,12 @@ export default function ProfileScreen() {
             >
               <ThemedText style={[styles.menuItem, { color: colors.text }]}>Settings</ThemedText>
             </Pressable>
+            <Pressable
+              style={[styles.menuItemWrap, styles.menuItemBorder]}
+              onPress={() => router.push('/friends')}
+            >
+              <ThemedText style={[styles.menuItem, { color: colors.text }]}>Friends</ThemedText>
+            </Pressable>
             <View style={styles.menuItemWrap}>
               <ThemedText style={[styles.menuItem, { color: colors.textMuted }]}>Notifications</ThemedText>
               <ThemedText style={[styles.menuItemHint, { color: colors.textMuted }]}>In Settings</ThemedText>
