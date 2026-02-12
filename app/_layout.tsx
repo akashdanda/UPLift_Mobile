@@ -22,7 +22,9 @@ function RootNavigator() {
         <Stack.Screen name="edit-profile" options={{ title: 'Edit profile', presentation: 'modal' }} />
         <Stack.Screen name="log-workout" options={{ title: 'Log workout', presentation: 'modal' }} />
         <Stack.Screen name="friends" options={{ title: 'Friends' }} />
+        <Stack.Screen name="friend-profile" options={{ title: 'Profile', presentation: 'modal' }} />
         <Stack.Screen name="create-group" options={{ title: 'Create group', presentation: 'modal' }} />
+        <Stack.Screen name="group-detail" options={{ title: 'Group' }} />
         <Stack.Screen name="settings" options={{ title: 'Settings' }} />
       </Stack.Protected>
       <Stack.Protected guard={!isLoggedIn}>

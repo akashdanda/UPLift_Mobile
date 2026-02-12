@@ -1,9 +1,15 @@
-import Ionicons from '@expo/vector-icons/Ionicons'
-import { useFocusEffect } from '@react-navigation/native'
 import { Image } from 'expo-image'
-import { router } from 'expo-router'
+import { useLocalSearchParams } from 'expo-router'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Dimensions, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native'
+import {
+  ActivityIndicator,
+  Dimensions,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  View,
+} from 'react-native'
 import { Gesture, GestureDetector } from 'react-native-gesture-handler'
 import Animated, {
   useAnimatedStyle,
@@ -13,63 +19,34 @@ import Animated, {
 } from 'react-native-reanimated'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
-import SignOutButton from '@/components/social-auth-buttons/sign-out-button'
 import { ThemedText } from '@/components/themed-text'
 import { ThemedView } from '@/components/themed-view'
 import { Colors } from '@/constants/theme'
-import { useAuthContext } from '@/hooks/use-auth-context'
 import { useColorScheme } from '@/hooks/use-color-scheme'
 import { supabase } from '@/lib/supabase'
+import type { Profile } from '@/types/profile'
 
-function getDisplayName(session: { user: { user_metadata?: { full_name?: string }; email?: string } }): string {
-  const name = session.user.user_metadata?.full_name
-  if (name && typeof name === 'string') return name
-  const email = session.user.email
-  if (email) return email.split('@')[0] ?? email
-  return 'Athlete'
-}
-
-function getAvatarUrl(
-  profile: { avatar_url?: string | null } | null,
-  session: { user: { user_metadata?: { avatar_url?: string }; email?: string } } | null
-): string | null {
-  if (profile?.avatar_url) return profile.avatar_url
-  if (session?.user?.user_metadata?.avatar_url) return session.user.user_metadata.avatar_url
-  return null
-}
-
-function getInitials(
-  displayName: string,
-  session: { user: { user_metadata?: { full_name?: string }; email?: string } } | null
-): string {
-  if (displayName && displayName !== '—') {
+function getInitials(displayName: string | null): string {
+  if (displayName?.trim()) {
     const parts = displayName.trim().split(/\s+/)
     if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
     if (parts[0]?.length >= 2) return parts[0].slice(0, 2).toUpperCase()
     if (parts[0]?.[0]) return parts[0][0].toUpperCase()
   }
-  if (session?.user?.email) return session.user.email.slice(0, 2).toUpperCase()
   return '?'
 }
 
-const MENU_ITEMS = [
-  { label: 'Edit profile', icon: 'person-outline' as const, route: '/edit-profile' },
-  { label: 'Friends', icon: 'people-outline' as const, route: '/friends' },
-  { label: 'Settings', icon: 'settings-outline' as const, route: '/settings' },
-]
-
-export default function ProfileScreen() {
-  const { session, profile } = useAuthContext()
+export default function FriendProfileScreen() {
+  const { id } = useLocalSearchParams<{ id: string }>()
   const colorScheme = useColorScheme()
   const colors = Colors[colorScheme ?? 'light']
 
-  const avatarUrl = getAvatarUrl(profile, session)
-  const [avatarLoadError, setAvatarLoadError] = useState(false)
-  const [isImageModalVisible, setIsImageModalVisible] = useState(false)
-  const showAvatarImage = avatarUrl && !avatarLoadError
-
+  const [profile, setProfile] = useState<Profile | null>(null)
+  const [loading, setLoading] = useState(true)
   const [monthWorkoutDates, setMonthWorkoutDates] = useState<Set<string>>(new Set())
+  const [isImageModalVisible, setIsImageModalVisible] = useState(false)
 
+  // Calendar calculations
   const today = useMemo(() => new Date(), [])
   const todayDateString = useMemo(() => {
     const y = today.getFullYear()
@@ -77,14 +54,10 @@ export default function ProfileScreen() {
     const d = String(today.getDate()).padStart(2, '0')
     return `${y}-${m}-${d}`
   }, [today])
-  const signupDateString = useMemo(() => {
-    if (!profile?.created_at) return null
-    return profile.created_at.slice(0, 10)
-  }, [profile?.created_at])
   const year = today.getFullYear()
-  const month = today.getMonth() // 0-11
+  const month = today.getMonth()
   const daysInMonth = new Date(year, month + 1, 0).getDate()
-  const firstDayOfWeek = new Date(year, month, 1).getDay() // 0-6 Sun-Sat
+  const firstDayOfWeek = new Date(year, month, 1).getDay()
   const monthLabel = useMemo(
     () =>
       new Intl.DateTimeFormat('en-US', {
@@ -94,9 +67,14 @@ export default function ProfileScreen() {
     [today]
   )
 
-  // Fetch workouts for current month for calendar
+  const signupDateString = useMemo(() => {
+    if (!profile?.created_at) return null
+    return profile.created_at.slice(0, 10)
+  }, [profile?.created_at])
+
+  // Fetch friend's workouts for the calendar
   const fetchMonthWorkouts = useCallback(async () => {
-    if (!session) return
+    if (!id) return
     const y = year
     const m = String(month + 1).padStart(2, '0')
     const start = `${y}-${m}-01`
@@ -105,7 +83,7 @@ export default function ProfileScreen() {
     const { data, error } = await supabase
       .from('workouts')
       .select('workout_date')
-      .eq('user_id', session.user.id)
+      .eq('user_id', id)
       .gte('workout_date', start)
       .lte('workout_date', end)
 
@@ -119,37 +97,40 @@ export default function ProfileScreen() {
       }
     }
     setMonthWorkoutDates(dates)
-  }, [session, year, month, daysInMonth])
+  }, [id, year, month, daysInMonth])
 
+  // Fetch profile
+  useEffect(() => {
+    if (!id) {
+      setLoading(false)
+      return
+    }
+    let cancelled = false
+    ;(async () => {
+      const { data, error } = await supabase.from('profiles').select('*').eq('id', id).single()
+      if (cancelled) return
+      if (error || !data) {
+        setProfile(null)
+      } else {
+        setProfile(data as Profile)
+      }
+      setLoading(false)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [id])
+
+  // Fetch workouts once profile is loaded
   useEffect(() => {
     void fetchMonthWorkouts()
   }, [fetchMonthWorkouts])
 
-  // Refresh calendar when screen comes into focus (e.g., after posting a workout)
-  useFocusEffect(
-    useCallback(() => {
-      void fetchMonthWorkouts()
-    }, [fetchMonthWorkouts])
-  )
+  const displayName = profile?.display_name || 'Athlete'
+  const initials = useMemo(() => getInitials(profile?.display_name ?? null), [profile?.display_name])
+  const showAvatarImage = !!profile?.avatar_url
 
-  useEffect(() => {
-    setAvatarLoadError(false)
-  }, [avatarUrl])
-
-  const displayName =
-    (profile?.display_name && profile.display_name.trim()) ||
-    (session ? getDisplayName(session) : '—')
-  const email = session?.user?.email ?? '—'
-  const initials = getInitials(displayName, session)
-
-  const stats = [
-    { value: profile?.workouts_count ?? 0, label: 'Workouts', color: colors.tint },
-    { value: profile?.streak ?? 0, label: 'Streak', color: colors.warm },
-    { value: profile?.groups_count ?? 0, label: 'Groups', color: colors.tint },
-    { value: profile?.friends_count ?? 0, label: 'Friends', color: colors.tint },
-  ]
-
-  // Zoom modal state (avatar pinch-to-zoom)
+  // Zoom modal state
   const scale = useSharedValue(1)
   const savedScale = useSharedValue(1)
 
@@ -166,9 +147,11 @@ export default function ProfileScreen() {
       savedScale.value = scale.value
     })
 
-  const animatedImageStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }))
+  const animatedImageStyle = useAnimatedStyle(() => {
+    return {
+      transform: [{ scale: scale.value }],
+    }
+  })
 
   const handleOpenModal = () => {
     if (showAvatarImage) {
@@ -184,22 +167,39 @@ export default function ProfileScreen() {
     savedScale.value = 1
   }
 
+  if (loading) {
+    return (
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['bottom']}>
+        <View style={styles.centered}>
+          <ActivityIndicator size="large" color={colors.tint} />
+        </View>
+      </SafeAreaView>
+    )
+  }
+
+  if (!profile) {
+    return (
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['bottom']}>
+        <View style={styles.centered}>
+          <ThemedText style={{ color: colors.textMuted }}>Profile not found.</ThemedText>
+        </View>
+      </SafeAreaView>
+    )
+  }
+
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['bottom']}>
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
+        {/* Header: Avatar, Name, Bio */}
         <ThemedView style={styles.header}>
           <Pressable onPress={handleOpenModal} disabled={!showAvatarImage}>
             <View style={[styles.avatarWrap, { backgroundColor: colors.tint + '25' }]}>
               {showAvatarImage ? (
-                <Image
-                  source={{ uri: avatarUrl! }}
-                  style={styles.avatarImage}
-                  onError={() => setAvatarLoadError(true)}
-                />
+                <Image source={{ uri: profile.avatar_url! }} style={styles.avatarImage} />
               ) : (
                 <ThemedText style={[styles.avatarInitials, { color: colors.tint }]}>{initials}</ThemedText>
               )}
@@ -208,12 +208,12 @@ export default function ProfileScreen() {
           <ThemedText type="title" style={[styles.displayName, { color: colors.text }]}>
             {displayName}
           </ThemedText>
-          <ThemedText style={[styles.email, { color: colors.textMuted }]}>{email}</ThemedText>
-          {profile?.bio ? (
+          {profile.bio && (
             <ThemedText style={[styles.bio, { color: colors.textMuted }]}>{profile.bio}</ThemedText>
-          ) : null}
+          )}
         </ThemedView>
 
+        {/* Activity Calendar */}
         <ThemedView style={styles.section}>
           <ThemedText type="subtitle" style={[styles.sectionTitle, { color: colors.text }]}>
             Activity
@@ -287,15 +287,29 @@ export default function ProfileScreen() {
           </View>
         </ThemedView>
 
+        {/* Stats */}
         <View style={styles.statsRow}>
-          {stats.map((s) => (
-            <View key={s.label} style={[styles.statBox, { backgroundColor: colors.card }]}>
-              <ThemedText style={[styles.statValue, { color: s.color }]}>{s.value}</ThemedText>
-              <ThemedText style={[styles.statLabel, { color: colors.textMuted }]}>{s.label}</ThemedText>
-            </View>
-          ))}
+          <View style={[styles.statBox, { backgroundColor: colors.card }]}>
+            <ThemedText type="defaultSemiBold" style={[styles.statValue, { color: colors.tint }]}>
+              {profile.workouts_count ?? 0}
+            </ThemedText>
+            <ThemedText style={[styles.statLabel, { color: colors.textMuted }]}>Workouts</ThemedText>
+          </View>
+          <View style={[styles.statBox, { backgroundColor: colors.card }]}>
+            <ThemedText type="defaultSemiBold" style={[styles.statValue, { color: colors.tint }]}>
+              {profile.streak ?? 0}
+            </ThemedText>
+            <ThemedText style={[styles.statLabel, { color: colors.textMuted }]}>Streak</ThemedText>
+          </View>
+          <View style={[styles.statBox, { backgroundColor: colors.card }]}>
+            <ThemedText type="defaultSemiBold" style={[styles.statValue, { color: colors.tint }]}>
+              {profile.groups_count ?? 0}
+            </ThemedText>
+            <ThemedText style={[styles.statLabel, { color: colors.textMuted }]}>Groups</ThemedText>
+          </View>
         </View>
 
+        {/* Badges */}
         <ThemedView style={styles.section}>
           <ThemedText type="subtitle" style={[styles.sectionTitle, { color: colors.text }]}>
             Badges
@@ -306,30 +320,12 @@ export default function ProfileScreen() {
             </ThemedText>
           </View>
         </ThemedView>
-
-        <View style={[styles.menuCard, { backgroundColor: colors.card }]}>
-          {MENU_ITEMS.map((item, i) => (
-            <Pressable
-              key={item.label}
-              style={[
-                styles.menuItemWrap,
-                i < MENU_ITEMS.length - 1 && [styles.menuItemBorder, { borderBottomColor: colors.tabBarBorder }],
-              ]}
-              onPress={() => router.push(item.route as any)}
-            >
-              <Ionicons name={item.icon} size={20} color={colors.textMuted} style={{ marginRight: 14 }} />
-              <ThemedText style={[styles.menuItem, { color: colors.text }]}>{item.label}</ThemedText>
-              <Ionicons name="chevron-forward" size={18} color={colors.textMuted} style={{ marginLeft: 'auto' }} />
-            </Pressable>
-          ))}
-        </View>
-
-        <SignOutButton />
       </ScrollView>
 
+      {/* Photo zoom modal */}
       <Modal
         visible={isImageModalVisible}
-        transparent
+        transparent={true}
         animationType="fade"
         onRequestClose={handleCloseModal}
       >
@@ -340,7 +336,7 @@ export default function ProfileScreen() {
                 <Animated.View style={[styles.zoomedImageContainer, animatedImageStyle]}>
                   {showAvatarImage && (
                     <Image
-                      source={{ uri: avatarUrl! }}
+                      source={{ uri: profile.avatar_url! }}
                       style={styles.zoomedImage}
                       contentFit="cover"
                     />
@@ -356,24 +352,46 @@ export default function ProfileScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  scrollView: { flex: 1 },
-  scrollContent: { padding: 24, paddingBottom: 40 },
-
-  header: { alignItems: 'center', marginBottom: 24 },
+  container: {
+    flex: 1,
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    padding: 24,
+    paddingBottom: 40,
+  },
+  centered: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  header: {
+    alignItems: 'center',
+    marginBottom: 28,
+  },
   avatarWrap: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
+    width: 88,
+    height: 88,
+    borderRadius: 44,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 14,
+    marginBottom: 12,
     overflow: 'hidden',
   },
-  avatarImage: { width: 96, height: 96 },
-  avatarInitials: { fontSize: 34, fontWeight: '700' },
-  displayName: { fontSize: 24, fontWeight: '800', textAlign: 'center', marginBottom: 4 },
-  email: { fontSize: 14 },
+  avatarImage: {
+    width: 88,
+    height: 88,
+  },
+  avatarInitials: {
+    fontSize: 32,
+    fontWeight: '600',
+  },
+  displayName: {
+    marginBottom: 4,
+    textAlign: 'center',
+  },
   bio: {
     fontSize: 15,
     textAlign: 'center',
@@ -381,34 +399,32 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     lineHeight: 20,
   },
-
-  statsRow: { flexDirection: 'row', gap: 10, marginBottom: 24 },
+  section: {
+    marginBottom: 24,
+  },
+  sectionTitle: {
+    marginBottom: 12,
+  },
+  statsRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 28,
+  },
   statBox: {
     flex: 1,
-    paddingVertical: 14,
-    borderRadius: 16,
-    alignItems: 'center',
-  },
-  statValue: { fontSize: 26, fontWeight: '800' },
-  statLabel: { marginTop: 2, fontSize: 11, opacity: 0.7 },
-
-  section: { marginBottom: 24 },
-  sectionTitle: { marginBottom: 12 },
-  badgesContainer: {
+    padding: 16,
     borderRadius: 14,
-    borderWidth: 1,
-    padding: 20,
-    minHeight: 100,
     alignItems: 'center',
-    justifyContent: 'center',
+    borderWidth: 1,
   },
-  emptyBadgesText: { fontSize: 14, textAlign: 'center', lineHeight: 20 },
-
-  menuCard: { borderRadius: 16, overflow: 'hidden', marginBottom: 24 },
-  menuItemWrap: { flexDirection: 'row', alignItems: 'center', padding: 16 },
-  menuItem: { fontSize: 16 },
-  menuItemBorder: { borderBottomWidth: StyleSheet.hairlineWidth },
-
+  statValue: {
+    fontSize: 24,
+  },
+  statLabel: {
+    marginTop: 4,
+    fontSize: 12,
+  },
+  // Calendar styles
   calendarCard: {
     borderRadius: 14,
     borderWidth: 1,
@@ -478,6 +494,21 @@ const styles = StyleSheet.create({
   calendarLegendLabel: {
     fontSize: 12,
   },
+  // Badges
+  badgesContainer: {
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 20,
+    minHeight: 100,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyBadgesText: {
+    fontSize: 14,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  // Photo zoom modal
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.9)',
@@ -490,7 +521,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  zoomedImageContainer: { justifyContent: 'center', alignItems: 'center' },
+  zoomedImageContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   zoomedImage: {
     width: Dimensions.get('window').width * 0.8,
     height: Dimensions.get('window').width * 0.8,

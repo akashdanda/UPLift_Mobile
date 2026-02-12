@@ -1,6 +1,6 @@
 import Ionicons from '@expo/vector-icons/Ionicons'
 import { useFocusEffect } from '@react-navigation/native'
-import { router } from 'expo-router'
+import { type Href, router } from 'expo-router'
 import { useCallback, useState } from 'react'
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
@@ -160,7 +160,10 @@ export default function GroupsScreen() {
           <>
             {g.created_by === userId && (
               <Pressable
-                onPress={() => handleDelete(g)}
+                onPress={(e) => {
+                  e.stopPropagation()
+                  handleDelete(g)
+                }}
                 disabled={actingId === g.id}
                 hitSlop={8}
               >
@@ -169,7 +172,10 @@ export default function GroupsScreen() {
             )}
             <Pressable
               style={[styles.leaveButton, { backgroundColor: colors.cardElevated }]}
-              onPress={() => handleLeave(g)}
+              onPress={(e) => {
+                e.stopPropagation()
+                handleLeave(g)
+              }}
               disabled={actingId === g.id}
             >
               <ThemedText style={[styles.leaveButtonText, { color: colors.textMuted }]}>Leave</ThemedText>
@@ -294,7 +300,14 @@ export default function GroupsScreen() {
             </View>
           ) : (
             <View style={styles.list}>
-              {myGroups.map((g) => renderGroupCard(g, 'my'))}
+              {myGroups.map((g) => (
+                <Pressable
+                  key={g.id}
+                  onPress={() => router.push(`/group-detail?id=${g.id}` as Href)}
+                >
+                  {renderGroupCard(g, 'my')}
+                </Pressable>
+              ))}
             </View>
           )}
         </View>
