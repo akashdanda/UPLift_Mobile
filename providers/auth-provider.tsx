@@ -51,6 +51,17 @@ export default function AuthProvider({ children }: PropsWithChildren) {
   const updateProfile = useCallback(
     async (updates: ProfileUpdate) => {
       if (!session) return { error: new Error('Not signed in') }
+      
+      // Check if display_name is being changed and if it's allowed (once per month)
+      if (updates.display_name !== undefined && updates.display_name !== profile?.display_name) {
+        const { data: canChange } = await supabase.rpc('can_change_display_name', {
+          user_id_param: session.user.id,
+        })
+        if (!canChange) {
+          return { error: new Error('Display name can only be changed once per month') }
+        }
+      }
+      
       const { error } = await supabase.from('profiles').upsert(
         { id: session.user.id, ...updates, updated_at: new Date().toISOString() },
         { onConflict: 'id' }
@@ -59,7 +70,7 @@ export default function AuthProvider({ children }: PropsWithChildren) {
       await fetchProfileRef.current()
       return { error: null }
     },
-    [session]
+    [session, profile]
   )
 
   const refreshProfile = useCallback(async () => {

@@ -9,6 +9,7 @@ export type Profile = {
   groups_count: number
   friends_count?: number // added for leaderboard; run run-leaderboard-friends-count-in-dashboard.sql
   notifications_enabled: boolean
+  display_name_changed_at: string | null
   created_at: string
   updated_at: string
 }

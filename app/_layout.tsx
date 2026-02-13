@@ -25,6 +25,9 @@ function RootNavigator() {
         <Stack.Screen name="friend-profile" options={{ title: 'Profile', presentation: 'modal' }} />
         <Stack.Screen name="create-group" options={{ title: 'Create group', presentation: 'modal' }} />
         <Stack.Screen name="group-detail" options={{ title: 'Group' }} />
+        <Stack.Screen name="group-settings" options={{ title: 'Group Settings', presentation: 'modal' }} />
+        <Stack.Screen name="challenge-group" options={{ title: 'Challenge Group', presentation: 'modal' }} />
+        <Stack.Screen name="competition-detail" options={{ title: 'War Details' }} />
         <Stack.Screen name="settings" options={{ title: 'Settings' }} />
       </Stack.Protected>
       <Stack.Protected guard={!isLoggedIn}>

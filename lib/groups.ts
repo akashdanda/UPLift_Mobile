@@ -89,9 +89,9 @@ export async function createGroup(
   userId: string,
   name: string,
   description: string | null,
-  bio: string | null = null,
   tags: string[] = [],
   avatarUrl: string | null = null,
+  location: string | null = null,
   isPublic: boolean = true
 ): Promise<{ group: Group; error: Error | null }> {
   const { data: group, error: groupError } = await supabase
@@ -99,9 +99,9 @@ export async function createGroup(
     .insert({
       name: name.trim(),
       description: description?.trim() || null,
-      bio: bio?.trim() || null,
       tags: tags.length > 0 ? tags : [],
       avatar_url: avatarUrl,
+      location: location?.trim() || null,
       created_by: userId,
       is_public: isPublic,
     })
@@ -114,6 +114,43 @@ export async function createGroup(
   })
   if (memberError) return { group: group as Group, error: memberError as Error }
   return { group: group as Group, error: null }
+}
+
+/** Update a group (only creator can update) */
+export async function updateGroup(
+  groupId: string,
+  userId: string,
+  updates: {
+    name?: string
+    description?: string | null
+    tags?: string[]
+    avatar_url?: string | null
+    location?: string | null
+    is_public?: boolean
+  }
+): Promise<{ error: Error | null }> {
+  // Verify user is creator
+  const { data: group } = await supabase
+    .from('groups')
+    .select('created_by')
+    .eq('id', groupId)
+    .single()
+
+  if (!group || group.created_by !== userId) {
+    return { error: new Error('Only group creator can update the group') }
+  }
+
+  const updateData: any = {}
+  if (updates.name !== undefined) updateData.name = updates.name.trim()
+  if (updates.description !== undefined) updateData.description = updates.description?.trim() || null
+  if (updates.tags !== undefined) updateData.tags = updates.tags.length > 0 ? updates.tags : []
+  if (updates.avatar_url !== undefined) updateData.avatar_url = updates.avatar_url
+  if (updates.location !== undefined) updateData.location = updates.location?.trim() || null
+  if (updates.is_public !== undefined) updateData.is_public = updates.is_public
+
+  const { error } = await supabase.from('groups').update(updateData).eq('id', groupId)
+
+  return { error: error ?? null }
 }
 
 /** Delete a group (only the creator can do this; CASCADE removes members) */
@@ -187,6 +224,19 @@ export async function isMember(userId: string, groupId: string): Promise<boolean
     .eq('user_id', userId)
     .maybeSingle()
   return !!data
+}
+
+/** Get a single group with member count */
+export async function getGroupDetails(groupId: string): Promise<GroupWithMeta | null> {
+  const { data: group } = await supabase.from('groups').select('*').eq('id', groupId).single()
+  if (!group) return null
+
+  const { count } = await supabase
+    .from('group_members')
+    .select('*', { count: 'exact', head: true })
+    .eq('group_id', groupId)
+
+  return { ...(group as Group), member_count: count ?? 0 } as GroupWithMeta
 }
 
 /** Get group members with profiles, sorted by points (rank) */
