@@ -157,7 +157,6 @@ export default function ProfileScreen() {
   const displayName =
     (profile?.display_name && profile.display_name.trim()) ||
     (session ? getDisplayName(session) : '—')
-  const email = session?.user?.email ?? '—'
   const initials = getInitials(displayName, session)
 
   const stats = [
@@ -226,7 +225,6 @@ export default function ProfileScreen() {
           <ThemedText type="title" style={[styles.displayName, { color: colors.text }]}>
             {displayName}
           </ThemedText>
-          <ThemedText style={[styles.email, { color: colors.textMuted }]}>{email}</ThemedText>
           {profile?.bio ? (
             <ThemedText style={[styles.bio, { color: colors.textMuted }]}>{profile.bio}</ThemedText>
           ) : null}
@@ -410,7 +408,6 @@ const styles = StyleSheet.create({
   avatarImage: { width: 96, height: 96 },
   avatarInitials: { fontSize: 34, fontWeight: '700' },
   displayName: { fontSize: 24, fontWeight: '800', textAlign: 'center', marginBottom: 4 },
-  email: { fontSize: 14 },
   bio: {
     fontSize: 15,
     textAlign: 'center',

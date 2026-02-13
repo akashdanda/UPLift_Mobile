@@ -31,8 +31,8 @@ export default function CreateGroupScreen() {
 
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
-  const [bio, setBio] = useState('')
   const [tags, setTags] = useState('')
+  const [location, setLocation] = useState('')
   const [isPublic, setIsPublic] = useState(true)
   const [saving, setSaving] = useState(false)
   const [uploadingPhoto, setUploadingPhoto] = useState(false)
@@ -83,9 +83,9 @@ export default function CreateGroupScreen() {
       session.user.id,
       trimmed,
       description.trim() || null,
-      bio.trim() || null,
       tagsArray,
       avatarUrl,
+      location.trim() || null,
       isPublic
     )
 
@@ -187,22 +187,6 @@ export default function CreateGroupScreen() {
             numberOfLines={2}
             editable={!saving}
           />
-          <ThemedText style={[styles.label, { color: colors.textMuted }]}>Bio (optional)</ThemedText>
-          <TextInput
-            style={[
-              styles.input,
-              styles.inputMultiline,
-              { backgroundColor: colors.card, color: colors.text, borderColor: colors.tabBarBorder },
-            ]}
-            placeholder="Tell us more about this group..."
-            placeholderTextColor={colors.textMuted}
-            value={bio}
-            onChangeText={setBio}
-            multiline
-            numberOfLines={4}
-            textAlignVertical="top"
-            editable={!saving}
-          />
           <ThemedText style={[styles.label, { color: colors.textMuted }]}>Tags (optional)</ThemedText>
           <ThemedText style={[styles.hint, { color: colors.textMuted }]}>
             Separate tags with commas (e.g., fitness, running, morning)
@@ -216,6 +200,18 @@ export default function CreateGroupScreen() {
             placeholderTextColor={colors.textMuted}
             value={tags}
             onChangeText={setTags}
+            editable={!saving}
+          />
+          <ThemedText style={[styles.label, { color: colors.textMuted }]}>Location (optional)</ThemedText>
+          <TextInput
+            style={[
+              styles.input,
+              { backgroundColor: colors.card, color: colors.text, borderColor: colors.tabBarBorder },
+            ]}
+            placeholder="e.g., New York, NY or Champaign, Illinois"
+            placeholderTextColor={colors.textMuted}
+            value={location}
+            onChangeText={setLocation}
             editable={!saving}
           />
           <View style={[styles.toggleRow, { borderColor: colors.tabBarBorder }]}>

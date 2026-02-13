@@ -349,7 +349,10 @@ export default function HomeScreen() {
                   key={item.workout.id}
                   style={[styles.feedCard, { backgroundColor: colors.card }]}
                 >
-                  <View style={styles.feedCardHeader}>
+                  <Pressable
+                    style={styles.feedCardHeader}
+                    onPress={() => router.push(`/friend-profile?id=${item.workout.user_id}`)}
+                  >
                     <View style={[styles.feedAvatar, { backgroundColor: colors.tint + '20' }]}>
                       {item.avatar_url ? (
                         <Image source={{ uri: item.avatar_url }} style={styles.feedAvatarImage} />
@@ -367,7 +370,7 @@ export default function HomeScreen() {
                         {formatFeedDate(item.workout.workout_date)}
                       </ThemedText>
                     </View>
-                  </View>
+                  </Pressable>
                   <Image source={{ uri: item.workout.image_url }} style={styles.feedImage} />
                   {item.workout.caption ? (
                     <ThemedText style={[styles.feedCaption, { color: colors.text }]}>

@@ -1,5 +1,7 @@
+import Ionicons from '@expo/vector-icons/Ionicons'
+import { router } from 'expo-router'
 import { useEffect, useState } from 'react'
-import { ScrollView, StyleSheet, Switch, View } from 'react-native'
+import { Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
 import { ThemedText } from '@/components/themed-text'
@@ -35,9 +37,32 @@ export default function SettingsScreen() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
+        {/* Profile Settings */}
         <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.tabBarBorder }]}>
-          <View style={[styles.row, styles.rowBorder, { borderBottomColor: colors.tabBarBorder }]}>
-            <ThemedText style={[styles.rowLabel, { color: colors.text }]}>Notifications</ThemedText>
+          <Pressable
+            style={[styles.row, styles.rowBorder, { borderBottomColor: colors.tabBarBorder }]}
+            onPress={() => router.push('/edit-profile')}
+          >
+            <View style={styles.rowLeft}>
+              <Ionicons name="person-outline" size={20} color={colors.text} />
+              <ThemedText style={[styles.rowLabel, { color: colors.text, marginLeft: 12 }]}>
+                Edit Profile
+              </ThemedText>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+          </Pressable>
+          <View style={styles.row}>
+            <View style={styles.rowLeft}>
+              <Ionicons name="notifications-outline" size={20} color={colors.text} />
+              <View style={styles.rowLabelContainer}>
+                <ThemedText style={[styles.rowLabel, { color: colors.text, marginLeft: 12 }]}>
+                  Notifications
+                </ThemedText>
+                <ThemedText style={[styles.rowHint, { color: colors.textMuted, marginLeft: 12, marginTop: 2 }]}>
+                  Get notified about challenges and group activity
+                </ThemedText>
+              </View>
+            </View>
             <Switch
               value={notifications}
               onValueChange={handleNotificationsChange}
@@ -46,15 +71,7 @@ export default function SettingsScreen() {
               thumbColor={notifications ? colors.tint : colors.textMuted}
             />
           </View>
-          <View style={styles.row}>
-            <ThemedText style={[styles.rowLabel, { color: colors.text }]}>Push reminders</ThemedText>
-            <ThemedText style={[styles.rowHint, { color: colors.textMuted }]}>Coming soon</ThemedText>
-          </View>
         </View>
-
-        <ThemedText style={[styles.sectionTitle, { color: colors.textMuted }]}>
-          Notifications let you know about challenges and group activity.
-        </ThemedText>
       </ScrollView>
     </SafeAreaView>
   )
@@ -79,7 +96,15 @@ const styles = StyleSheet.create({
   rowBorder: {
     borderBottomWidth: 1,
   },
+  rowLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  rowLabelContainer: {
+    flex: 1,
+  },
   rowLabel: { fontSize: 16 },
-  rowHint: { fontSize: 14 },
+  rowHint: { fontSize: 13 },
   sectionTitle: { fontSize: 13, lineHeight: 20 },
 })

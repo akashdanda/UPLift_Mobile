@@ -18,6 +18,7 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { ThemedText } from '@/components/themed-text'
 import { useAuthContext } from '@/hooks/use-auth-context'
 import { uploadAvatar } from '@/lib/avatar-upload'
+import { supabase } from '@/lib/supabase'
 import { Colors } from '@/constants/theme'
 import { useColorScheme } from '@/hooks/use-color-scheme'
 
@@ -70,6 +71,8 @@ export default function EditProfileScreen() {
   const [bio, setBio] = useState('')
   const [saving, setSaving] = useState(false)
   const [uploadingPhoto, setUploadingPhoto] = useState(false)
+  const [canChangeDisplayName, setCanChangeDisplayName] = useState(true)
+  const [nextChangeDate, setNextChangeDate] = useState<string | null>(null)
   // Show new photo immediately after upload (before profile refetch)
   const [localAvatarUrl, setLocalAvatarUrl] = useState<string | null>(null)
   // When remote image fails to load, show initials instead of blank
@@ -85,6 +88,31 @@ export default function EditProfileScreen() {
     setBio(profile?.bio || '')
     setLocalAvatarUrl(null)
     setAvatarLoadError(false)
+    
+    // Check if display_name can be changed
+    const checkDisplayNameLimit = async () => {
+      if (!session) return
+      try {
+        const { data: canChange } = await supabase.rpc('can_change_display_name', {
+          user_id_param: session.user.id,
+        })
+        setCanChangeDisplayName(canChange ?? true)
+        
+        if (!canChange && profile?.display_name_changed_at) {
+          const lastChanged = new Date(profile.display_name_changed_at)
+          const nextChange = new Date(lastChanged)
+          nextChange.setDate(nextChange.getDate() + 30)
+          setNextChangeDate(nextChange.toLocaleDateString())
+        } else {
+          setNextChangeDate(null)
+        }
+      } catch {
+        setCanChangeDisplayName(true)
+        setNextChangeDate(null)
+      }
+    }
+    
+    void checkDisplayNameLimit()
   }, [session, profile])
 
   // Reset load error when URL changes so we try again
@@ -175,18 +203,35 @@ export default function EditProfileScreen() {
           </View>
 
           <View style={styles.section}>
-            <ThemedText style={[styles.label, { color: colors.textMuted }]}>Display name</ThemedText>
+            <View style={styles.labelRow}>
+              <ThemedText style={[styles.label, { color: colors.textMuted }]}>Display name</ThemedText>
+              {!canChangeDisplayName && nextChangeDate && (
+                <ThemedText style={[styles.limitHint, { color: colors.warm }]}>
+                  Can change on {nextChangeDate}
+                </ThemedText>
+              )}
+            </View>
             <TextInput
               style={[
                 styles.input,
-                { backgroundColor: colors.card, color: colors.text, borderColor: colors.tabBarBorder },
+                {
+                  backgroundColor: colors.card,
+                  color: colors.text,
+                  borderColor: colors.tabBarBorder,
+                  opacity: canChangeDisplayName ? 1 : 0.6,
+                },
               ]}
               placeholder="How you appear in the app"
               placeholderTextColor={colors.textMuted}
               value={displayName}
               onChangeText={setDisplayName}
-              editable={!saving}
+              editable={!saving && canChangeDisplayName}
             />
+            {!canChangeDisplayName && (
+              <ThemedText style={[styles.hint, { color: colors.textMuted }]}>
+                Display name can only be changed once per month
+              </ThemedText>
+            )}
           </View>
           <View style={styles.section}>
             <ThemedText style={[styles.label, { color: colors.textMuted }]}>Full name</ThemedText>
@@ -261,7 +306,15 @@ const styles = StyleSheet.create({
   changePhotoButton: { paddingVertical: 8 },
   changePhotoText: { fontSize: 16, fontWeight: '600' },
   section: { marginBottom: 20 },
-  label: { fontSize: 14, marginBottom: 8 },
+  labelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  label: { fontSize: 14 },
+  limitHint: { fontSize: 12, fontWeight: '600' },
+  hint: { fontSize: 12, marginTop: 6 },
   input: {
     borderWidth: 1,
     borderRadius: 12,
