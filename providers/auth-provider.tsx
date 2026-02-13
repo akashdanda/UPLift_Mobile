@@ -1,7 +1,7 @@
 import { AuthContext } from '@/hooks/use-auth-context'
-import type { Profile, ProfileUpdate } from '@/types/profile'
 import { signInWithGoogle as doSignInWithGoogle } from '@/lib/auth-oauth'
 import { supabase } from '@/lib/supabase'
+import type { Profile, ProfileUpdate } from '@/types/profile'
 import type { Session } from '@supabase/supabase-js'
 import { PropsWithChildren, useCallback, useEffect, useRef, useState } from 'react'
 
@@ -32,15 +32,26 @@ export default function AuthProvider({ children }: PropsWithChildren) {
   const fetchProfile = useCallback(async () => {
     if (!session) return
     try {
-      // Check and reset streak if no workout today
-      await supabase.rpc('check_and_reset_streak', { user_id_param: session.user.id })
-      
       const { data } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', session.user.id)
         .single()
-      setProfile((data as Profile) ?? null)
+      const profileData = data as Profile | null
+      if (!profileData) {
+        setProfile(null)
+        return
+      }
+      // Compute streak from workout history using client's local "today" (avoids UTC vs local bug)
+      const now = new Date()
+      const refDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+      const { data: streakData } = await supabase.rpc('get_current_streak', {
+        user_id_param: session.user.id,
+        reference_date: refDate,
+      })
+      const raw = Array.isArray(streakData) ? streakData?.[0] : streakData
+      const streak = typeof raw === 'number' ? raw : (profileData.streak ?? 0)
+      setProfile({ ...profileData, streak })
     } catch {
       setProfile(null)
     }
@@ -101,15 +112,25 @@ export default function AuthProvider({ children }: PropsWithChildren) {
     let cancelled = false
     void (async () => {
       try {
-        // Check and reset streak if no workout today
-        await supabase.rpc('check_and_reset_streak', { user_id_param: session.user.id })
-        
         const { data } = await supabase
           .from('profiles')
           .select('*')
           .eq('id', session.user.id)
           .single()
-        if (!cancelled) setProfile((data as Profile) ?? null)
+        const profileData = data as Profile | null
+        if (!cancelled && profileData) {
+          const now = new Date()
+          const refDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+          const { data: streakData } = await supabase.rpc('get_current_streak', {
+            user_id_param: session.user.id,
+            reference_date: refDate,
+          })
+          const raw = Array.isArray(streakData) ? streakData?.[0] : streakData
+          const streak = typeof raw === 'number' ? raw : (profileData.streak ?? 0)
+          setProfile({ ...profileData, streak })
+        } else if (!cancelled) {
+          setProfile(null)
+        }
       } catch {
         if (!cancelled) setProfile(null)
       }

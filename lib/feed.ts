@@ -1,11 +1,17 @@
+import { getCommentsForWorkouts } from '@/lib/comments'
 import { getFriends } from '@/lib/friends'
+import { getReactionsForWorkouts } from '@/lib/reactions'
 import { supabase } from '@/lib/supabase'
+import type { WorkoutCommentWithProfile } from '@/types/comment'
+import type { WorkoutReactionWithProfile } from '@/types/reaction'
 import type { Workout } from '@/types/workout'
 
 export type FeedItem = {
   workout: Workout
   display_name: string | null
   avatar_url: string | null
+  reactions?: WorkoutReactionWithProfile[]
+  comments?: WorkoutCommentWithProfile[]
 }
 
 /** Fetch friends' workouts (most recent first), for the feed below the user's own workout */
@@ -32,7 +38,7 @@ export async function getFriendsWorkouts(userId: string, limit = 30): Promise<Fe
 
   const profileMap = new Map((profiles ?? []).map((p: { id: string; display_name: string | null; avatar_url: string | null }) => [p.id, p]))
 
-  return (workouts as Workout[]).map((workout) => {
+  const items: FeedItem[] = (workouts as Workout[]).map((workout) => {
     const p = profileMap.get(workout.user_id)
     return {
       workout,
@@ -40,4 +46,15 @@ export async function getFriendsWorkouts(userId: string, limit = 30): Promise<Fe
       avatar_url: p?.avatar_url ?? null,
     }
   })
+
+  const workoutIds = items.map((i) => i.workout.id)
+  const [reactionsMap, commentsMap] = await Promise.all([
+    getReactionsForWorkouts(workoutIds),
+    getCommentsForWorkouts(workoutIds),
+  ])
+  return items.map((item) => ({
+    ...item,
+    reactions: reactionsMap.get(item.workout.id) ?? [],
+    comments: commentsMap.get(item.workout.id) ?? [],
+  }))
 }

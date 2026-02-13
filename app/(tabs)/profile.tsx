@@ -70,6 +70,7 @@ export default function ProfileScreen() {
 
   const [monthWorkoutDates, setMonthWorkoutDates] = useState<Set<string>>(new Set())
 
+  // Today (used for streak / \"missed day\" logic)
   const today = useMemo(() => new Date(), [])
   const todayDateString = useMemo(() => {
     const y = today.getFullYear()
@@ -77,28 +78,45 @@ export default function ProfileScreen() {
     const d = String(today.getDate()).padStart(2, '0')
     return `${y}-${m}-${d}`
   }, [today])
-  const signupDateString = useMemo(() => {
-    if (!profile?.created_at) return null
-    return profile.created_at.slice(0, 10)
-  }, [profile?.created_at])
-  const year = today.getFullYear()
-  const month = today.getMonth() // 0-11
-  const daysInMonth = new Date(year, month + 1, 0).getDate()
-  const firstDayOfWeek = new Date(year, month, 1).getDay() // 0-6 Sun-Sat
+
+  // Calendar month being viewed – defaults to current month but can be changed
+  const [calendarDate, setCalendarDate] = useState(() => {
+    const d = new Date()
+    return new Date(d.getFullYear(), d.getMonth(), 1)
+  })
+
+  const calendarYear = calendarDate.getFullYear()
+  const calendarMonth = calendarDate.getMonth() // 0-11
+  const daysInMonth = new Date(calendarYear, calendarMonth + 1, 0).getDate()
+  const firstDayOfWeek = new Date(calendarYear, calendarMonth, 1).getDay() // 0-6 Sun-Sat
   const monthLabel = useMemo(
     () =>
       new Intl.DateTimeFormat('en-US', {
         month: 'long',
         year: 'numeric',
-      }).format(today),
-    [today]
+      }).format(calendarDate),
+    [calendarDate]
   )
+
+  const handleChangeMonth = (delta: number) => {
+    setCalendarDate((prev) => {
+      const next = new Date(prev)
+      next.setMonth(next.getMonth() + delta)
+      next.setDate(1)
+      return next
+    })
+  }
+
+  const signupDateString = useMemo(() => {
+    if (!profile?.created_at) return null
+    return profile.created_at.slice(0, 10)
+  }, [profile?.created_at])
 
   // Fetch workouts for current month for calendar
   const fetchMonthWorkouts = useCallback(async () => {
     if (!session) return
-    const y = year
-    const m = String(month + 1).padStart(2, '0')
+    const y = calendarYear
+    const m = String(calendarMonth + 1).padStart(2, '0')
     const start = `${y}-${m}-01`
     const end = `${y}-${m}-${String(daysInMonth).padStart(2, '0')}`
 
@@ -119,7 +137,7 @@ export default function ProfileScreen() {
       }
     }
     setMonthWorkoutDates(dates)
-  }, [session, year, month, daysInMonth])
+  }, [session, calendarYear, calendarMonth, daysInMonth])
 
   useEffect(() => {
     void fetchMonthWorkouts()
@@ -219,9 +237,25 @@ export default function ProfileScreen() {
             Activity
           </ThemedText>
           <View style={[styles.calendarCard, { backgroundColor: colors.card, borderColor: colors.tabBarBorder }]}>
-            <ThemedText style={[styles.calendarMonthLabel, { color: colors.text }]}>
-              {monthLabel}
-            </ThemedText>
+            <View style={styles.calendarHeaderRow}>
+              <Pressable
+                onPress={() => handleChangeMonth(-1)}
+                hitSlop={10}
+                style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}
+              >
+                <Ionicons name="chevron-back" size={18} color={colors.textMuted} />
+              </Pressable>
+              <ThemedText style={[styles.calendarMonthLabel, { color: colors.text }]}>
+                {monthLabel}
+              </ThemedText>
+              <Pressable
+                onPress={() => handleChangeMonth(1)}
+                hitSlop={10}
+                style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}
+              >
+                <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+              </Pressable>
+            </View>
             <View style={styles.calendarWeekRow}>
               {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, idx) => (
                 <ThemedText key={`weekday-${idx}`} style={[styles.calendarWeekday, { color: colors.textMuted }]}>
@@ -235,7 +269,10 @@ export default function ProfileScreen() {
               ))}
               {Array.from({ length: daysInMonth }).map((_, idx) => {
                 const day = idx + 1
-                const iso = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+                const iso = `${calendarYear}-${String(calendarMonth + 1).padStart(2, '0')}-${String(day).padStart(
+                  2,
+                  '0'
+                )}`
                 const isToday = iso === todayDateString
                 const isPast = iso < todayDateString
                 const hasWorkout = monthWorkoutDates.has(iso)
@@ -414,10 +451,15 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     padding: 16,
   },
+  calendarHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
   calendarMonthLabel: {
     fontSize: 16,
     fontWeight: '600',
-    marginBottom: 12,
     textAlign: 'center',
   },
   calendarWeekRow: {
