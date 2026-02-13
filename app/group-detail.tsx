@@ -258,7 +258,7 @@ export default function GroupDetailScreen() {
 
   const isCreator = group.created_by === userId
 
-  // Action buttons for the horizontal scroll
+  // Action buttons for the horizontal scroll (Compete is now separate and prominent)
   const actionButtons = [
     ...(isUserMember
       ? [{ key: 'leave', icon: 'exit-outline' as const, label: 'Leave', color: '#ef4444', onPress: handleLeave }]
@@ -268,7 +268,6 @@ export default function GroupDetailScreen() {
     ...(isUserMember
       ? [
           { key: 'chat', icon: 'chatbubbles-outline' as const, label: 'Chat', color: colors.textMuted, onPress: () => setActiveTab('chat') },
-          { key: 'competitions', icon: 'trophy-outline' as const, label: 'Compete', color: colors.textMuted, onPress: () => setActiveTab('competitions') },
         ]
       : []),
     { key: 'share', icon: 'share-outline' as const, label: 'Share', color: colors.textMuted, onPress: handleShare },
@@ -371,6 +370,22 @@ export default function GroupDetailScreen() {
             )}
 
           </View>
+
+          {/* Prominent Compete Button (only for members) */}
+          {isUserMember && (
+            <View style={styles.competeButtonContainer}>
+              <Pressable
+                style={[styles.competeButton, { backgroundColor: colors.tint }]}
+                onPress={() => setActiveTab('competitions')}
+              >
+                <Ionicons name="trophy" size={28} color="#fff" />
+                <ThemedText style={styles.competeButtonText}>Compete</ThemedText>
+                {activeTab === 'competitions' && (
+                  <View style={styles.competeButtonActiveIndicator} />
+                )}
+              </Pressable>
+            </View>
+          )}
 
           {/* Action buttons row (horizontal scroll) */}
           <ScrollView
@@ -870,6 +885,43 @@ const styles = StyleSheet.create({
   },
   locationText: { fontSize: 14 },
   description: { fontSize: 15, lineHeight: 22, marginBottom: 4 },
+
+  // Prominent Compete Button
+  competeButtonContainer: {
+    paddingHorizontal: 20,
+    marginBottom: 16,
+  },
+  competeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    paddingVertical: 18,
+    paddingHorizontal: 24,
+    borderRadius: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    position: 'relative',
+  },
+  competeButtonText: {
+    color: '#fff',
+    fontSize: 20,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  competeButtonActiveIndicator: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 3,
+    backgroundColor: '#fff',
+    borderBottomLeftRadius: 16,
+    borderBottomRightRadius: 16,
+  },
 
   // Action buttons
   actionsContainer: {

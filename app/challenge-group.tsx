@@ -9,7 +9,8 @@ import { ThemedText } from '@/components/themed-text'
 import { Colors } from '@/constants/theme'
 import { useAuthContext } from '@/hooks/use-auth-context'
 import { useColorScheme } from '@/hooks/use-color-scheme'
-import { challengeGroup, getChallengeableGroups } from '@/lib/competitions'
+import { challengeGroup } from '@/lib/competitions'
+import { supabase } from '@/lib/supabase'
 
 function getGroupInitials(name: string): string {
   const parts = name.trim().split(/\s+/)
@@ -23,31 +24,76 @@ export default function ChallengeGroupScreen() {
   const colorScheme = useColorScheme()
   const colors = Colors[colorScheme ?? 'light']
 
-  const [challengeableGroups, setChallengeableGroups] = useState<
+  const [searchResults, setSearchResults] = useState<
     Array<{ id: string; name: string; avatar_url: string | null; member_count: number }>
   >([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
   const [challengingId, setChallengingId] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
 
   const userId = session?.user?.id ?? ''
 
-  const loadGroups = useCallback(async () => {
+  const performSearch = useCallback(async () => {
+    const query = searchQuery.trim()
+    if (!query || query.length < 2) {
+      setSearchResults([])
+      return
+    }
+
     if (!groupId || !userId) return
     setLoading(true)
     try {
-      const groups = await getChallengeableGroups(groupId, userId)
-      setChallengeableGroups(groups)
-    } catch {
-      Alert.alert('Error', 'Failed to load groups')
+      // Search all groups by name
+      const { data: groups, error } = await supabase
+        .from('groups')
+        .select('id, name, avatar_url')
+        .neq('id', groupId) // Don't show own group
+        .ilike('name', `%${query}%`)
+        .limit(50)
+
+      if (error) {
+        console.error('Search error:', error)
+        setSearchResults([])
+        return
+      }
+
+      if (!groups || groups.length === 0) {
+        setSearchResults([])
+        setLoading(false)
+        return
+      }
+
+      // Get member counts for each group
+      const groupsWithCounts = await Promise.all(
+        groups.map(async (g) => {
+          const { count } = await supabase
+            .from('group_members')
+            .select('*', { count: 'exact', head: true })
+            .eq('group_id', g.id)
+          return {
+            ...g,
+            member_count: count ?? 0,
+          }
+        })
+      )
+
+      setSearchResults(groupsWithCounts)
+    } catch (error) {
+      console.error('Search failed:', error)
+      setSearchResults([])
     } finally {
       setLoading(false)
     }
-  }, [groupId, userId])
+  }, [searchQuery, groupId, userId])
 
+  // Debounce search
   useEffect(() => {
-    void loadGroups()
-  }, [loadGroups])
+    const timer = setTimeout(() => {
+      void performSearch()
+    }, 300) // Wait 300ms after user stops typing
+
+    return () => clearTimeout(timer)
+  }, [performSearch])
 
   const handleChallenge = async (targetGroupId: string) => {
     if (!groupId || !userId) return
@@ -63,10 +109,6 @@ export default function ChallengeGroupScreen() {
     }
   }
 
-  const filteredGroups = challengeableGroups.filter((g) =>
-    g.name.toLowerCase().includes(searchQuery.toLowerCase())
-  )
-
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['bottom']}>
       <ScrollView
@@ -78,7 +120,7 @@ export default function ChallengeGroupScreen() {
           Challenge a Group
         </ThemedText>
         <ThemedText style={[styles.subtitle, { color: colors.textMuted }]}>
-          Select a group to challenge to a 7-day competition
+          Search for a group to challenge to a 7-day competition
         </ThemedText>
 
         {/* Search */}
@@ -86,32 +128,52 @@ export default function ChallengeGroupScreen() {
           <Ionicons name="search" size={18} color={colors.textMuted} />
           <TextInput
             style={[styles.searchInput, { color: colors.text }]}
-            placeholder="Search groups..."
+            placeholder="Search groups by name..."
             placeholderTextColor={colors.textMuted}
             value={searchQuery}
             onChangeText={setSearchQuery}
+            autoFocus
           />
+          {searchQuery.trim() !== '' && (
+            <Pressable
+              onPress={() => {
+                setSearchQuery('')
+                setSearchResults([])
+              }}
+              hitSlop={8}
+            >
+              <Ionicons name="close-circle" size={18} color={colors.textMuted} />
+            </Pressable>
+          )}
         </View>
 
         {loading ? (
           <View style={styles.loadingRow}>
             <ActivityIndicator size="large" color={colors.tint} />
           </View>
-        ) : filteredGroups.length === 0 ? (
+        ) : searchQuery.trim().length < 2 ? (
+          <View style={[styles.emptyCard, { backgroundColor: colors.card }]}>
+            <Ionicons name="search-outline" size={40} color={colors.textMuted + '50'} style={{ marginBottom: 12 }} />
+            <ThemedText type="defaultSemiBold" style={[styles.emptyTitle, { color: colors.text }]}>
+              Search for groups
+            </ThemedText>
+            <ThemedText style={[styles.emptyText, { color: colors.textMuted }]}>
+              Type at least 2 characters to search for groups to challenge
+            </ThemedText>
+          </View>
+        ) : searchResults.length === 0 ? (
           <View style={[styles.emptyCard, { backgroundColor: colors.card }]}>
             <Ionicons name="people-outline" size={40} color={colors.textMuted + '50'} style={{ marginBottom: 12 }} />
             <ThemedText type="defaultSemiBold" style={[styles.emptyTitle, { color: colors.text }]}>
-              No groups available
+              No groups found
             </ThemedText>
             <ThemedText style={[styles.emptyText, { color: colors.textMuted }]}>
-              {searchQuery.trim() !== ''
-                ? 'No groups match your search'
-                : 'All available groups are already in competitions or you are already a member'}
+              No groups match &quot;{searchQuery.trim()}&quot;
             </ThemedText>
           </View>
         ) : (
           <View style={styles.groupsList}>
-            {filteredGroups.map((group) => (
+            {searchResults.map((group) => (
               <Pressable
                 key={group.id}
                 style={[styles.groupCard, { backgroundColor: colors.card, borderColor: colors.tabBarBorder }]}
