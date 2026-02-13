@@ -113,6 +113,7 @@ CREATE INDEX IF NOT EXISTS idx_contributions_group ON public.competition_member_
 ALTER TABLE public.competition_member_contributions ENABLE ROW LEVEL SECURITY;
 
 -- Read: members of either group can see contributions
+DROP POLICY IF EXISTS "Group members can read contributions" ON public.competition_member_contributions;
 CREATE POLICY "Group members can read contributions"
   ON public.competition_member_contributions FOR SELECT
   USING (
@@ -124,14 +125,17 @@ CREATE POLICY "Group members can read contributions"
     )
   );
 
--- Insert/Update: system or members can update their contributions
-CREATE POLICY "Members can update own contributions"
+-- Insert: members can insert their own contributions
+DROP POLICY IF EXISTS "Members can insert own contributions" ON public.competition_member_contributions;
+CREATE POLICY "Members can insert own contributions"
   ON public.competition_member_contributions FOR INSERT
   WITH CHECK (
     auth.uid() = user_id
     AND group_id IN (SELECT group_id FROM public.group_members WHERE user_id = auth.uid())
   );
 
+-- Update: members can update their own contributions
+DROP POLICY IF EXISTS "Members can update own contributions" ON public.competition_member_contributions;
 CREATE POLICY "Members can update own contributions"
   ON public.competition_member_contributions FOR UPDATE
   USING (auth.uid() = user_id)
