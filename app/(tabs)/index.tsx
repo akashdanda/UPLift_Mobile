@@ -7,7 +7,9 @@ import { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -83,7 +85,6 @@ export default function HomeScreen() {
   // Comment modal
   const [commentModalItem, setCommentModalItem] = useState<FeedItem | null>(null);
   const [commentMessage, setCommentMessage] = useState('');
-  const [commentGifUrl, setCommentGifUrl] = useState('');
   const [commentSubmitting, setCommentSubmitting] = useState(false);
 
   const refreshFeed = useCallback(() => {
@@ -160,25 +161,22 @@ export default function HomeScreen() {
   const openCommentModal = (item: FeedItem) => {
     setCommentModalItem(item);
     setCommentMessage('');
-    setCommentGifUrl('');
   };
 
   const closeCommentModal = () => {
     setCommentModalItem(null);
     setCommentMessage('');
-    setCommentGifUrl('');
   };
 
   const handlePostComment = async () => {
     if (!session || !commentModalItem) return;
     const message = commentMessage.trim() || null;
-    const gifUrl = commentGifUrl.trim() || null;
-    if (!message && !gifUrl) {
-      Alert.alert('Add a comment', 'Type something or paste a GIF link.');
+    if (!message) {
+      Alert.alert('Add a comment', 'Type something to post.');
       return;
     }
     setCommentSubmitting(true);
-    const result = await addComment(commentModalItem.workout.id, session.user.id, { message, gifUrl });
+    const result = await addComment(commentModalItem.workout.id, session.user.id, { message });
     setCommentSubmitting(false);
     if ('error' in result) {
       Alert.alert('Comment failed', result.error.message);
@@ -192,7 +190,7 @@ export default function HomeScreen() {
           workout_id: commentModalItem.workout.id,
           user_id: session.user.id,
           message,
-          gif_url: gifUrl,
+          gif_url: null,
           created_at: new Date().toISOString(),
           display_name: profile?.display_name ?? null,
           avatar_url: profile?.avatar_url ?? null,
@@ -450,9 +448,6 @@ export default function HomeScreen() {
                           {c.message ? (
                             <ThemedText style={[styles.commentText, { color: colors.text }]}>{c.message}</ThemedText>
                           ) : null}
-                          {c.gif_url ? (
-                            <Image source={{ uri: c.gif_url }} style={styles.commentGif} />
-                          ) : null}
                         </View>
                       </View>
                     ))}
@@ -540,65 +535,75 @@ export default function HomeScreen() {
         </Pressable>
       </Modal>
 
-      {/* Comment modal */}
+      {/* Comment modal — Instagram-style */}
       <Modal
         visible={!!commentModalItem}
         transparent
         animationType="slide"
         onRequestClose={closeCommentModal}
       >
-        <Pressable style={styles.reactModalOverlay} onPress={closeCommentModal}>
-          <Pressable
-            style={[styles.reactModalContent, styles.commentModalContent, { backgroundColor: colors.card }]}
-            onPress={(e) => e.stopPropagation()}
+        <Pressable style={styles.commentModalOverlay} onPress={closeCommentModal}>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            style={styles.commentKeyboardAvoid}
+            keyboardVerticalOffset={0}
           >
-            <ThemedText type="subtitle" style={[styles.reactModalTitle, { color: colors.text }]}>
-              Add comment
-            </ThemedText>
-            <ThemedText style={[styles.reactModalHint, { color: colors.textMuted }]}>
-              Write a message and/or paste a GIF link
-            </ThemedText>
-            <TextInput
-              style={[styles.commentInput, { backgroundColor: colors.cardElevated, color: colors.text, borderColor: colors.tabBarBorder }]}
-              placeholder="Say something..."
-              placeholderTextColor={colors.textMuted}
-              value={commentMessage}
-              onChangeText={setCommentMessage}
-              multiline
-              maxLength={500}
-            />
-            <TextInput
-              style={[styles.commentInput, styles.commentGifInput, { backgroundColor: colors.cardElevated, color: colors.text, borderColor: colors.tabBarBorder }]}
-              placeholder="Paste GIF URL (optional)"
-              placeholderTextColor={colors.textMuted}
-              value={commentGifUrl}
-              onChangeText={setCommentGifUrl}
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
-            <View style={styles.reactModalActions}>
+            <Pressable
+              style={[styles.commentModalSheet, { backgroundColor: colors.background }]}
+              onPress={(e) => e.stopPropagation()}
+            >
+              <View style={[styles.commentModalHandle, { backgroundColor: colors.textMuted + '40' }]} />
+              <View style={[styles.commentModalHeader, { borderBottomColor: colors.tabBarBorder }]}>
+                <ThemedText type="defaultSemiBold" style={{ color: colors.text, fontSize: 16 }}>
+                  Add comment
+                </ThemedText>
+                <Pressable onPress={closeCommentModal} hitSlop={12} style={styles.commentModalClose}>
+                  <Ionicons name="close" size={24} color={colors.text} />
+                </Pressable>
+              </View>
+              <View style={styles.commentModalInputRow}>
+                <TextInput
+                style={[
+                  styles.commentModalInput,
+                  {
+                    backgroundColor: colors.cardElevated,
+                    color: colors.text,
+                    borderColor: colors.tabBarBorder,
+                  },
+                ]}
+                placeholder="Add a comment..."
+                placeholderTextColor={colors.textMuted}
+                value={commentMessage}
+                onChangeText={setCommentMessage}
+                multiline
+                maxLength={500}
+              />
               <Pressable
                 onPress={handlePostComment}
-                disabled={commentSubmitting || (!commentMessage.trim() && !commentGifUrl.trim())}
-                style={[
-                  styles.reactSubmitButton,
+                disabled={commentSubmitting || !commentMessage.trim()}
+                style={({ pressed }) => [
+                  styles.commentPostButton,
                   {
-                    backgroundColor:
-                      commentMessage.trim() || commentGifUrl.trim() ? colors.tint : colors.textMuted + '40',
+                    opacity: commentMessage.trim() ? (pressed ? 0.7 : 1) : 0.4,
                   },
                 ]}
               >
                 {commentSubmitting ? (
-                  <ActivityIndicator color="#fff" size="small" />
+                  <ActivityIndicator color={colors.tint} size="small" />
                 ) : (
-                  <ThemedText style={styles.reactSubmitButtonText}>Post comment</ThemedText>
+                  <ThemedText
+                    style={[
+                      styles.commentPostButtonText,
+                      { color: commentMessage.trim() ? colors.tint : colors.textMuted },
+                    ]}
+                  >
+                    Post
+                  </ThemedText>
                 )}
-              </Pressable>
-              <Pressable onPress={closeCommentModal} style={[styles.reactCancelButton, { borderColor: colors.tabBarBorder }]}>
-                <ThemedText style={[styles.reactCancelText, { color: colors.textMuted }]}>Cancel</ThemedText>
               </Pressable>
             </View>
           </Pressable>
+          </KeyboardAvoidingView>
         </Pressable>
       </Modal>
     </SafeAreaView>
@@ -803,18 +808,63 @@ const styles = StyleSheet.create({
   },
   reactModalTitle: { marginBottom: 4, textAlign: 'center' },
   reactModalHint: { fontSize: 13, textAlign: 'center', marginBottom: 20 },
-  commentModalContent: {},
-  commentInput: {
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 16,
-    minHeight: 80,
-    textAlignVertical: 'top',
-    marginBottom: 10,
+  // Comment modal — Instagram-style
+  commentModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
   },
-  commentGifInput: { minHeight: 44, textAlignVertical: 'center' },
+  commentKeyboardAvoid: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  commentModalSheet: {
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    paddingBottom: 34,
+  },
+  commentModalHandle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginTop: 10,
+    marginBottom: 4,
+  },
+  commentModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  commentModalClose: { padding: 4 },
+  commentModalInputRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    gap: 10,
+  },
+  commentModalInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    paddingTop: 10,
+    fontSize: 15,
+    minHeight: 40,
+    maxHeight: 100,
+    textAlignVertical: 'center',
+  },
+  commentPostButton: {
+    justifyContent: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 4,
+  },
+  commentPostButtonText: { fontSize: 15, fontWeight: '600' },
   reactPhotoBox: {
     width: 120,
     height: 120,
