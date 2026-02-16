@@ -23,7 +23,9 @@ import { ThemedText } from '@/components/themed-text'
 import { ThemedView } from '@/components/themed-view'
 import { Colors } from '@/constants/theme'
 import { useColorScheme } from '@/hooks/use-color-scheme'
+import { getUserAchievements } from '@/lib/achievements'
 import { supabase } from '@/lib/supabase'
+import { ACHIEVEMENT_CATEGORIES, type UserAchievementWithDetails } from '@/types/achievement'
 import type { Profile } from '@/types/profile'
 
 function getInitials(displayName: string | null): string {
@@ -45,6 +47,8 @@ export default function FriendProfileScreen() {
   const [loading, setLoading] = useState(true)
   const [monthWorkoutDates, setMonthWorkoutDates] = useState<Set<string>>(new Set())
   const [isImageModalVisible, setIsImageModalVisible] = useState(false)
+  const [achievements, setAchievements] = useState<UserAchievementWithDetails[]>([])
+  const [selectedAchievement, setSelectedAchievement] = useState<UserAchievementWithDetails | null>(null)
 
   // Calendar calculations
   const today = useMemo(() => new Date(), [])
@@ -121,10 +125,15 @@ export default function FriendProfileScreen() {
     }
   }, [id])
 
-  // Fetch workouts once profile is loaded
+  // Fetch workouts + achievements once profile is loaded
   useEffect(() => {
     void fetchMonthWorkouts()
   }, [fetchMonthWorkouts])
+
+  useEffect(() => {
+    if (!id) return
+    getUserAchievements(id).then(setAchievements).catch(() => {})
+  }, [id])
 
   const displayName = profile?.display_name || 'Athlete'
   const initials = useMemo(() => getInitials(profile?.display_name ?? null), [profile?.display_name])
@@ -309,16 +318,93 @@ export default function FriendProfileScreen() {
           </View>
         </View>
 
-        {/* Badges */}
+        {/* Achievements */}
         <ThemedView style={styles.section}>
           <ThemedText type="subtitle" style={[styles.sectionTitle, { color: colors.text }]}>
-            Badges
+            Achievements
           </ThemedText>
-          <View style={[styles.badgesContainer, { backgroundColor: colors.card, borderColor: colors.tabBarBorder }]}>
-            <ThemedText style={[styles.emptyBadgesText, { color: colors.textMuted }]}>
-              No badges yet. Keep working out to earn your first badge!
-            </ThemedText>
-          </View>
+          {achievements.length === 0 ? (
+            <View style={[styles.badgesContainer, { backgroundColor: colors.card, borderColor: colors.tabBarBorder }]}>
+              <ThemedText style={[styles.emptyBadgesText, { color: colors.textMuted }]}>
+                No achievements yet.
+              </ThemedText>
+            </View>
+          ) : (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.achievementsScroll}
+            >
+              {achievements.map((ach) => {
+                const progress = Math.min(ach.progress_value / ach.requirement_value, 1)
+                const catMeta = ACHIEVEMENT_CATEGORIES[ach.category as keyof typeof ACHIEVEMENT_CATEGORIES]
+                return (
+                  <Pressable
+                    key={ach.achievement_id}
+                    onPress={() => setSelectedAchievement(ach)}
+                    style={[
+                      styles.achievementCard,
+                      {
+                        backgroundColor: colors.card,
+                        borderColor: ach.unlocked
+                          ? catMeta?.color ?? colors.tint
+                          : colors.tabBarBorder,
+                        borderWidth: ach.unlocked ? 1.5 : 1,
+                        shadowColor: ach.unlocked ? catMeta?.color ?? colors.tint : 'transparent',
+                        shadowOpacity: ach.unlocked ? 0.3 : 0,
+                        shadowRadius: ach.unlocked ? 8 : 0,
+                        shadowOffset: { width: 0, height: 2 },
+                        elevation: ach.unlocked ? 4 : 0,
+                      },
+                    ]}
+                  >
+                    <View
+                      style={[
+                        styles.achievementIconWrap,
+                        {
+                          backgroundColor: ach.unlocked
+                            ? (catMeta?.color ?? colors.tint) + '20'
+                            : colors.cardElevated,
+                          opacity: ach.unlocked ? 1 : 0.5,
+                        },
+                      ]}
+                    >
+                      <ThemedText style={styles.achievementIcon}>{ach.icon}</ThemedText>
+                    </View>
+                    <ThemedText
+                      style={[
+                        styles.achievementName,
+                        { color: ach.unlocked ? colors.text : colors.textMuted },
+                      ]}
+                      numberOfLines={2}
+                    >
+                      {ach.name}
+                    </ThemedText>
+                    {!ach.unlocked && (
+                      <View style={styles.progressBarOuter}>
+                        <View
+                          style={[
+                            styles.progressBarInner,
+                            {
+                              width: `${Math.round(progress * 100)}%`,
+                              backgroundColor: catMeta?.color ?? colors.tint,
+                            },
+                          ]}
+                        />
+                      </View>
+                    )}
+                    {ach.unlocked && (
+                      <View style={[styles.unlockedBadge, { backgroundColor: (catMeta?.color ?? colors.tint) + '20' }]}>
+                        <ThemedText style={[styles.unlockedText, { color: catMeta?.color ?? colors.tint }]}>
+                          ✓ Unlocked
+                        </ThemedText>
+                      </View>
+                    )}
+                  </Pressable>
+                )
+              })}
+            </ScrollView>
+          )}
         </ThemedView>
       </ScrollView>
 
@@ -343,6 +429,87 @@ export default function FriendProfileScreen() {
                   )}
                 </Animated.View>
               </GestureDetector>
+            </Pressable>
+          </View>
+        </Pressable>
+      </Modal>
+
+      {/* Achievement detail modal */}
+      <Modal
+        visible={!!selectedAchievement}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSelectedAchievement(null)}
+      >
+        <Pressable style={styles.modalOverlay} onPress={() => setSelectedAchievement(null)}>
+          <View style={styles.achievementDetailCard}>
+            <Pressable onPress={(e) => e.stopPropagation()}>
+              {selectedAchievement && (() => {
+                const catMeta = ACHIEVEMENT_CATEGORIES[
+                  selectedAchievement.category as keyof typeof ACHIEVEMENT_CATEGORIES
+                ]
+                const progress = Math.min(
+                  selectedAchievement.progress_value / selectedAchievement.requirement_value,
+                  1
+                )
+                return (
+                  <View style={[styles.achievementDetailInner, { backgroundColor: colors.card }]}>
+                    <View
+                      style={[
+                        styles.achievementDetailIconWrap,
+                        { backgroundColor: (catMeta?.color ?? colors.tint) + '15' },
+                      ]}
+                    >
+                      <ThemedText style={styles.achievementDetailIcon}>
+                        {selectedAchievement.icon}
+                      </ThemedText>
+                    </View>
+                    <ThemedText style={[styles.achievementDetailCategory, { color: catMeta?.color ?? colors.tint }]}>
+                      {catMeta?.label ?? selectedAchievement.category}
+                    </ThemedText>
+                    <ThemedText style={[styles.achievementDetailName, { color: colors.text }]}>
+                      {selectedAchievement.name}
+                    </ThemedText>
+                    <ThemedText style={[styles.achievementDetailDesc, { color: colors.textMuted }]}>
+                      {selectedAchievement.description}
+                    </ThemedText>
+                    {!selectedAchievement.unlocked ? (
+                      <View style={styles.achievementDetailProgressSection}>
+                        <View style={[styles.achievementDetailProgressOuter, { backgroundColor: colors.cardElevated }]}>
+                          <View
+                            style={[
+                              styles.achievementDetailProgressInner,
+                              {
+                                width: `${Math.round(progress * 100)}%`,
+                                backgroundColor: catMeta?.color ?? colors.tint,
+                              },
+                            ]}
+                          />
+                        </View>
+                        <ThemedText style={[styles.achievementDetailProgressText, { color: colors.textMuted }]}>
+                          {selectedAchievement.progress_value} / {selectedAchievement.requirement_value}
+                        </ThemedText>
+                      </View>
+                    ) : (
+                      <View style={[styles.achievementDetailUnlocked, { backgroundColor: (catMeta?.color ?? colors.tint) + '15' }]}>
+                        <ThemedText style={[styles.achievementDetailUnlockedText, { color: catMeta?.color ?? colors.tint }]}>
+                          ✓ Unlocked{selectedAchievement.unlocked_at
+                            ? ` on ${new Date(selectedAchievement.unlocked_at).toLocaleDateString()}`
+                            : ''}
+                        </ThemedText>
+                      </View>
+                    )}
+                    <Pressable
+                      style={[styles.achievementDetailClose, { borderColor: colors.tabBarBorder }]}
+                      onPress={() => setSelectedAchievement(null)}
+                    >
+                      <ThemedText style={[styles.achievementDetailCloseText, { color: colors.text }]}>
+                        Close
+                      </ThemedText>
+                    </Pressable>
+                  </View>
+                )
+              })()}
             </Pressable>
           </View>
         </Pressable>
@@ -494,7 +661,7 @@ const styles = StyleSheet.create({
   calendarLegendLabel: {
     fontSize: 12,
   },
-  // Badges
+  // Badges / Achievements
   badgesContainer: {
     borderRadius: 14,
     borderWidth: 1,
@@ -508,6 +675,44 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 20,
   },
+  achievementsScroll: { paddingRight: 24, gap: 12 },
+  achievementCard: {
+    width: 130,
+    padding: 14,
+    borderRadius: 16,
+    alignItems: 'center',
+    borderWidth: 1,
+  },
+  achievementIconWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  achievementIcon: { fontSize: 26 },
+  achievementName: { fontSize: 12, fontWeight: '700', textAlign: 'center', marginBottom: 8, lineHeight: 16 },
+  progressBarOuter: { width: '100%', height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.08)', overflow: 'hidden' },
+  progressBarInner: { height: '100%', borderRadius: 2 },
+  unlockedBadge: { paddingVertical: 3, paddingHorizontal: 10, borderRadius: 8 },
+  unlockedText: { fontSize: 10, fontWeight: '700' },
+  // Achievement detail modal
+  achievementDetailCard: { width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center', padding: 32 },
+  achievementDetailInner: { width: '100%', borderRadius: 24, padding: 28, alignItems: 'center' },
+  achievementDetailIconWrap: { width: 72, height: 72, borderRadius: 36, alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
+  achievementDetailIcon: { fontSize: 38 },
+  achievementDetailCategory: { fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 4 },
+  achievementDetailName: { fontSize: 22, fontWeight: '800', textAlign: 'center', marginBottom: 8 },
+  achievementDetailDesc: { fontSize: 14, textAlign: 'center', lineHeight: 20, marginBottom: 20 },
+  achievementDetailProgressSection: { width: '100%', marginBottom: 20 },
+  achievementDetailProgressOuter: { width: '100%', height: 8, borderRadius: 4, overflow: 'hidden', marginBottom: 8 },
+  achievementDetailProgressInner: { height: '100%', borderRadius: 4 },
+  achievementDetailProgressText: { fontSize: 13, textAlign: 'center', fontWeight: '600' },
+  achievementDetailUnlocked: { paddingVertical: 8, paddingHorizontal: 20, borderRadius: 12, marginBottom: 20 },
+  achievementDetailUnlockedText: { fontSize: 14, fontWeight: '700' },
+  achievementDetailClose: { paddingVertical: 12, paddingHorizontal: 24, borderRadius: 12, borderWidth: 1 },
+  achievementDetailCloseText: { fontSize: 15, fontWeight: '600' },
   // Photo zoom modal
   modalOverlay: {
     flex: 1,

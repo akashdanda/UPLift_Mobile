@@ -2,7 +2,7 @@ import Ionicons from '@expo/vector-icons/Ionicons'
 import { Image } from 'expo-image'
 import { useFocusEffect } from '@react-navigation/native'
 import { useLocalSearchParams } from 'expo-router'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
@@ -11,6 +11,11 @@ import { ThemedView } from '@/components/themed-view'
 import { Colors } from '@/constants/theme'
 import { useAuthContext } from '@/hooks/use-auth-context'
 import { useColorScheme } from '@/hooks/use-color-scheme'
+import {
+  getBatchTopBadges,
+  getPreviousSnapshot,
+  saveLeaderboardSnapshot,
+} from '@/lib/achievements'
 import {
   getCurrentMonthLabel,
   getLeaderboard,
@@ -46,6 +51,14 @@ export default function LeaderboardScreen() {
   const [myRow, setMyRow] = useState<LeaderboardRow | undefined>(undefined)
   const [loading, setLoading] = useState(true)
   const scopeChanged = useRef(false)
+  const [badgesMap, setBadgesMap] = useState<Map<string, Array<{ icon: string; name: string }>>>(new Map())
+  const [myPrevRank, setMyPrevRank] = useState<number | null>(null)
+
+  // Current period key (e.g. "2026-02")
+  const currentPeriod = useMemo(() => {
+    const now = new Date()
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  }, [])
 
   useEffect(() => {
     const paramScope = params.scope
@@ -58,12 +71,26 @@ export default function LeaderboardScreen() {
     setLoading(true)
     const groupIdForScope = scope === 'groups' ? selectedGroupId ?? undefined : undefined
     getLeaderboard(50, session?.user?.id, scope, groupIdForScope)
-      .then(({ rows: r, myRow: m }) => {
+      .then(async ({ rows: r, myRow: m }) => {
         setRows(r)
         setMyRow(m)
+
+        // Fetch badges for all users on the board
+        const userIds = r.map(row => row.id)
+        if (userIds.length > 0) {
+          const badges = await getBatchTopBadges(userIds, 2)
+          setBadgesMap(badges)
+        }
+
+        // Save snapshot and get previous rank for movement display
+        if (session?.user?.id && m) {
+          const prevSnap = await getPreviousSnapshot(session.user.id, scope, currentPeriod)
+          setMyPrevRank(prevSnap?.rank ?? null)
+          await saveLeaderboardSnapshot(session.user.id, scope, m.rank, m.points, currentPeriod)
+        }
       })
       .finally(() => setLoading(false))
-  }, [session?.user?.id, scope, selectedGroupId])
+  }, [session?.user?.id, scope, selectedGroupId, currentPeriod])
 
   useEffect(() => {
     if (!session?.user?.id) return
@@ -187,9 +214,33 @@ export default function LeaderboardScreen() {
               {myPoints} pts
             </ThemedText>
             {myRow ? (
-              <ThemedText style={[styles.myRank, { color: colors.textMuted }]}>
-                Rank #{myRow.rank} this month
-              </ThemedText>
+              <View>
+                <View style={styles.rankRow}>
+                  <ThemedText style={[styles.myRank, { color: colors.textMuted }]}>
+                    Rank #{myRow.rank} this month
+                  </ThemedText>
+                  {myPrevRank !== null && myPrevRank !== myRow.rank && (
+                    <View style={styles.rankMovement}>
+                      {myRow.rank < myPrevRank ? (
+                        <>
+                          <Ionicons name="arrow-up" size={14} color="#22C55E" />
+                          <ThemedText style={styles.rankUp}>+{myPrevRank - myRow.rank}</ThemedText>
+                        </>
+                      ) : (
+                        <>
+                          <Ionicons name="arrow-down" size={14} color="#EF4444" />
+                          <ThemedText style={styles.rankDown}>-{myRow.rank - myPrevRank}</ThemedText>
+                        </>
+                      )}
+                    </View>
+                  )}
+                </View>
+                {myRow.rank > 1 && rows.length > 0 && rows[0].points > myPoints && (
+                  <ThemedText style={[styles.gapText, { color: colors.textMuted }]}>
+                    {rows[0].points - myPoints} pts behind #{1}
+                  </ThemedText>
+                )}
+              </View>
             ) : (
               <ThemedText style={[styles.myRank, { color: colors.textMuted }]}>
                 No activity this month yet — log a workout to get on the board
@@ -244,10 +295,24 @@ export default function LeaderboardScreen() {
                       )}
                     </View>
                     <View style={styles.nameBlock}>
-                      <ThemedText type="defaultSemiBold" style={[styles.name, { color: colors.text }]} numberOfLines={1}>
-                        {name}
-                        {isMe ? ' (you)' : ''}
-                      </ThemedText>
+                      <View style={styles.nameRow}>
+                        <ThemedText type="defaultSemiBold" style={[styles.name, { color: colors.text }]} numberOfLines={1}>
+                          {name}
+                          {isMe ? ' (you)' : ''}
+                        </ThemedText>
+                        {badgesMap.has(row.id) && (
+                          <View style={styles.badgeRow}>
+                            {badgesMap.get(row.id)!.map((badge, bIdx) => (
+                              <View
+                                key={`badge-${bIdx}`}
+                                style={[styles.badgePill, { backgroundColor: colors.tint + '15' }]}
+                              >
+                                <ThemedText style={styles.badgeEmoji}>{badge.icon}</ThemedText>
+                              </View>
+                            ))}
+                          </View>
+                        )}
+                      </View>
                       <ThemedText style={[styles.statsLine, { color: colors.textMuted }]}>
                         {row.workouts_count} workouts · {row.streak} streak · {row.groups_count} groups ·{' '}
                         {row.friends_count} friends
@@ -349,7 +414,20 @@ const styles = StyleSheet.create({
   avatarImage: { width: 40, height: 40 },
   avatarInitials: { fontSize: 14, fontWeight: '600' },
   nameBlock: { flex: 1, marginLeft: 12, minWidth: 0 },
-  name: { fontSize: 15 },
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  name: { fontSize: 15, flexShrink: 1 },
+  badgeRow: { flexDirection: 'row', gap: 3 },
+  badgePill: {
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+    borderRadius: 6,
+  },
+  badgeEmoji: { fontSize: 12 },
   statsLine: { fontSize: 11, marginTop: 2 },
   points: { fontSize: 16, marginLeft: 8 },
+  rankRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  rankMovement: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+  rankUp: { fontSize: 13, fontWeight: '700', color: '#22C55E' },
+  rankDown: { fontSize: 13, fontWeight: '700', color: '#EF4444' },
+  gapText: { fontSize: 12, marginTop: 4 },
 })

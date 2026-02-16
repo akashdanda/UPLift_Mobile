@@ -1,7 +1,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useFocusEffect } from '@react-navigation/native';
-import * as ImagePicker from 'expo-image-picker';
 import { Image } from 'expo-image';
+import * as ImagePicker from 'expo-image-picker';
 import { router } from 'expo-router';
 import { useCallback, useState } from 'react';
 import {
@@ -14,24 +14,60 @@ import {
   ScrollView,
   StyleSheet,
   TextInput,
-  View,
+  View
 } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring
+} from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
 import { Colors } from '@/constants/theme';
 import { useAuthContext } from '@/hooks/use-auth-context';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { getAchievementFeedPosts, hasStreakFreezeAvailable, useStreakFreeze } from '@/lib/achievements';
 import { addComment } from '@/lib/comments';
 import { getFriendsWorkouts, type FeedItem } from '@/lib/feed';
+import { getFriends } from '@/lib/friends';
 import { addReaction, removeReaction } from '@/lib/reactions';
 import { supabase } from '@/lib/supabase';
+import type { AchievementFeedPost } from '@/types/achievement';
 import type { WorkoutCommentWithProfile } from '@/types/comment';
 import type { WorkoutReactionWithProfile } from '@/types/reaction';
 import type { Workout } from '@/types/workout';
 
 const REACTION_EMOJIS = ['🔥', '💪', '👍', '❤️', '😂', '😮', '🙌', '😊'];
+
+// Zoomable feed image component
+function ZoomableFeedImage({ imageUrl, style }: { imageUrl: string; style: any }) {
+  const scale = useSharedValue(1);
+  const savedScale = useSharedValue(1);
+
+  const pinchGesture = Gesture.Pinch()
+    .onUpdate((e) => {
+      scale.value = savedScale.value * e.scale;
+    })
+    .onEnd(() => {
+      // Always reset to original zoom when gesture ends
+      scale.value = withSpring(1);
+      savedScale.value = 1;
+    });
+
+  const animatedImageStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
+
+  return (
+    <GestureDetector gesture={pinchGesture}>
+      <Animated.View style={{ overflow: 'hidden' }}>
+        <Animated.Image source={{ uri: imageUrl }} style={[style, animatedImageStyle]} />
+      </Animated.View>
+    </GestureDetector>
+  );
+}
 
 function formatFeedDate(workoutDate: string): string {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(workoutDate);
@@ -75,6 +111,10 @@ export default function HomeScreen() {
   const { session, profile } = useAuthContext();
   const [todayWorkout, setTodayWorkout] = useState<Workout | null>(null);
   const [feedItems, setFeedItems] = useState<FeedItem[]>([]);
+  const [achievementPosts, setAchievementPosts] = useState<AchievementFeedPost[]>([]);
+  const [freezeAvailable, setFreezeAvailable] = useState(false);
+  const [freezeLoading, setFreezeLoading] = useState(false);
+  const [streakAtRisk, setStreakAtRisk] = useState(false);
 
   // React modal (BeReal-style: photo + emoji)
   const [reactModalItem, setReactModalItem] = useState<FeedItem | null>(null);
@@ -86,6 +126,7 @@ export default function HomeScreen() {
   const [commentModalItem, setCommentModalItem] = useState<FeedItem | null>(null);
   const [commentMessage, setCommentMessage] = useState('');
   const [commentSubmitting, setCommentSubmitting] = useState(false);
+
 
   const refreshFeed = useCallback(() => {
     if (session) getFriendsWorkouts(session.user.id).then(setFeedItems);
@@ -220,11 +261,13 @@ export default function HomeScreen() {
     );
   };
 
+
   useFocusEffect(
     useCallback(() => {
       if (!session) {
         setTodayWorkout(null);
         setFeedItems([]);
+        setAchievementPosts([]);
         return;
       }
       const today = getTodayLocalDate();
@@ -236,6 +279,29 @@ export default function HomeScreen() {
         .maybeSingle()
         .then(({ data }) => setTodayWorkout((data as Workout) ?? null));
       getFriendsWorkouts(session.user.id).then(setFeedItems);
+      // Load achievement feed posts
+      getFriends(session.user.id).then((friends) => {
+        const ids = [session.user.id, ...friends.map((f) => f.id)];
+        getAchievementFeedPosts(ids, 10).then(setAchievementPosts);
+      });
+      // Check streak risk (after 6pm and no workout logged today)
+      const now = new Date();
+      const hour = now.getHours();
+      if (hour >= 18 && profile?.streak && profile.streak > 0) {
+        supabase
+          .from('workouts')
+          .select('id')
+          .eq('user_id', session.user.id)
+          .eq('workout_date', today)
+          .maybeSingle()
+          .then(({ data: w }) => {
+            setStreakAtRisk(!w);
+          });
+      } else {
+        setStreakAtRisk(false);
+      }
+      // Check if streak freeze is available
+      hasStreakFreezeAvailable(session.user.id).then(setFreezeAvailable);
     }, [session])
   );
 
@@ -261,17 +327,45 @@ export default function HomeScreen() {
         </View>
 
         {/* Streak banner */}
-        <View style={[styles.streakBanner, { backgroundColor: colors.warm + '15' }]}>
-          <Ionicons name="flame" size={28} color={colors.warm} />
+        <View style={[styles.streakBanner, { backgroundColor: streakAtRisk ? '#EF4444' + '18' : colors.warm + '15' }]}>
+          <Ionicons name="flame" size={28} color={streakAtRisk ? '#EF4444' : colors.warm} />
           <View style={styles.streakText}>
-            <ThemedText type="defaultSemiBold" style={[styles.streakValue, { color: colors.warm }]}>
+            <ThemedText type="defaultSemiBold" style={[styles.streakValue, { color: streakAtRisk ? '#EF4444' : colors.warm }]}>
               {streak > 0 ? `${streak} day streak` : 'No streak yet'}
+              {streakAtRisk ? ' ⚠️' : ''}
             </ThemedText>
             <ThemedText style={[styles.streakHint, { color: colors.textMuted }]}>
-              {streak > 0
-                ? 'Keep it going — log today to stay on fire'
-                : 'Log your first workout to start a streak'}
+              {streakAtRisk
+                ? "Your streak is at risk! Log a workout before midnight."
+                : streak > 0
+                  ? 'Keep it going — log today to stay on fire'
+                  : 'Log your first workout to start a streak'}
             </ThemedText>
+            {streakAtRisk && freezeAvailable && (
+              <Pressable
+                onPress={async () => {
+                  if (!session) return;
+                  setFreezeLoading(true);
+                  const used = await useStreakFreeze(session.user.id);
+                  setFreezeLoading(false);
+                  if (used) {
+                    setFreezeAvailable(false);
+                    setStreakAtRisk(false);
+                    Alert.alert('Streak Frozen! ❄️', 'Your streak is safe for today. You get 1 freeze per month.');
+                  } else {
+                    Alert.alert('Already used', 'You already used your streak freeze this month.');
+                  }
+                }}
+                disabled={freezeLoading}
+                style={[styles.freezeButton, { backgroundColor: '#3B82F6' }]}
+              >
+                {freezeLoading ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <ThemedText style={styles.freezeButtonText}>❄️ Use Streak Freeze</ThemedText>
+                )}
+              </Pressable>
+            )}
           </View>
         </View>
 
@@ -316,7 +410,7 @@ export default function HomeScreen() {
               Today&apos;s workout
             </ThemedText>
             <View style={[styles.todayCard, { backgroundColor: colors.card }]}>
-              <Image source={{ uri: todayWorkout.image_url }} style={styles.todayImage} />
+              <ZoomableFeedImage imageUrl={todayWorkout.image_url} style={styles.todayImage} />
               {todayWorkout.caption ? (
                 <View style={styles.captionRow}>
                   <ThemedText style={[styles.todayCaption, { color: colors.text }]}>
@@ -325,6 +419,39 @@ export default function HomeScreen() {
                 </View>
               ) : null}
             </View>
+          </View>
+        )}
+
+        {/* Achievement announcements */}
+        {achievementPosts.length > 0 && (
+          <View style={styles.section}>
+            {achievementPosts.map((post) => (
+              <Pressable
+                key={post.id}
+                style={[styles.achievementFeedCard, { backgroundColor: colors.card, borderColor: colors.tint + '30' }]}
+                onPress={() => {
+                  if (post.user_id !== session?.user?.id) {
+                    router.push(`/friend-profile?id=${post.user_id}`);
+                  }
+                }}
+              >
+                <View style={styles.achievementFeedRow}>
+                  <View style={[styles.achievementFeedIconWrap, { backgroundColor: colors.tint + '15' }]}>
+                    <ThemedText style={styles.achievementFeedIcon}>
+                      {post.achievement_icon ?? '🏅'}
+                    </ThemedText>
+                  </View>
+                  <View style={styles.achievementFeedTextBlock}>
+                    <ThemedText style={[styles.achievementFeedMessage, { color: colors.text }]}>
+                      {post.message}
+                    </ThemedText>
+                    <ThemedText style={[styles.achievementFeedTime, { color: colors.textMuted }]}>
+                      {formatFeedDate(post.created_at.slice(0, 10))}
+                    </ThemedText>
+                  </View>
+                </View>
+              </Pressable>
+            ))}
           </View>
         )}
 
@@ -369,7 +496,7 @@ export default function HomeScreen() {
                       </ThemedText>
                     </View>
                   </Pressable>
-                  <Image source={{ uri: item.workout.image_url }} style={styles.feedImage} />
+                  <ZoomableFeedImage imageUrl={item.workout.image_url} style={styles.feedImage} />
                   {item.workout.caption ? (
                     <ThemedText style={[styles.feedCaption, { color: colors.text }]}>
                       {item.workout.caption}
@@ -632,6 +759,19 @@ const styles = StyleSheet.create({
   streakText: { flex: 1 },
   streakValue: { fontSize: 17 },
   streakHint: { fontSize: 13, marginTop: 2 },
+  freezeButton: {
+    marginTop: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    alignSelf: 'flex-start',
+    alignItems: 'center',
+  },
+  freezeButtonText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '700',
+  },
 
   // Quick actions — pill buttons
   quickActions: { flexDirection: 'row', gap: 10, marginBottom: 24 },
@@ -909,4 +1049,28 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   reactCancelText: { fontSize: 15 },
+
+  // Achievement feed cards
+  achievementFeedCard: {
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 14,
+    marginBottom: 10,
+  },
+  achievementFeedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  achievementFeedIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  achievementFeedIcon: { fontSize: 22 },
+  achievementFeedTextBlock: { flex: 1, minWidth: 0 },
+  achievementFeedMessage: { fontSize: 14, fontWeight: '600', lineHeight: 20 },
+  achievementFeedTime: { fontSize: 11, marginTop: 2 },
 });

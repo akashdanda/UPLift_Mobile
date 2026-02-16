@@ -13,12 +13,19 @@ import {
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
+import { CelebrationModal } from '@/components/celebration-modal'
 import { ThemedText } from '@/components/themed-text'
 import { Colors } from '@/constants/theme'
 import { useAuthContext } from '@/hooks/use-auth-context'
 import { useColorScheme } from '@/hooks/use-color-scheme'
+import {
+  checkAndUpdateAchievements,
+  createAchievementFeedPost,
+  markAchievementNotified,
+} from '@/lib/achievements'
 import { supabase } from '@/lib/supabase'
 import { uploadWorkoutImage } from '@/lib/workout-upload'
+import { ACHIEVEMENT_CATEGORIES, type UserAchievementWithDetails } from '@/types/achievement'
 import type { Workout } from '@/types/workout'
 
 function getTodayLocalDate(): string {
@@ -30,7 +37,7 @@ function getTodayLocalDate(): string {
 }
 
 export default function LogWorkoutScreen() {
-  const { session, refreshProfile } = useAuthContext()
+  const { session, profile, refreshProfile } = useAuthContext()
   const colorScheme = useColorScheme()
   const colors = Colors[colorScheme ?? 'light']
 
@@ -40,6 +47,20 @@ export default function LogWorkoutScreen() {
   const [caption, setCaption] = useState('')
   // Photo taken but not yet posted (caption step)
   const [pendingPhotoUri, setPendingPhotoUri] = useState<string | null>(null)
+  // Achievement celebration
+  const [celebrationQueue, setCelebrationQueue] = useState<UserAchievementWithDetails[]>([])
+  const [showCelebration, setShowCelebration] = useState(false)
+  const currentCelebration = celebrationQueue[0] ?? null
+
+  const handleDismissCelebration = () => {
+    setCelebrationQueue((prev) => {
+      if (prev.length <= 1) {
+        setShowCelebration(false)
+        return []
+      }
+      return prev.slice(1)
+    })
+  }
 
   const today = getTodayLocalDate()
 
@@ -118,6 +139,26 @@ export default function LogWorkoutScreen() {
       caption: caption.trim() || null,
       created_at: new Date().toISOString(),
     })
+
+    // Check achievements after logging workout
+    try {
+      const newlyUnlocked = await checkAndUpdateAchievements(session.user.id)
+      if (newlyUnlocked.length > 0) {
+        const displayName = profile?.display_name || 'Someone'
+        for (const ach of newlyUnlocked) {
+          await createAchievementFeedPost(
+            session.user.id,
+            ach.achievement_id,
+            `${ach.icon} ${displayName} just unlocked "${ach.name}"!`
+          )
+          await markAchievementNotified(session.user.id, ach.achievement_id)
+        }
+        setCelebrationQueue(newlyUnlocked)
+        setShowCelebration(true)
+      }
+    } catch {
+      // Don't block workout posting for achievement errors
+    }
   }
 
   if (!session) return null
@@ -216,6 +257,20 @@ export default function LogWorkoutScreen() {
           </View>
         )}
       </ScrollView>
+
+      {/* Achievement celebration */}
+      {currentCelebration && (
+        <CelebrationModal
+          visible={showCelebration}
+          icon={currentCelebration.icon}
+          title={currentCelebration.name}
+          description={currentCelebration.description}
+          onDismiss={handleDismissCelebration}
+          accentColor={
+            ACHIEVEMENT_CATEGORIES[currentCelebration.category as keyof typeof ACHIEVEMENT_CATEGORIES]?.color
+          }
+        />
+      )}
     </SafeAreaView>
   )
 }
