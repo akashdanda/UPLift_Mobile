@@ -1,8 +1,8 @@
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native'
 import { Stack } from 'expo-router'
 import { StatusBar } from 'expo-status-bar'
-import 'react-native-reanimated'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
+import 'react-native-reanimated'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 
 import { SplashScreenController } from '@/components/splash-screen-controller'
@@ -19,16 +19,49 @@ function RootNavigator() {
     <Stack>
       <Stack.Protected guard={isLoggedIn}>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="edit-profile" options={{ title: 'Edit profile', presentation: 'modal' }} />
-        <Stack.Screen name="log-workout" options={{ title: 'Log workout', presentation: 'modal' }} />
-        <Stack.Screen name="friends" options={{ title: 'Friends' }} />
-        <Stack.Screen name="friend-profile" options={{ title: 'Profile', presentation: 'modal' }} />
-        <Stack.Screen name="create-group" options={{ title: 'Create group', presentation: 'modal' }} />
-        <Stack.Screen name="group-detail" options={{ title: 'Group' }} />
-        <Stack.Screen name="group-settings" options={{ title: 'Group Settings', presentation: 'modal' }} />
-        <Stack.Screen name="challenge-group" options={{ title: 'Challenge Group', presentation: 'modal' }} />
-        <Stack.Screen name="competition-detail" options={{ title: 'War Details' }} />
-        <Stack.Screen name="settings" options={{ title: 'Settings' }} />
+        <Stack.Screen
+          name="edit-profile"
+          options={{ title: 'Edit profile', presentation: 'modal', headerBackTitle: 'Profile' }}
+        />
+        <Stack.Screen
+          name="log-workout"
+          options={{ title: 'Log workout', presentation: 'modal', headerBackTitle: 'Profile' }}
+        />
+        <Stack.Screen name="friends" options={{ title: 'Friends', headerBackTitle: 'Profile' }} />
+        <Stack.Screen
+          name="friend-profile"
+          options={{ title: 'Profile', presentation: 'modal', headerBackTitle: 'Friends' }}
+        />
+        <Stack.Screen
+          name="create-group"
+          options={{ title: 'Create group', presentation: 'modal', headerBackTitle: 'Groups' }}
+        />
+        <Stack.Screen name="group-detail" options={{ title: 'Group', headerBackTitle: 'Groups' }} />
+        <Stack.Screen
+          name="group-settings"
+          options={{ title: 'Group Settings', presentation: 'modal', headerBackTitle: 'Group' }}
+        />
+        <Stack.Screen
+          name="challenge-group"
+          options={{ title: 'Challenge Group', presentation: 'modal', headerBackTitle: 'Groups' }}
+        />
+        <Stack.Screen
+          name="competition-detail"
+          options={{ title: 'War Details', headerBackTitle: 'Groups' }}
+        />
+        <Stack.Screen
+          name="highlight-detail"
+          options={{ title: 'Highlight', headerBackTitle: 'Profile' }}
+        />
+        <Stack.Screen
+          name="manage-highlights"
+          options={{ title: 'Highlights', headerBackTitle: 'Profile' }}
+        />
+        <Stack.Screen
+          name="add-workouts-to-highlight"
+          options={{ title: 'Add workouts', headerBackTitle: 'Highlights' }}
+        />
+        <Stack.Screen name="settings" options={{ title: 'Settings', headerBackTitle: 'Profile' }} />
       </Stack.Protected>
       <Stack.Protected guard={!isLoggedIn}>
         <Stack.Screen name="login" options={{ headerShown: false }} />

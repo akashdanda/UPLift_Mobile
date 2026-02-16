@@ -26,8 +26,10 @@ import {
   getUserAchievements,
   markAchievementNotified,
 } from '@/lib/achievements'
+import { getHighlightsForProfile } from '@/lib/highlights'
 import { supabase } from '@/lib/supabase'
 import { ACHIEVEMENT_CATEGORIES, type UserAchievementWithDetails } from '@/types/achievement'
+import type { HighlightForProfile } from '@/types/highlight'
 
 function getDisplayName(session: { user: { user_metadata?: { full_name?: string }; email?: string } }): string {
   const name = session.user.user_metadata?.full_name
@@ -77,6 +79,9 @@ export default function ProfileScreen() {
   const showAvatarImage = avatarUrl && !avatarLoadError
 
   const [monthWorkoutDates, setMonthWorkoutDates] = useState<Set<string>>(new Set())
+
+  // Highlights (Instagram-style)
+  const [highlights, setHighlights] = useState<HighlightForProfile[]>([])
 
   // Achievements state
   const [achievements, setAchievements] = useState<UserAchievementWithDetails[]>([])
@@ -220,11 +225,12 @@ export default function ProfileScreen() {
     void fetchMonthWorkouts()
   }, [fetchMonthWorkouts])
 
-  // Refresh calendar when screen comes into focus (e.g., after posting a workout)
+  // Refresh calendar and highlights when screen comes into focus
   useFocusEffect(
     useCallback(() => {
       void fetchMonthWorkouts()
-    }, [fetchMonthWorkouts])
+      if (session) getHighlightsForProfile(session.user.id).then(setHighlights)
+    }, [fetchMonthWorkouts, session])
   )
 
   useEffect(() => {
@@ -306,6 +312,45 @@ export default function ProfileScreen() {
             <ThemedText style={[styles.bio, { color: colors.textMuted }]}>{profile.bio}</ThemedText>
           ) : null}
         </ThemedView>
+
+        {/* Highlights (Instagram-style) */}
+        <View style={styles.highlightsSection}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.highlightsScroll}
+          >
+            <Pressable
+              onPress={() => router.push('/manage-highlights')}
+              style={[styles.highlightCircleWrap, { borderColor: colors.tabBarBorder }]}
+            >
+              <View style={[styles.highlightCircle, { backgroundColor: colors.cardElevated }]}>
+                <Ionicons name="add" size={28} color={colors.textMuted} />
+              </View>
+              <ThemedText style={[styles.highlightLabel, { color: colors.textMuted }]} numberOfLines={1}>
+                New
+              </ThemedText>
+            </Pressable>
+            {highlights.map((h) => (
+              <Pressable
+                key={h.id}
+                onPress={() => router.push({ pathname: '/highlight-detail', params: { id: h.id } })}
+                style={[styles.highlightCircleWrap, { borderColor: colors.tabBarBorder }]}
+              >
+                <View style={[styles.highlightCircle, { backgroundColor: colors.cardElevated, overflow: 'hidden' }]}>
+                  {h.cover_image_url ? (
+                    <Image source={{ uri: h.cover_image_url }} style={styles.highlightCircleImage} />
+                  ) : (
+                    <Ionicons name="images-outline" size={28} color={colors.textMuted} />
+                  )}
+                </View>
+                <ThemedText style={[styles.highlightLabel, { color: colors.text }]} numberOfLines={1}>
+                  {h.name}
+                </ThemedText>
+              </Pressable>
+            ))}
+          </ScrollView>
+        </View>
 
         <ThemedView style={styles.section}>
           <ThemedText type="subtitle" style={[styles.sectionTitle, { color: colors.text }]}>
@@ -684,6 +729,19 @@ const styles = StyleSheet.create({
   statValue: { fontSize: 26, fontWeight: '800' },
   statLabel: { marginTop: 2, fontSize: 11, opacity: 0.7 },
 
+  highlightsSection: { marginBottom: 20 },
+  highlightsScroll: { paddingHorizontal: 4, gap: 16, paddingRight: 20 },
+  highlightCircleWrap: { alignItems: 'center', width: 76 },
+  highlightCircle: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+  },
+  highlightCircleImage: { width: 72, height: 72, borderRadius: 36 },
+  highlightLabel: { fontSize: 12, marginTop: 6, maxWidth: 72, textAlign: 'center' },
   section: { marginBottom: 24 },
   sectionTitle: { marginBottom: 12 },
   badgesContainer: {

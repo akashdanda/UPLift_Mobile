@@ -1,4 +1,7 @@
--- Comments on workout posts (text and/or GIF)
+-- Run this in Supabase Dashboard → SQL Editor → New query
+-- Fixes: "could not find the table public.workout_comments in the schema cache"
+
+-- Comments on workout posts (text and/or optional GIF)
 CREATE TABLE IF NOT EXISTS public.workout_comments (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   workout_id UUID NOT NULL REFERENCES public.workouts(id) ON DELETE CASCADE,

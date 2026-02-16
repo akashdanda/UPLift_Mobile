@@ -1,5 +1,6 @@
+import Ionicons from '@expo/vector-icons/Ionicons'
 import { Image } from 'expo-image'
-import { useLocalSearchParams } from 'expo-router'
+import { useLocalSearchParams, useRouter } from 'expo-router'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   ActivityIndicator,
@@ -24,8 +25,10 @@ import { ThemedView } from '@/components/themed-view'
 import { Colors } from '@/constants/theme'
 import { useColorScheme } from '@/hooks/use-color-scheme'
 import { getUserAchievements } from '@/lib/achievements'
+import { getHighlightsForProfile } from '@/lib/highlights'
 import { supabase } from '@/lib/supabase'
 import { ACHIEVEMENT_CATEGORIES, type UserAchievementWithDetails } from '@/types/achievement'
+import type { HighlightForProfile } from '@/types/highlight'
 import type { Profile } from '@/types/profile'
 
 function getInitials(displayName: string | null): string {
@@ -40,12 +43,14 @@ function getInitials(displayName: string | null): string {
 
 export default function FriendProfileScreen() {
   const { id } = useLocalSearchParams<{ id: string }>()
+  const router = useRouter()
   const colorScheme = useColorScheme()
   const colors = Colors[colorScheme ?? 'light']
 
   const [profile, setProfile] = useState<Profile | null>(null)
   const [loading, setLoading] = useState(true)
   const [monthWorkoutDates, setMonthWorkoutDates] = useState<Set<string>>(new Set())
+  const [highlights, setHighlights] = useState<HighlightForProfile[]>([])
   const [isImageModalVisible, setIsImageModalVisible] = useState(false)
   const [achievements, setAchievements] = useState<UserAchievementWithDetails[]>([])
   const [selectedAchievement, setSelectedAchievement] = useState<UserAchievementWithDetails | null>(null)
@@ -135,6 +140,11 @@ export default function FriendProfileScreen() {
     getUserAchievements(id).then(setAchievements).catch(() => {})
   }, [id])
 
+  useEffect(() => {
+    if (!id) return
+    getHighlightsForProfile(id).then(setHighlights).catch(() => {})
+  }, [id])
+
   const displayName = profile?.display_name || 'Athlete'
   const initials = useMemo(() => getInitials(profile?.display_name ?? null), [profile?.display_name])
   const showAvatarImage = !!profile?.avatar_url
@@ -221,6 +231,36 @@ export default function FriendProfileScreen() {
             <ThemedText style={[styles.bio, { color: colors.textMuted }]}>{profile.bio}</ThemedText>
           )}
         </ThemedView>
+
+        {/* Highlights */}
+        {highlights.length > 0 && (
+          <View style={styles.highlightsSection}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.highlightsScroll}
+            >
+              {highlights.map((h) => (
+                <Pressable
+                  key={h.id}
+                  onPress={() => router.push({ pathname: '/highlight-detail', params: { id: h.id } })}
+                  style={[styles.highlightCircleWrap, { borderColor: colors.tabBarBorder }]}
+                >
+                  <View style={[styles.highlightCircle, { backgroundColor: colors.cardElevated, overflow: 'hidden' }]}>
+                    {h.cover_image_url ? (
+                      <Image source={{ uri: h.cover_image_url }} style={styles.highlightCircleImage} />
+                    ) : (
+                      <Ionicons name="images-outline" size={28} color={colors.textMuted} />
+                    )}
+                  </View>
+                  <ThemedText style={[styles.highlightLabel, { color: colors.text }]} numberOfLines={1}>
+                    {h.name}
+                  </ThemedText>
+                </Pressable>
+              ))}
+            </ScrollView>
+          </View>
+        )}
 
         {/* Activity Calendar */}
         <ThemedView style={styles.section}>
@@ -591,6 +631,19 @@ const styles = StyleSheet.create({
     marginTop: 4,
     fontSize: 12,
   },
+  highlightsSection: { marginBottom: 20 },
+  highlightsScroll: { paddingHorizontal: 4, gap: 16, paddingRight: 20 },
+  highlightCircleWrap: { alignItems: 'center', width: 76 },
+  highlightCircle: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+  },
+  highlightCircleImage: { width: 72, height: 72, borderRadius: 36 },
+  highlightLabel: { fontSize: 12, marginTop: 6, maxWidth: 72, textAlign: 'center' },
   // Calendar styles
   calendarCard: {
     borderRadius: 14,
