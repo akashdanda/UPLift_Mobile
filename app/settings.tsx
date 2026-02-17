@@ -5,9 +5,10 @@ import { Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
 import { ThemedText } from '@/components/themed-text'
-import { useAuthContext } from '@/hooks/use-auth-context'
 import { Colors } from '@/constants/theme'
+import { useAuthContext } from '@/hooks/use-auth-context'
 import { useColorScheme } from '@/hooks/use-color-scheme'
+import { clearPushTokenFromProfile } from '@/lib/push-notifications'
 
 export default function SettingsScreen() {
   const { profile, updateProfile } = useAuthContext()
@@ -27,6 +28,7 @@ export default function SettingsScreen() {
     setNotifications(value)
     setUpdating(true)
     await updateProfile({ notifications_enabled: value })
+    if (!value && profile?.id) await clearPushTokenFromProfile(profile.id)
     setUpdating(false)
   }
 

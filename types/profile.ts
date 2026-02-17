@@ -9,6 +9,8 @@ export type Profile = {
   groups_count: number
   friends_count?: number // added for leaderboard; run run-leaderboard-friends-count-in-dashboard.sql
   notifications_enabled: boolean
+  /** Expo push token for sending push notifications (set when user grants permission). */
+  expo_push_token?: string | null
   display_name_changed_at: string | null
   created_at: string
   updated_at: string
@@ -20,4 +22,5 @@ export type ProfileUpdate = {
   avatar_url?: string | null
   bio?: string | null
   notifications_enabled?: boolean
+  expo_push_token?: string | null
 }

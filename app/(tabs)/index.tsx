@@ -30,6 +30,11 @@ import { useAuthContext } from '@/hooks/use-auth-context';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { getAchievementFeedPosts, hasStreakFreezeAvailable, useStreakFreeze } from '@/lib/achievements';
 import { addComment } from '@/lib/comments';
+import {
+  getDailyReminderInfo,
+  getReminderMessage,
+  type DailyReminderInfo,
+} from '@/lib/daily-reminder';
 import { getFriendsWorkouts, type FeedItem } from '@/lib/feed';
 import { getFriends } from '@/lib/friends';
 import { addReaction, removeReaction } from '@/lib/reactions';
@@ -115,6 +120,7 @@ export default function HomeScreen() {
   const [freezeAvailable, setFreezeAvailable] = useState(false);
   const [freezeLoading, setFreezeLoading] = useState(false);
   const [streakAtRisk, setStreakAtRisk] = useState(false);
+  const [reminderInfo, setReminderInfo] = useState<DailyReminderInfo | null>(null);
 
   // React modal (BeReal-style: photo + emoji)
   const [reactModalItem, setReactModalItem] = useState<FeedItem | null>(null);
@@ -302,6 +308,8 @@ export default function HomeScreen() {
       }
       // Check if streak freeze is available
       hasStreakFreezeAvailable(session.user.id).then(setFreezeAvailable);
+      // Daily reminder (for in-app banner and future push)
+      getDailyReminderInfo(session.user.id).then(setReminderInfo);
     }, [session])
   );
 
@@ -368,6 +376,45 @@ export default function HomeScreen() {
             )}
           </View>
         </View>
+
+        {/* Daily reminder banner — only when notifications on and haven't posted today */}
+        {profile?.notifications_enabled !== false &&
+          reminderInfo &&
+          !reminderInfo.hasPostedToday &&
+          getReminderMessage(reminderInfo) && (
+            <Pressable
+              onPress={() => router.push('/log-workout')}
+              style={[
+                styles.reminderBanner,
+                {
+                  backgroundColor:
+                    reminderInfo.hoursLeftUntilCutoff !== null &&
+                    reminderInfo.hoursLeftUntilCutoff <= 3
+                      ? colors.tint + '20'
+                      : colors.cardElevated,
+                  borderColor: colors.tabBarBorder,
+                },
+              ]}
+            >
+              <Ionicons
+                name="notifications"
+                size={22}
+                color={
+                  reminderInfo.hoursLeftUntilCutoff !== null &&
+                  reminderInfo.hoursLeftUntilCutoff <= 3
+                    ? colors.tint
+                    : colors.textMuted
+                }
+              />
+              <ThemedText
+                style={[styles.reminderBannerText, { color: colors.text }]}
+                numberOfLines={2}
+              >
+                {getReminderMessage(reminderInfo)}
+              </ThemedText>
+              <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+            </Pressable>
+          )}
 
         {/* Quick actions */}
         <View style={styles.quickActions}>
@@ -772,6 +819,17 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
   },
+
+  reminderBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 14,
+    borderRadius: 12,
+    marginBottom: 16,
+    gap: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  reminderBannerText: { flex: 1, fontSize: 14 },
 
   // Quick actions — pill buttons
   quickActions: { flexDirection: 'row', gap: 10, marginBottom: 24 },

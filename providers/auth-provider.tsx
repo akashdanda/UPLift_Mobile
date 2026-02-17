@@ -1,5 +1,9 @@
 import { AuthContext } from '@/hooks/use-auth-context'
 import { signInWithGoogle as doSignInWithGoogle } from '@/lib/auth-oauth'
+import {
+  registerForPushNotificationsAsync,
+  savePushTokenToProfile,
+} from '@/lib/push-notifications'
 import { supabase } from '@/lib/supabase'
 import type { Profile, ProfileUpdate } from '@/types/profile'
 import type { Session } from '@supabase/supabase-js'
@@ -150,6 +154,22 @@ export default function AuthProvider({ children }: PropsWithChildren) {
       cancelled = true
     }
   }, [session])
+
+  // Register for push notifications when user is logged in and notifications are enabled
+  useEffect(() => {
+    if (!session || profile?.notifications_enabled === false) return
+    let cancelled = false
+    registerForPushNotificationsAsync()
+      .then(async (token) => {
+        if (cancelled || !token) return
+        const { error } = await savePushTokenToProfile(session.user.id, token)
+        if (error) console.warn('[Push] Failed to save token:', error.message)
+      })
+      .catch((e) => console.warn('[Push] Registration failed:', e))
+    return () => {
+      cancelled = true
+    }
+  }, [session?.user?.id, profile?.notifications_enabled])
 
   return (
     <AuthContext.Provider
