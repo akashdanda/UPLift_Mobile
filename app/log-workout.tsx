@@ -1,3 +1,4 @@
+import Ionicons from '@expo/vector-icons/Ionicons'
 import { Image } from 'expo-image'
 import * as ImagePicker from 'expo-image-picker'
 import { router } from 'expo-router'
@@ -23,10 +24,23 @@ import {
   createAchievementFeedPost,
   markAchievementNotified,
 } from '@/lib/achievements'
+import { getFriends, type FriendWithProfile } from '@/lib/friends'
+import { computeXP, getLevelFromXP } from '@/lib/levels'
 import { supabase } from '@/lib/supabase'
+import { addWorkoutTags } from '@/lib/tags'
 import { uploadWorkoutImage } from '@/lib/workout-upload'
 import { ACHIEVEMENT_CATEGORIES, type UserAchievementWithDetails } from '@/types/achievement'
+import type { UserLevel } from '@/types/level'
 import type { Workout } from '@/types/workout'
+
+function getInitials(displayName: string | null): string {
+  if (displayName?.trim()) {
+    const parts = displayName.trim().split(/\s+/)
+    if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+    if (parts[0]?.[0]) return parts[0][0].toUpperCase()
+  }
+  return '?'
+}
 
 function getTodayLocalDate(): string {
   const d = new Date()
@@ -52,10 +66,23 @@ export default function LogWorkoutScreen() {
   const [showCelebration, setShowCelebration] = useState(false)
   const currentCelebration = celebrationQueue[0] ?? null
 
+  // Level-up celebration
+  const [levelUpCelebration, setLevelUpCelebration] = useState<UserLevel | null>(null)
+  const [showLevelUp, setShowLevelUp] = useState(false)
+
+  // Friend tagging
+  const [friends, setFriends] = useState<FriendWithProfile[]>([])
+  const [taggedFriends, setTaggedFriends] = useState<Set<string>>(new Set())
+  const [showTagPicker, setShowTagPicker] = useState(false)
+
   const handleDismissCelebration = () => {
     setCelebrationQueue((prev) => {
       if (prev.length <= 1) {
         setShowCelebration(false)
+        // Show level-up celebration after all achievements are shown
+        if (levelUpCelebration) {
+          setTimeout(() => setShowLevelUp(true), 300)
+        }
         return []
       }
       return prev.slice(1)
@@ -77,6 +104,8 @@ export default function LogWorkoutScreen() {
       if (!cancelled && data) setTodayWorkout(data as Workout)
       if (!cancelled) setLoading(false)
     })()
+    // Load friends for tagging
+    getFriends(session.user.id).then(setFriends).catch(() => {})
     return () => {
       cancelled = true
     }
@@ -95,6 +124,7 @@ export default function LogWorkoutScreen() {
       allowsEditing: true,
       aspect: [1, 1],
       quality: 0.8,
+      cameraType: ImagePicker.CameraType.front,
     })
     if (result.canceled || !result.assets[0]?.uri) return
 
@@ -111,12 +141,16 @@ export default function LogWorkoutScreen() {
       return
     }
 
-    const { error } = await supabase.from('workouts').insert({
-      user_id: session.user.id,
-      workout_date: today,
-      image_url: uploadResult.url,
-      caption: caption.trim() || null,
-    })
+    const { data: workoutRow, error } = await supabase
+      .from('workouts')
+      .insert({
+        user_id: session.user.id,
+        workout_date: today,
+        image_url: uploadResult.url,
+        caption: caption.trim() || null,
+      })
+      .select()
+      .single()
 
     setUploading(false)
     if (error) {
@@ -127,6 +161,17 @@ export default function LogWorkoutScreen() {
       }
       return
     }
+
+    // Tag friends
+    if (taggedFriends.size > 0 && workoutRow) {
+      await addWorkoutTags(workoutRow.id, [...taggedFriends]).catch(() => {})
+    }
+
+    // Compute level BEFORE refreshing profile (to detect level-up)
+    const oldXP = profile
+      ? computeXP(profile, 0)
+      : 0
+    const oldLevel = getLevelFromXP(oldXP)
 
     setPendingPhotoUri(null)
     setCaption('')
@@ -155,6 +200,25 @@ export default function LogWorkoutScreen() {
         }
         setCelebrationQueue(newlyUnlocked)
         setShowCelebration(true)
+      }
+
+      // Check for level-up
+      const newXP = computeXP(
+        {
+          workouts_count: (profile?.workouts_count ?? 0) + 1,
+          streak: (profile?.streak ?? 0) + 1,
+          groups_count: profile?.groups_count ?? 0,
+          friends_count: profile?.friends_count ?? 0,
+        },
+        newlyUnlocked.length
+      )
+      const newLevel = getLevelFromXP(newXP)
+      if (newLevel.level.tier !== oldLevel.level.tier) {
+        // Queue level-up celebration (shows after achievement celebrations)
+        setLevelUpCelebration(newLevel)
+        if (newlyUnlocked.length === 0) {
+          setShowLevelUp(true)
+        }
       }
     } catch {
       // Don't block workout posting for achievement errors
@@ -243,6 +307,67 @@ export default function LogWorkoutScreen() {
               editable={!uploading}
             />
 
+            {/* Tag friends */}
+            <Pressable
+              style={[styles.tagToggle, { borderColor: colors.tabBarBorder, backgroundColor: colors.card }]}
+              onPress={() => setShowTagPicker(!showTagPicker)}
+              disabled={uploading}
+            >
+              <Ionicons name="people-outline" size={18} color={colors.tint} />
+              <ThemedText style={[styles.tagToggleText, { color: colors.text }]}>
+                {taggedFriends.size > 0
+                  ? `${taggedFriends.size} friend${taggedFriends.size > 1 ? 's' : ''} tagged`
+                  : 'Tag friends'}
+              </ThemedText>
+              <Ionicons name={showTagPicker ? 'chevron-up' : 'chevron-down'} size={16} color={colors.textMuted} />
+            </Pressable>
+
+            {showTagPicker && (
+              <View style={[styles.tagList, { borderColor: colors.tabBarBorder, backgroundColor: colors.card }]}>
+                {friends.length === 0 ? (
+                  <ThemedText style={[styles.tagEmptyHint, { color: colors.textMuted }]}>
+                    Add friends first to tag them
+                  </ThemedText>
+                ) : (
+                  friends.map((friend) => {
+                    const isTagged = taggedFriends.has(friend.id)
+                    return (
+                      <Pressable
+                        key={friend.id}
+                        style={[styles.tagRow, { borderBottomColor: colors.tabBarBorder }]}
+                        onPress={() => {
+                          setTaggedFriends((prev) => {
+                            const next = new Set(prev)
+                            if (next.has(friend.id)) next.delete(friend.id)
+                            else next.add(friend.id)
+                            return next
+                          })
+                        }}
+                      >
+                        <View style={[styles.tagAvatar, { backgroundColor: colors.tint + '20' }]}>
+                          {friend.avatar_url ? (
+                            <Image source={{ uri: friend.avatar_url }} style={styles.tagAvatarImg} />
+                          ) : (
+                            <ThemedText style={[styles.tagInitials, { color: colors.tint }]}>
+                              {getInitials(friend.display_name)}
+                            </ThemedText>
+                          )}
+                        </View>
+                        <ThemedText style={[styles.tagName, { color: colors.text }]}>
+                          {friend.display_name || 'No name'}
+                        </ThemedText>
+                        <Ionicons
+                          name={isTagged ? 'checkmark-circle' : 'ellipse-outline'}
+                          size={22}
+                          color={isTagged ? colors.tint : colors.textMuted}
+                        />
+                      </Pressable>
+                    )
+                  })
+                )}
+              </View>
+            )}
+
             <Pressable
               style={[styles.primaryButton, { backgroundColor: colors.tint }]}
               onPress={handlePost}
@@ -269,6 +394,21 @@ export default function LogWorkoutScreen() {
           accentColor={
             ACHIEVEMENT_CATEGORIES[currentCelebration.category as keyof typeof ACHIEVEMENT_CATEGORIES]?.color
           }
+        />
+      )}
+
+      {/* Level-up celebration */}
+      {levelUpCelebration && (
+        <CelebrationModal
+          visible={showLevelUp}
+          icon={levelUpCelebration.level.emoji}
+          title={`Level Up!`}
+          description={`You reached ${levelUpCelebration.level.title}!`}
+          onDismiss={() => {
+            setShowLevelUp(false)
+            setLevelUpCelebration(null)
+          }}
+          accentColor={levelUpCelebration.level.color}
         />
       )}
     </SafeAreaView>
@@ -310,6 +450,43 @@ const styles = StyleSheet.create({
     fontSize: 16,
     marginBottom: 24,
   },
+  tagToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: 12,
+  },
+  tagToggleText: { flex: 1, fontSize: 15 },
+  tagList: {
+    borderWidth: 1,
+    borderRadius: 12,
+    overflow: 'hidden',
+    marginBottom: 16,
+    maxHeight: 220,
+  },
+  tagRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 10,
+    borderBottomWidth: 1,
+    gap: 10,
+  },
+  tagAvatar: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  tagAvatarImg: { width: 34, height: 34 },
+  tagInitials: { fontSize: 13, fontWeight: '600' },
+  tagName: { flex: 1, fontSize: 15 },
+  tagEmptyHint: { padding: 14, fontSize: 14, textAlign: 'center' },
   primaryButton: {
     borderRadius: 14,
     paddingVertical: 16,

@@ -27,9 +27,11 @@ import {
   markAchievementNotified,
 } from '@/lib/achievements'
 import { getHighlightsForProfile } from '@/lib/highlights'
+import { computeXP, getLevelFromXP } from '@/lib/levels'
 import { supabase } from '@/lib/supabase'
 import { ACHIEVEMENT_CATEGORIES, type UserAchievementWithDetails } from '@/types/achievement'
 import type { HighlightForProfile } from '@/types/highlight'
+import type { UserLevel } from '@/types/level'
 
 function getDisplayName(session: { user: { user_metadata?: { full_name?: string }; email?: string } }): string {
   const name = session.user.user_metadata?.full_name
@@ -90,19 +92,28 @@ export default function ProfileScreen() {
   const [celebrationQueue, setCelebrationQueue] = useState<UserAchievementWithDetails[]>([])
   const [showCelebration, setShowCelebration] = useState(false)
 
-  // Load achievements
+  // Level state
+  const [userLevel, setUserLevel] = useState<UserLevel | null>(null)
+
+  // Load achievements + compute level
   const loadAchievements = useCallback(async () => {
     if (!session) return
     setAchievementsLoading(true)
     try {
       const data = await getUserAchievements(session.user.id)
       setAchievements(data)
+      // Compute level from profile stats + unlocked achievement count
+      if (profile) {
+        const unlockedCount = data.filter((a) => a.unlocked).length
+        const xp = computeXP(profile, unlockedCount)
+        setUserLevel(getLevelFromXP(xp))
+      }
     } catch {
       // ignore
     } finally {
       setAchievementsLoading(false)
     }
-  }, [session])
+  }, [session, profile])
 
   // Check achievements and show celebrations for new unlocks
   const refreshAchievements = useCallback(async () => {
@@ -293,24 +304,80 @@ export default function ProfileScreen() {
       >
         <ThemedView style={styles.header}>
           <Pressable onPress={handleOpenModal} disabled={!showAvatarImage}>
-            <View style={[styles.avatarWrap, { backgroundColor: colors.tint + '25' }]}>
-              {showAvatarImage ? (
-                <Image
-                  source={{ uri: avatarUrl! }}
-                  style={styles.avatarImage}
-                  onError={() => setAvatarLoadError(true)}
-                />
-              ) : (
-                <ThemedText style={[styles.avatarInitials, { color: colors.tint }]}>{initials}</ThemedText>
-              )}
+            <View
+              style={[
+                styles.avatarRing,
+                {
+                  borderColor: userLevel?.level.color ?? colors.tint,
+                  shadowColor: userLevel?.level.color ?? colors.tint,
+                  shadowOpacity: 0.4,
+                  shadowRadius: 10,
+                  shadowOffset: { width: 0, height: 0 },
+                  elevation: 6,
+                },
+              ]}
+            >
+              <View style={[styles.avatarWrap, { backgroundColor: colors.tint + '25' }]}>
+                {showAvatarImage ? (
+                  <Image
+                    source={{ uri: avatarUrl! }}
+                    style={styles.avatarImage}
+                    onError={() => setAvatarLoadError(true)}
+                  />
+                ) : (
+                  <ThemedText style={[styles.avatarInitials, { color: colors.tint }]}>{initials}</ThemedText>
+                )}
+              </View>
             </View>
           </Pressable>
+
+          {/* Level title */}
+          {userLevel && (
+            <View style={[styles.levelBadge, { backgroundColor: userLevel.level.glowColor }]}>
+              <ThemedText style={styles.levelEmoji}>{userLevel.level.emoji}</ThemedText>
+              <ThemedText style={[styles.levelTitle, { color: userLevel.level.color }]}>
+                {userLevel.level.title}
+              </ThemedText>
+            </View>
+          )}
+
           <ThemedText type="title" style={[styles.displayName, { color: colors.text }]}>
             {displayName}
           </ThemedText>
           {profile?.bio ? (
             <ThemedText style={[styles.bio, { color: colors.textMuted }]}>{profile.bio}</ThemedText>
           ) : null}
+
+          {/* XP progress bar */}
+          {userLevel && (
+            <View style={styles.xpSection}>
+              <View style={styles.xpLabelRow}>
+                <ThemedText style={[styles.xpLabel, { color: colors.textMuted }]}>
+                  {userLevel.xp} XP
+                </ThemedText>
+                {userLevel.nextLevel ? (
+                  <ThemedText style={[styles.xpLabel, { color: colors.textMuted }]}>
+                    {userLevel.xpToNext} XP to {userLevel.nextLevel.emoji} {userLevel.nextLevel.title}
+                  </ThemedText>
+                ) : (
+                  <ThemedText style={[styles.xpLabel, { color: userLevel.level.color }]}>
+                    Max level reached!
+                  </ThemedText>
+                )}
+              </View>
+              <View style={[styles.xpBarOuter, { backgroundColor: colors.cardElevated }]}>
+                <View
+                  style={[
+                    styles.xpBarInner,
+                    {
+                      width: `${Math.round(userLevel.progress * 100)}%`,
+                      backgroundColor: userLevel.level.color,
+                    },
+                  ]}
+                />
+              </View>
+            </View>
+          )}
         </ThemedView>
 
         {/* Highlights (Instagram-style) */}
@@ -699,17 +766,36 @@ const styles = StyleSheet.create({
   scrollContent: { padding: 24, paddingBottom: 40 },
 
   header: { alignItems: 'center', marginBottom: 24 },
-  avatarWrap: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
+  avatarRing: {
+    width: 104,
+    height: 104,
+    borderRadius: 52,
+    borderWidth: 3,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 14,
+    marginBottom: 10,
+  },
+  avatarWrap: {
+    width: 94,
+    height: 94,
+    borderRadius: 47,
+    alignItems: 'center',
+    justifyContent: 'center',
     overflow: 'hidden',
   },
-  avatarImage: { width: 96, height: 96 },
+  avatarImage: { width: 94, height: 94 },
   avatarInitials: { fontSize: 34, fontWeight: '700' },
+  levelBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 999,
+    marginBottom: 6,
+  },
+  levelEmoji: { fontSize: 14 },
+  levelTitle: { fontSize: 12, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 1 },
   displayName: { fontSize: 24, fontWeight: '800', textAlign: 'center', marginBottom: 4 },
   bio: {
     fontSize: 15,
@@ -718,6 +804,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     lineHeight: 20,
   },
+  xpSection: { width: '100%', marginTop: 10, paddingHorizontal: 20 },
+  xpLabelRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 5 },
+  xpLabel: { fontSize: 11, fontWeight: '600' },
+  xpBarOuter: { width: '100%', height: 6, borderRadius: 3, overflow: 'hidden' },
+  xpBarInner: { height: '100%', borderRadius: 3 },
 
   statsRow: { flexDirection: 'row', gap: 10, marginBottom: 24 },
   statBox: {

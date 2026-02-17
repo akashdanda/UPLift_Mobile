@@ -49,6 +49,8 @@ function RootNavigator() {
           name="competition-detail"
           options={{ title: 'War Details', headerBackTitle: 'Groups' }}
         />
+        <Stack.Screen name="create-duel" options={{ title: '1v1 Challenge', presentation: 'modal', headerBackTitle: 'Profile' }} />
+        <Stack.Screen name="duel-detail" options={{ title: 'Challenge', headerBackTitle: 'Profile' }} />
         <Stack.Screen
           name="highlight-detail"
           options={{ title: 'Highlight', headerBackTitle: 'Profile' }}
