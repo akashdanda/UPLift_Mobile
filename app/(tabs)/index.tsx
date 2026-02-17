@@ -31,8 +31,11 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { getAchievementFeedPosts, hasStreakFreezeAvailable, useStreakFreeze } from '@/lib/achievements';
 import { addComment } from '@/lib/comments';
 import { getFriendsWorkouts, type FeedItem } from '@/lib/feed';
+import { getFlashbacks, type FlashbackItem } from '@/lib/flashbacks';
 import { getFriends } from '@/lib/friends';
+import { computeXP, getLevelFromXP } from '@/lib/levels';
 import { addReaction, removeReaction } from '@/lib/reactions';
+import { getSocialNudges, type SocialNudge } from '@/lib/social-hooks';
 import { supabase } from '@/lib/supabase';
 import type { AchievementFeedPost } from '@/types/achievement';
 import type { WorkoutCommentWithProfile } from '@/types/comment';
@@ -112,6 +115,8 @@ export default function HomeScreen() {
   const [todayWorkout, setTodayWorkout] = useState<Workout | null>(null);
   const [feedItems, setFeedItems] = useState<FeedItem[]>([]);
   const [achievementPosts, setAchievementPosts] = useState<AchievementFeedPost[]>([]);
+  const [flashbacks, setFlashbacks] = useState<FlashbackItem[]>([]);
+  const [socialNudges, setSocialNudges] = useState<SocialNudge[]>([]);
   const [freezeAvailable, setFreezeAvailable] = useState(false);
   const [freezeLoading, setFreezeLoading] = useState(false);
   const [streakAtRisk, setStreakAtRisk] = useState(false);
@@ -268,6 +273,7 @@ export default function HomeScreen() {
         setTodayWorkout(null);
         setFeedItems([]);
         setAchievementPosts([]);
+        setFlashbacks([]);
         return;
       }
       const today = getTodayLocalDate();
@@ -279,6 +285,36 @@ export default function HomeScreen() {
         .maybeSingle()
         .then(({ data }) => setTodayWorkout((data as Workout) ?? null));
       getFriendsWorkouts(session.user.id).then(setFeedItems);
+      // Load flashbacks
+      getFlashbacks(session.user.id).then(setFlashbacks);
+      // Load social nudges
+      supabase
+        .from('workouts')
+        .select('id')
+        .eq('user_id', session.user.id)
+        .eq('workout_date', today)
+        .maybeSingle()
+        .then(({ data: w }) => {
+          const hasLogged = !!w;
+          // Compute XP for level-up nudge
+          const xp = computeXP(
+            {
+              workouts_count: profile?.workouts_count ?? 0,
+              streak: profile?.streak ?? 0,
+              groups_count: profile?.groups_count ?? 0,
+              friends_count: profile?.friends_count ?? 0,
+            },
+            0 // approximate — skip achievement count for nudge check
+          );
+          const lvl = getLevelFromXP(xp);
+          getSocialNudges(
+            session.user.id,
+            profile?.streak ?? 0,
+            lvl.xp,
+            lvl.xpToNext,
+            hasLogged
+          ).then(setSocialNudges);
+        });
       // Load achievement feed posts
       getFriends(session.user.id).then((friends) => {
         const ids = [session.user.id, ...friends.map((f) => f.id)];
@@ -369,6 +405,31 @@ export default function HomeScreen() {
           </View>
         </View>
 
+        {/* Social nudges */}
+        {socialNudges.length > 0 && (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.nudgeScroll}
+            style={styles.nudgeScrollView}
+          >
+            {socialNudges.map((nudge, idx) => (
+              <View
+                key={`nudge-${idx}`}
+                style={[styles.nudgeCard, { backgroundColor: colors.card }]}
+              >
+                <ThemedText style={styles.nudgeEmoji}>{nudge.emoji}</ThemedText>
+                <ThemedText style={[styles.nudgeTitle, { color: colors.text }]} numberOfLines={1}>
+                  {nudge.title}
+                </ThemedText>
+                <ThemedText style={[styles.nudgeMessage, { color: colors.textMuted }]} numberOfLines={2}>
+                  {nudge.message}
+                </ThemedText>
+              </View>
+            ))}
+          </ScrollView>
+        )}
+
         {/* Quick actions */}
         <View style={styles.quickActions}>
           <Pressable
@@ -419,6 +480,59 @@ export default function HomeScreen() {
                 </View>
               ) : null}
             </View>
+          </View>
+        )}
+
+        {/* Flashbacks — nostalgia cards */}
+        {flashbacks.length > 0 && (
+          <View style={styles.section}>
+            <ThemedText type="subtitle" style={[styles.sectionTitle, { color: colors.text }]}>
+              Flashbacks ✨
+            </ThemedText>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.flashbackScroll}
+            >
+              {flashbacks.map((fb) => (
+                <View
+                  key={fb.period}
+                  style={[styles.flashbackCard, { backgroundColor: colors.card }]}
+                >
+                  <View style={[styles.flashbackBadge, { backgroundColor: colors.tint + '18' }]}>
+                    <ThemedText style={styles.flashbackEmoji}>{fb.emoji}</ThemedText>
+                    <ThemedText style={[styles.flashbackLabel, { color: colors.tint }]}>
+                      {fb.label}
+                    </ThemedText>
+                  </View>
+                  <ZoomableFeedImage imageUrl={fb.workout.image_url} style={styles.flashbackImage} />
+                  {fb.workout.caption ? (
+                    <View style={styles.flashbackCaptionWrap}>
+                      <ThemedText
+                        style={[styles.flashbackCaption, { color: colors.text }]}
+                        numberOfLines={2}
+                      >
+                        {fb.workout.caption}
+                      </ThemedText>
+                    </View>
+                  ) : null}
+                  <View style={styles.flashbackDateWrap}>
+                    <Ionicons name="calendar-outline" size={13} color={colors.textMuted} />
+                    <ThemedText style={[styles.flashbackDate, { color: colors.textMuted }]}>
+                      {new Date(
+                        Number(fb.workout.workout_date.slice(0, 4)),
+                        Number(fb.workout.workout_date.slice(5, 7)) - 1,
+                        Number(fb.workout.workout_date.slice(8, 10))
+                      ).toLocaleDateString(undefined, {
+                        month: 'short',
+                        day: 'numeric',
+                        year: 'numeric',
+                      })}
+                    </ThemedText>
+                  </View>
+                </View>
+              ))}
+            </ScrollView>
           </View>
         )}
 
@@ -502,6 +616,20 @@ export default function HomeScreen() {
                       {item.workout.caption}
                     </ThemedText>
                   ) : null}
+                  {/* Tagged friends */}
+                  {(item.tags ?? []).length > 0 && (
+                    <View style={styles.taggedRow}>
+                      <Ionicons name="people-outline" size={14} color={colors.textMuted} />
+                      <ThemedText style={[styles.taggedLabel, { color: colors.textMuted }]}>with </ThemedText>
+                      {(item.tags ?? []).map((tag, tIdx) => (
+                        <Pressable key={tag.id} onPress={() => router.push(`/friend-profile?id=${tag.tagged_user_id}`)}>
+                          <ThemedText style={[styles.taggedName, { color: colors.tint }]}>
+                            {tag.display_name || 'Friend'}{tIdx < (item.tags?.length ?? 0) - 1 ? ', ' : ''}
+                          </ThemedText>
+                        </Pressable>
+                      ))}
+                    </View>
+                  )}
                   <View style={[styles.reactionRow, { borderTopColor: colors.tabBarBorder }]}>
                     <ScrollView
                       horizontal
@@ -842,6 +970,18 @@ const styles = StyleSheet.create({
   feedImage: { width: '100%', aspectRatio: 1 },
   feedCaption: { padding: 14, fontSize: 15, lineHeight: 22 },
 
+  // Tagged friends
+  taggedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingBottom: 8,
+    gap: 4,
+    flexWrap: 'wrap',
+  },
+  taggedLabel: { fontSize: 13 },
+  taggedName: { fontSize: 13, fontWeight: '600' },
+
   // Reactions (BeReal-style)
   reactionRow: {
     flexDirection: 'row',
@@ -1049,6 +1189,56 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   reactCancelText: { fontSize: 15 },
+
+  // Social nudge cards
+  nudgeScrollView: { marginBottom: 16 },
+  nudgeScroll: { gap: 10, paddingRight: 4 },
+  nudgeCard: {
+    width: 180,
+    padding: 14,
+    borderRadius: 16,
+  },
+  nudgeEmoji: { fontSize: 22, marginBottom: 6 },
+  nudgeTitle: { fontSize: 13, fontWeight: '700', marginBottom: 3 },
+  nudgeMessage: { fontSize: 12, lineHeight: 16 },
+
+  // Flashback cards
+  flashbackScroll: { gap: 14, paddingRight: 4 },
+  flashbackCard: {
+    width: 220,
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  flashbackBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  flashbackEmoji: { fontSize: 18 },
+  flashbackLabel: { fontSize: 13, fontWeight: '700' },
+  flashbackImage: {
+    width: 220,
+    height: 220,
+  },
+  flashbackCaptionWrap: {
+    paddingHorizontal: 12,
+    paddingTop: 8,
+  },
+  flashbackCaption: {
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  flashbackDateWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingTop: 6,
+    paddingBottom: 12,
+  },
+  flashbackDate: { fontSize: 11 },
 
   // Achievement feed cards
   achievementFeedCard: {

@@ -1,5 +1,5 @@
 import { Image } from 'expo-image'
-import { useLocalSearchParams } from 'expo-router'
+import { router, useLocalSearchParams } from 'expo-router'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   ActivityIndicator,
@@ -24,8 +24,10 @@ import { ThemedView } from '@/components/themed-view'
 import { Colors } from '@/constants/theme'
 import { useColorScheme } from '@/hooks/use-color-scheme'
 import { getUserAchievements } from '@/lib/achievements'
+import { getUserLevel } from '@/lib/levels'
 import { supabase } from '@/lib/supabase'
 import { ACHIEVEMENT_CATEGORIES, type UserAchievementWithDetails } from '@/types/achievement'
+import type { UserLevel } from '@/types/level'
 import type { Profile } from '@/types/profile'
 
 function getInitials(displayName: string | null): string {
@@ -49,6 +51,7 @@ export default function FriendProfileScreen() {
   const [isImageModalVisible, setIsImageModalVisible] = useState(false)
   const [achievements, setAchievements] = useState<UserAchievementWithDetails[]>([])
   const [selectedAchievement, setSelectedAchievement] = useState<UserAchievementWithDetails | null>(null)
+  const [friendLevel, setFriendLevel] = useState<UserLevel | null>(null)
 
   // Calendar calculations
   const today = useMemo(() => new Date(), [])
@@ -133,6 +136,7 @@ export default function FriendProfileScreen() {
   useEffect(() => {
     if (!id) return
     getUserAchievements(id).then(setAchievements).catch(() => {})
+    getUserLevel(id).then(setFriendLevel).catch(() => {})
   }, [id])
 
   const displayName = profile?.display_name || 'Athlete'
@@ -206,20 +210,53 @@ export default function FriendProfileScreen() {
         {/* Header: Avatar, Name, Bio */}
         <ThemedView style={styles.header}>
           <Pressable onPress={handleOpenModal} disabled={!showAvatarImage}>
-            <View style={[styles.avatarWrap, { backgroundColor: colors.tint + '25' }]}>
-              {showAvatarImage ? (
-                <Image source={{ uri: profile.avatar_url! }} style={styles.avatarImage} />
-              ) : (
-                <ThemedText style={[styles.avatarInitials, { color: colors.tint }]}>{initials}</ThemedText>
-              )}
+            <View
+              style={[
+                styles.avatarRing,
+                {
+                  borderColor: friendLevel?.level.color ?? colors.tint,
+                  shadowColor: friendLevel?.level.color ?? colors.tint,
+                  shadowOpacity: 0.4,
+                  shadowRadius: 10,
+                  shadowOffset: { width: 0, height: 0 },
+                  elevation: 6,
+                },
+              ]}
+            >
+              <View style={[styles.avatarWrap, { backgroundColor: colors.tint + '25' }]}>
+                {showAvatarImage ? (
+                  <Image source={{ uri: profile.avatar_url! }} style={styles.avatarImage} />
+                ) : (
+                  <ThemedText style={[styles.avatarInitials, { color: colors.tint }]}>{initials}</ThemedText>
+                )}
+              </View>
             </View>
           </Pressable>
+
+          {/* Level badge */}
+          {friendLevel && (
+            <View style={[styles.levelBadge, { backgroundColor: friendLevel.level.glowColor }]}>
+              <ThemedText style={styles.levelEmoji}>{friendLevel.level.emoji}</ThemedText>
+              <ThemedText style={[styles.levelTitle, { color: friendLevel.level.color }]}>
+                {friendLevel.level.title}
+              </ThemedText>
+            </View>
+          )}
+
           <ThemedText type="title" style={[styles.displayName, { color: colors.text }]}>
             {displayName}
           </ThemedText>
           {profile.bio && (
             <ThemedText style={[styles.bio, { color: colors.textMuted }]}>{profile.bio}</ThemedText>
           )}
+
+          {/* Challenge button */}
+          <Pressable
+            style={[styles.challengeButton, { backgroundColor: colors.tint }]}
+            onPress={() => router.push(`/create-duel?friendId=${id}`)}
+          >
+            <ThemedText style={styles.challengeButtonText}>⚔️ Challenge</ThemedText>
+          </Pressable>
         </ThemedView>
 
         {/* Activity Calendar */}
@@ -538,23 +575,42 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 28,
   },
-  avatarWrap: {
-    width: 88,
-    height: 88,
-    borderRadius: 44,
+  avatarRing: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    borderWidth: 3,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 12,
+    marginBottom: 8,
+  },
+  avatarWrap: {
+    width: 86,
+    height: 86,
+    borderRadius: 43,
+    alignItems: 'center',
+    justifyContent: 'center',
     overflow: 'hidden',
   },
   avatarImage: {
-    width: 88,
-    height: 88,
+    width: 86,
+    height: 86,
   },
   avatarInitials: {
     fontSize: 32,
     fontWeight: '600',
   },
+  levelBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 999,
+    marginBottom: 6,
+  },
+  levelEmoji: { fontSize: 14 },
+  levelTitle: { fontSize: 12, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 1 },
   displayName: {
     marginBottom: 4,
     textAlign: 'center',
@@ -565,6 +621,18 @@ const styles = StyleSheet.create({
     marginTop: 8,
     paddingHorizontal: 24,
     lineHeight: 20,
+  },
+  challengeButton: {
+    marginTop: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 28,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  challengeButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
   },
   section: {
     marginBottom: 24,

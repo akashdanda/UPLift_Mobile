@@ -23,7 +23,9 @@ import {
   type LeaderboardRow,
   type LeaderboardScope,
 } from '@/lib/leaderboard'
+import { getBatchUserLevels } from '@/lib/levels'
 import { getMyGroups, type GroupWithMeta } from '@/lib/groups'
+import type { UserLevel } from '@/types/level'
 
 function getDisplayName(row: LeaderboardRow): string {
   return row.display_name?.trim() || 'Anonymous'
@@ -52,6 +54,7 @@ export default function LeaderboardScreen() {
   const [loading, setLoading] = useState(true)
   const scopeChanged = useRef(false)
   const [badgesMap, setBadgesMap] = useState<Map<string, Array<{ icon: string; name: string }>>>(new Map())
+  const [levelsMap, setLevelsMap] = useState<Map<string, UserLevel>>(new Map())
   const [myPrevRank, setMyPrevRank] = useState<number | null>(null)
 
   // Current period key (e.g. "2026-02")
@@ -75,11 +78,15 @@ export default function LeaderboardScreen() {
         setRows(r)
         setMyRow(m)
 
-        // Fetch badges for all users on the board
+        // Fetch badges + levels for all users on the board
         const userIds = r.map(row => row.id)
         if (userIds.length > 0) {
-          const badges = await getBatchTopBadges(userIds, 2)
+          const [badges, levels] = await Promise.all([
+            getBatchTopBadges(userIds, 2),
+            getBatchUserLevels(userIds),
+          ])
           setBadgesMap(badges)
+          setLevelsMap(levels)
         }
 
         // Save snapshot and get previous rank for movement display
@@ -272,6 +279,7 @@ export default function LeaderboardScreen() {
               {rows.map((row) => {
                 const isMe = session?.user?.id === row.id
                 const name = getDisplayName(row)
+                const rowLevel = levelsMap.get(row.id)
                 return (
                   <View
                     key={row.id}
@@ -285,17 +293,27 @@ export default function LeaderboardScreen() {
                     <ThemedText type="defaultSemiBold" style={[styles.rank, { color: colors.textMuted }]}>
                       #{row.rank}
                     </ThemedText>
-                    <View style={[styles.avatar, { backgroundColor: colors.tint + '25' }]}>
-                      {row.avatar_url ? (
-                        <Image source={{ uri: row.avatar_url }} style={styles.avatarImage} />
-                      ) : (
-                        <ThemedText style={[styles.avatarInitials, { color: colors.tint }]}>
-                          {getInitials(name)}
-                        </ThemedText>
-                      )}
+                    <View
+                      style={[
+                        styles.avatarRing,
+                        { borderColor: rowLevel?.level.color ?? colors.tint + '40' },
+                      ]}
+                    >
+                      <View style={[styles.avatar, { backgroundColor: colors.tint + '25' }]}>
+                        {row.avatar_url ? (
+                          <Image source={{ uri: row.avatar_url }} style={styles.avatarImage} />
+                        ) : (
+                          <ThemedText style={[styles.avatarInitials, { color: colors.tint }]}>
+                            {getInitials(name)}
+                          </ThemedText>
+                        )}
+                      </View>
                     </View>
                     <View style={styles.nameBlock}>
                       <View style={styles.nameRow}>
+                        {rowLevel && (
+                          <ThemedText style={styles.levelEmojiSmall}>{rowLevel.level.emoji}</ThemedText>
+                        )}
                         <ThemedText type="defaultSemiBold" style={[styles.name, { color: colors.text }]} numberOfLines={1}>
                           {name}
                           {isMe ? ' (you)' : ''}
@@ -314,8 +332,7 @@ export default function LeaderboardScreen() {
                         )}
                       </View>
                       <ThemedText style={[styles.statsLine, { color: colors.textMuted }]}>
-                        {row.workouts_count} workouts · {row.streak} streak · {row.groups_count} groups ·{' '}
-                        {row.friends_count} friends
+                        {rowLevel ? `${rowLevel.level.title} · ` : ''}{row.workouts_count} workouts · {row.streak} streak
                       </ThemedText>
                     </View>
                     <ThemedText type="defaultSemiBold" style={[styles.points, { color: colors.tint }]}>
@@ -402,19 +419,28 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   rank: { width: 36, fontSize: 14 },
+  avatarRing: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 8,
+  },
   avatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
-    marginLeft: 8,
   },
-  avatarImage: { width: 40, height: 40 },
-  avatarInitials: { fontSize: 14, fontWeight: '600' },
-  nameBlock: { flex: 1, marginLeft: 12, minWidth: 0 },
-  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  avatarImage: { width: 36, height: 36 },
+  avatarInitials: { fontSize: 13, fontWeight: '600' },
+  levelEmojiSmall: { fontSize: 13 },
+  nameBlock: { flex: 1, marginLeft: 10, minWidth: 0 },
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   name: { fontSize: 15, flexShrink: 1 },
   badgeRow: { flexDirection: 'row', gap: 3 },
   badgePill: {

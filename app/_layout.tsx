@@ -28,6 +28,8 @@ function RootNavigator() {
         <Stack.Screen name="group-settings" options={{ title: 'Group Settings', presentation: 'modal' }} />
         <Stack.Screen name="challenge-group" options={{ title: 'Challenge Group', presentation: 'modal' }} />
         <Stack.Screen name="competition-detail" options={{ title: 'War Details' }} />
+        <Stack.Screen name="create-duel" options={{ title: '1v1 Challenge', presentation: 'modal' }} />
+        <Stack.Screen name="duel-detail" options={{ title: 'Challenge' }} />
         <Stack.Screen name="settings" options={{ title: 'Settings' }} />
       </Stack.Protected>
       <Stack.Protected guard={!isLoggedIn}>
