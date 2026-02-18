@@ -25,10 +25,12 @@ import {
   acceptFriendRequest,
   getFriends,
   getFriendshipStatus,
+  getMutualFriendSuggestions,
   getPendingReceived,
   removeFriendship,
   searchProfiles,
   sendFriendRequest,
+  type MutualFriendSuggestion,
 } from '@/lib/friends'
 import type { FriendWithProfile } from '@/lib/friends'
 import type { ProfilePublic } from '@/types/friendship'
@@ -57,6 +59,7 @@ export default function FriendsScreen() {
   const [searching, setSearching] = useState(false)
   const [actingId, setActingId] = useState<string | null>(null)
   const [buddySuggestions, setBuddySuggestions] = useState<BuddySuggestion[]>([])
+  const [mutualSuggestions, setMutualSuggestions] = useState<MutualFriendSuggestion[]>([])
   const [activeDuels, setActiveDuels] = useState<DuelWithProfiles[]>([])
 
   const userId = session?.user?.id ?? ''
@@ -70,7 +73,8 @@ export default function FriendsScreen() {
         setPending(p)
       })
       .finally(() => setLoading(false))
-    // Load buddy suggestions & active duels
+    // Load suggestions & active duels
+    getMutualFriendSuggestions(userId, 10).then(setMutualSuggestions).catch(() => {})
     getBuddySuggestions(userId, 5).then(setBuddySuggestions).catch(() => {})
     getUserDuels(userId, ['active', 'pending']).then(setActiveDuels).catch(() => {})
   }, [userId])
@@ -149,7 +153,15 @@ export default function FriendsScreen() {
   if (!session) return null
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['bottom']}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
+      {/* Top bar */}
+      <View style={[styles.topBar, { borderBottomColor: colors.tabBarBorder }]}>
+        <View style={{ width: 28 }} />
+        <ThemedText type="title" style={[styles.topBarTitle, { color: colors.text }]}>
+          Friends
+        </ThemedText>
+        <View style={{ width: 28 }} />
+      </View>
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
@@ -390,6 +402,67 @@ export default function FriendsScreen() {
             ))}
           </View>
         )}
+        {/* Suggested Friends (Mutuals) */}
+        {mutualSuggestions.length > 0 && (
+          <>
+            <ThemedText type="subtitle" style={[styles.sectionTitle, { color: colors.text }]}>
+              People you may know
+            </ThemedText>
+            <View style={[styles.listCard, { backgroundColor: colors.card, borderColor: colors.tabBarBorder }]}>
+              {mutualSuggestions.map((suggestion) => {
+                const status = searchStatus[suggestion.id] ?? 'none'
+                const mutualText =
+                  suggestion.mutual_count === 1
+                    ? `${suggestion.mutual_names[0]} is a mutual`
+                    : suggestion.mutual_count === 2
+                      ? `${suggestion.mutual_names[0]} and ${suggestion.mutual_names[1]} are mutuals`
+                      : `${suggestion.mutual_names[0]} and ${suggestion.mutual_count - 1} other mutual${suggestion.mutual_count - 1 > 1 ? 's' : ''}`
+                return (
+                  <View key={suggestion.id} style={[styles.friendRow, { borderBottomColor: colors.tabBarBorder }]}>
+                    <Pressable
+                      style={[styles.avatarSmall, { backgroundColor: colors.tint + '25' }]}
+                      onPress={() => router.push(`/friend-profile?id=${suggestion.id}`)}
+                    >
+                      {suggestion.avatar_url ? (
+                        <Image source={{ uri: suggestion.avatar_url }} style={styles.avatarSmallImage} />
+                      ) : (
+                        <ThemedText style={[styles.avatarInitials, { color: colors.tint }]}>
+                          {getInitials(suggestion.display_name)}
+                        </ThemedText>
+                      )}
+                    </Pressable>
+                    <View style={styles.resultInfo}>
+                      <ThemedText style={[styles.resultName, { color: colors.text }]}>
+                        {suggestion.display_name || 'Athlete'}
+                      </ThemedText>
+                      <ThemedText style={[styles.resultMeta, { color: colors.textMuted }]}>
+                        {mutualText}
+                      </ThemedText>
+                    </View>
+                    {status === 'none' ? (
+                      <Pressable
+                        style={[styles.addButton, { backgroundColor: colors.tint }]}
+                        onPress={() => handleAddFriend(suggestion.id)}
+                        disabled={actingId === suggestion.id}
+                      >
+                        {actingId === suggestion.id ? (
+                          <ActivityIndicator color="#fff" size="small" />
+                        ) : (
+                          <ThemedText style={styles.addButtonText}>Add</ThemedText>
+                        )}
+                      </Pressable>
+                    ) : status === 'pending_sent' ? (
+                      <ThemedText style={[styles.statusLabel, { color: colors.textMuted }]}>Pending</ThemedText>
+                    ) : status === 'friends' ? (
+                      <ThemedText style={[styles.statusLabel, { color: colors.tint }]}>Friends</ThemedText>
+                    ) : null}
+                  </View>
+                )
+              })}
+            </View>
+          </>
+        )}
+
         {/* Workout Buddy Suggestions */}
         {buddySuggestions.length > 0 && (
           <>
@@ -455,6 +528,16 @@ export default function FriendsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  topBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    paddingBottom: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  topBarTitle: { fontSize: 28 },
   scrollView: { flex: 1 },
   scrollContent: { padding: 24, paddingBottom: 40 },
   sectionTitle: { marginBottom: 12 },

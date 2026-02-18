@@ -66,7 +66,6 @@ function getInitials(
 
 const MENU_ITEMS = [
   { label: 'Edit profile', icon: 'person-outline' as const, route: '/edit-profile' },
-  { label: 'Friends', icon: 'people-outline' as const, route: '/friends' },
   { label: 'Settings', icon: 'settings-outline' as const, route: '/settings' },
 ]
 

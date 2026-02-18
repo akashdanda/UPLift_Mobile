@@ -103,6 +103,107 @@ export async function removeFriendship(friendshipId: string, userId: string): Pr
 }
 
 /** Check friendship status with another user: 'none' | 'pending_sent' | 'pending_received' | 'friends' */
+export type MutualFriendSuggestion = ProfilePublic & {
+  mutual_count: number
+  mutual_names: string[]
+}
+
+/**
+ * Find people you're not friends with who share mutual friends with you.
+ * Algorithm: gather friends-of-friends, count how many of your friends each person shares,
+ * then rank by mutual count.
+ */
+export async function getMutualFriendSuggestions(
+  userId: string,
+  limit = 10
+): Promise<MutualFriendSuggestion[]> {
+  // 1. Get user's accepted friends
+  const myFriends = await getFriends(userId)
+  if (myFriends.length === 0) return []
+  const myFriendIds = new Set(myFriends.map((f) => f.id))
+
+  // 2. For each friend, get their friends
+  const { data: fofRows } = await supabase
+    .from('friendships')
+    .select('requester_id, addressee_id')
+    .eq('status', 'accepted')
+    .or(
+      myFriends
+        .map((f) => `requester_id.eq.${f.id},addressee_id.eq.${f.id}`)
+        .join(',')
+    )
+
+  if (!fofRows?.length) return []
+
+  // 3. Count how many mutual friends each non-friend has with us
+  const mutualCount = new Map<string, Set<string>>()
+  for (const row of fofRows as { requester_id: string; addressee_id: string }[]) {
+    const friendId = myFriendIds.has(row.requester_id) ? row.requester_id : row.addressee_id
+    const otherId = row.requester_id === friendId ? row.addressee_id : row.requester_id
+
+    // Skip self, existing friends, and pending requests
+    if (otherId === userId || myFriendIds.has(otherId)) continue
+
+    if (!mutualCount.has(otherId)) mutualCount.set(otherId, new Set())
+    mutualCount.get(otherId)!.add(friendId)
+  }
+
+  if (mutualCount.size === 0) return []
+
+  // 4. Sort by mutual count descending, take top candidates
+  const sorted = [...mutualCount.entries()]
+    .sort((a, b) => b[1].size - a[1].size)
+    .slice(0, limit)
+
+  const candidateIds = sorted.map(([id]) => id)
+
+  // 5. Check we don't already have pending requests with these people
+  const { data: existingRows } = await supabase
+    .from('friendships')
+    .select('requester_id, addressee_id')
+    .or(
+      candidateIds
+        .map((cid) =>
+          `and(requester_id.eq.${userId},addressee_id.eq.${cid}),and(requester_id.eq.${cid},addressee_id.eq.${userId})`
+        )
+        .join(',')
+    )
+
+  const alreadyConnected = new Set<string>()
+  for (const row of (existingRows ?? []) as { requester_id: string; addressee_id: string }[]) {
+    alreadyConnected.add(row.requester_id === userId ? row.addressee_id : row.requester_id)
+  }
+
+  // 6. Fetch profiles for remaining candidates
+  const finalIds = candidateIds.filter((id) => !alreadyConnected.has(id))
+  if (finalIds.length === 0) return []
+
+  const { data: profiles } = await supabase
+    .from('profiles')
+    .select('id, display_name, avatar_url, workouts_count')
+    .in('id', finalIds)
+
+  const profileMap = new Map((profiles ?? []).map((p) => [p.id, p as ProfilePublic]))
+
+  // Build name lookup for mutual friends
+  const friendNameMap = new Map(myFriends.map((f) => [f.id, f.display_name ?? 'Someone']))
+
+  return finalIds
+    .map((id) => {
+      const profile = profileMap.get(id)
+      if (!profile) return null
+      const mutuals = mutualCount.get(id)!
+      const mutualNames = [...mutuals].map((mid) => friendNameMap.get(mid) ?? 'Someone').slice(0, 3)
+      return {
+        ...profile,
+        mutual_count: mutuals.size,
+        mutual_names: mutualNames,
+      } as MutualFriendSuggestion
+    })
+    .filter(Boolean) as MutualFriendSuggestion[]
+}
+
+/** Check friendship status with another user: 'none' | 'pending_sent' | 'pending_received' | 'friends' */
 export async function getFriendshipStatus(
   userId: string,
   otherId: string

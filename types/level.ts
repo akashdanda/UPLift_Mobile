@@ -1,10 +1,10 @@
 // ──────────────────────────────────────────────
-// Leveling System — "Bronze Athlete → Diamond Legend"
+// Leveling System — "Bronze → Legend"
 // XP is computed from existing profile stats + achievements.
 // No new DB tables needed — purely derived data.
 // ──────────────────────────────────────────────
 
-export type LevelTier = 'bronze' | 'silver' | 'gold' | 'platinum' | 'diamond'
+export type LevelTier = 'bronze' | 'silver' | 'gold' | 'platinum' | 'diamond' | 'master' | 'legend'
 
 export type LevelDefinition = {
   tier: LevelTier
@@ -21,7 +21,7 @@ export type LevelDefinition = {
 export const LEVEL_TIERS: LevelDefinition[] = [
   {
     tier: 'bronze',
-    title: 'Bronze Athlete',
+    title: 'Bronze',
     emoji: '🥉',
     minXP: 0,
     color: '#CD7F32',
@@ -29,7 +29,7 @@ export const LEVEL_TIERS: LevelDefinition[] = [
   },
   {
     tier: 'silver',
-    title: 'Silver Warrior',
+    title: 'Silver',
     emoji: '🥈',
     minXP: 150,
     color: '#94A3B8',
@@ -37,7 +37,7 @@ export const LEVEL_TIERS: LevelDefinition[] = [
   },
   {
     tier: 'gold',
-    title: 'Gold Champion',
+    title: 'Gold',
     emoji: '🥇',
     minXP: 400,
     color: '#EAB308',
@@ -45,19 +45,35 @@ export const LEVEL_TIERS: LevelDefinition[] = [
   },
   {
     tier: 'platinum',
-    title: 'Platinum Elite',
+    title: 'Platinum',
     emoji: '💎',
-    minXP: 800,
+    minXP: 700,
     color: '#6366F1',
     glowColor: '#6366F130',
   },
   {
     tier: 'diamond',
-    title: 'Diamond Legend',
-    emoji: '👑',
-    minXP: 1500,
+    title: 'Diamond',
+    emoji: '💠',
+    minXP: 1100,
+    color: '#22D3EE',
+    glowColor: '#22D3EE30',
+  },
+  {
+    tier: 'master',
+    title: 'Master',
+    emoji: '⚜️',
+    minXP: 2000,
     color: '#EC4899',
     glowColor: '#EC489930',
+  },
+  {
+    tier: 'legend',
+    title: 'Legend',
+    emoji: '👑',
+    minXP: 3500,
+    color: '#F59E0B',
+    glowColor: '#F59E0B30',
   },
 ]
 

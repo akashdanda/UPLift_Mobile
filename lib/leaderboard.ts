@@ -51,11 +51,17 @@ function getMonthBounds() {
   }
 }
 
-/** Consecutive days with workouts in the month ending at refDate. Uses date parts to avoid Date bounds issues. */
-function computeStreak(workoutDates: string[], dateEnd: string): number {
+/** Consecutive days with workouts counting back from today (capped to the month). */
+function computeStreak(workoutDates: string[], _dateEnd: string): number {
   const set = new Set(workoutDates)
   if (set.size === 0) return 0
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateEnd)
+
+  // Start from today (UTC) — not from end-of-month which may be in the future
+  const now = new Date()
+  const todayStr = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-${String(now.getUTCDate()).padStart(2, '0')}`
+  const startFrom = todayStr < _dateEnd ? todayStr : _dateEnd
+
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(startFrom)
   if (!match) return 0
   let y = parseInt(match[1], 10)
   let m = parseInt(match[2], 10) - 1

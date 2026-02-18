@@ -27,7 +27,6 @@ function RootNavigator() {
           name="log-workout"
           options={{ title: 'Log workout', presentation: 'modal', headerBackTitle: 'Profile' }}
         />
-        <Stack.Screen name="friends" options={{ title: 'Friends', headerBackTitle: 'Profile' }} />
         <Stack.Screen
           name="friend-profile"
           options={{ title: 'Profile', presentation: 'modal', headerBackTitle: 'Friends' }}
@@ -53,7 +52,11 @@ function RootNavigator() {
         <Stack.Screen name="duel-detail" options={{ title: 'Challenge', headerBackTitle: 'Profile' }} />
         <Stack.Screen
           name="highlight-detail"
-          options={{ title: 'Highlight', headerBackTitle: 'Profile' }}
+          options={{
+            headerShown: false,
+            presentation: 'fullScreenModal',
+            animation: 'fade',
+          }}
         />
         <Stack.Screen
           name="manage-highlights"
