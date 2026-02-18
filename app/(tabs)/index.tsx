@@ -133,6 +133,9 @@ export default function HomeScreen() {
   const [reactPendingEmoji, setReactPendingEmoji] = useState<string | null>(null);
   const [reactSubmitting, setReactSubmitting] = useState(false);
 
+  // Reaction detail view modal
+  const [viewReaction, setViewReaction] = useState<WorkoutReactionWithProfile | null>(null);
+
   // Comment modal
   const [commentModalItem, setCommentModalItem] = useState<FeedItem | null>(null);
   const [commentMessage, setCommentMessage] = useState('');
@@ -684,7 +687,7 @@ export default function HomeScreen() {
                       contentContainerStyle={styles.reactionBubbles}
                     >
                       {(item.reactions ?? []).map((r) => (
-                        <View key={r.id} style={styles.reactionBubbleWrap}>
+                        <Pressable key={r.id} onPress={() => setViewReaction(r)} style={({ pressed }) => [styles.reactionBubbleWrap, pressed && { opacity: 0.7 }]}>
                           <View style={styles.reactionBubble}>
                             <View style={styles.reactionBubblePhotoWrap}>
                               {r.reaction_image_url ? (
@@ -705,7 +708,7 @@ export default function HomeScreen() {
                               <ThemedText style={styles.reactionEmojiText}>{r.emoji}</ThemedText>
                             </View>
                           </View>
-                        </View>
+                        </Pressable>
                       ))}
                     </ScrollView>
                     {session && (() => {
@@ -908,6 +911,65 @@ export default function HomeScreen() {
           </KeyboardAvoidingView>
         </Pressable>
       </Modal>
+
+      {/* Reaction detail view modal */}
+      <Modal
+        visible={!!viewReaction}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setViewReaction(null)}
+      >
+        <Pressable style={styles.reactionViewOverlay} onPress={() => setViewReaction(null)}>
+          <View style={styles.reactionViewCenter}>
+            {/* Tappable profile ring — like Instagram story */}
+            <Pressable
+              onPress={() => {
+                const userId = viewReaction?.user_id;
+                setViewReaction(null);
+                if (userId && userId !== session?.user?.id) {
+                  router.push({ pathname: '/friend-profile', params: { id: userId } });
+                } else if (userId === session?.user?.id) {
+                  router.push('/(tabs)/profile');
+                }
+              }}
+              style={({ pressed }) => [
+                styles.reactionViewRing,
+                { borderColor: colors.tint },
+                pressed && { opacity: 0.8, transform: [{ scale: 0.95 }] },
+              ]}
+            >
+              <View style={[styles.reactionViewImageWrap, { backgroundColor: colors.tint + '15' }]}>
+                {viewReaction?.reaction_image_url ? (
+                  <Image
+                    source={{ uri: viewReaction.reaction_image_url }}
+                    style={styles.reactionViewImage}
+                    contentFit="cover"
+                  />
+                ) : viewReaction?.avatar_url ? (
+                  <Image
+                    source={{ uri: viewReaction.avatar_url }}
+                    style={styles.reactionViewImage}
+                    contentFit="cover"
+                  />
+                ) : (
+                  <ThemedText style={[styles.reactionViewInitials, { color: colors.tint }]}>
+                    {getInitials(viewReaction?.display_name ?? null)}
+                  </ThemedText>
+                )}
+              </View>
+            </Pressable>
+
+            {/* Emoji below the ring */}
+            <ThemedText style={styles.reactionViewEmoji}>{viewReaction?.emoji}</ThemedText>
+
+            {/* Name + "View profile" hint */}
+            <ThemedText type="defaultSemiBold" style={[styles.reactionViewName, { color: '#fff' }]} numberOfLines={1}>
+              {viewReaction?.display_name || 'Anonymous'}
+            </ThemedText>
+            <ThemedText style={styles.reactionViewHint}>Tap photo to view profile</ThemedText>
+          </View>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -1051,12 +1113,12 @@ const styles = StyleSheet.create({
   },
   reactionBubbles: { flexDirection: 'row', alignItems: 'center', gap: 6, flexGrow: 0 },
   reactionBubbleWrap: {
-    width: 40,
-    height: 40,
+    width: 46,
+    height: 46,
   },
   reactionBubble: {
-    width: 40,
-    height: 40,
+    width: 46,
+    height: 46,
   },
   reactionBubblePhotoWrap: {
     position: 'absolute',
@@ -1080,9 +1142,62 @@ const styles = StyleSheet.create({
   reactionEmojiBadge: {
     position: 'absolute',
     bottom: 0,
-    right: -2,
+    right: 0,
   },
-  reactionEmojiText: { fontSize: 16 },
+  reactionEmojiText: { fontSize: 14 },
+
+  // Reaction detail view modal — Instagram-style
+  reactionViewOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.75)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  reactionViewCenter: {
+    alignItems: 'center',
+  },
+  reactionViewRing: {
+    width: 130,
+    height: 130,
+    borderRadius: 65,
+    borderWidth: 3,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
+  },
+  reactionViewImageWrap: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  reactionViewImage: {
+    width: 120,
+    height: 120,
+  },
+  reactionViewInitials: {
+    fontSize: 34,
+    fontWeight: '700',
+  },
+  reactionViewEmoji: {
+    fontSize: 32,
+    lineHeight: 38,
+    textAlign: 'center',
+    marginBottom: 6,
+  },
+  reactionViewName: {
+    fontSize: 15,
+    maxWidth: 180,
+    textAlign: 'center',
+    marginBottom: 4,
+  },
+  reactionViewHint: {
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.45)',
+  },
+
   reactButton: {
     flexDirection: 'row',
     alignItems: 'center',
