@@ -1,7 +1,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons'
 import { Image } from 'expo-image'
 import { useFocusEffect } from '@react-navigation/native'
-import { useLocalSearchParams } from 'expo-router'
+import { useLocalSearchParams, useRouter } from 'expo-router'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
@@ -44,6 +44,7 @@ export default function LeaderboardScreen() {
   const colorScheme = useColorScheme()
   const colors = Colors[colorScheme ?? 'light']
   const { session } = useAuthContext()
+  const router = useRouter()
   const params = useLocalSearchParams<{ scope?: string }>()
 
   const [scope, setScope] = useState<LeaderboardScope>('friends')
@@ -281,13 +282,21 @@ export default function LeaderboardScreen() {
                 const name = getDisplayName(row)
                 const rowLevel = levelsMap.get(row.id)
                 return (
-                  <View
+                  <Pressable
                     key={row.id}
-                    style={[
+                    onPress={() => {
+                      if (isMe) {
+                        router.push('/(tabs)/profile')
+                      } else {
+                        router.push({ pathname: '/friend-profile', params: { id: row.id } })
+                      }
+                    }}
+                    style={({ pressed }) => [
                       styles.row,
                       { backgroundColor: colors.card, borderColor: colors.tabBarBorder },
                       row.rank <= 3 && { backgroundColor: colors.tint + '12', borderColor: colors.tint + '30' },
                       isMe && { borderColor: colors.tint, borderWidth: 2 },
+                      pressed && { opacity: 0.7 },
                     ]}
                   >
                     <ThemedText type="defaultSemiBold" style={[styles.rank, { color: colors.textMuted }]}>
@@ -338,7 +347,7 @@ export default function LeaderboardScreen() {
                     <ThemedText type="defaultSemiBold" style={[styles.points, { color: colors.tint }]}>
                       {row.points}
                     </ThemedText>
-                  </View>
+                  </Pressable>
                 )
               })}
             </View>
