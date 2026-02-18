@@ -7,9 +7,7 @@ import { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  KeyboardAvoidingView,
   Modal,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -136,10 +134,10 @@ export default function HomeScreen() {
   // Reaction detail view modal
   const [viewReaction, setViewReaction] = useState<WorkoutReactionWithProfile | null>(null);
 
-  // Comment modal
-  const [commentModalItem, setCommentModalItem] = useState<FeedItem | null>(null);
-  const [commentMessage, setCommentMessage] = useState('');
-  const [commentSubmitting, setCommentSubmitting] = useState(false);
+  // Inline comments (Instagram-style: all comments visible + add comment on same card)
+  const [inlineCommentWorkoutId, setInlineCommentWorkoutId] = useState<string | null>(null);
+  const [inlineCommentMessage, setInlineCommentMessage] = useState('');
+  const [commentSubmittingWorkoutId, setCommentSubmittingWorkoutId] = useState<string | null>(null);
 
 
   const refreshFeed = useCallback(() => {
@@ -213,38 +211,28 @@ export default function HomeScreen() {
     refreshFeed();
   };
 
-  const openCommentModal = (item: FeedItem) => {
-    setCommentModalItem(item);
-    setCommentMessage('');
-  };
-
-  const closeCommentModal = () => {
-    setCommentModalItem(null);
-    setCommentMessage('');
-  };
-
-  const handlePostComment = async () => {
-    if (!session || !commentModalItem) return;
-    const message = commentMessage.trim() || null;
-    if (!message) {
+  const handlePostComment = async (workoutId: string, message: string) => {
+    if (!session) return;
+    const trimmed = message.trim() || null;
+    if (!trimmed) {
       Alert.alert('Add a comment', 'Type something to post.');
       return;
     }
-    setCommentSubmitting(true);
-    const result = await addComment(commentModalItem.workout.id, session.user.id, { message });
-    setCommentSubmitting(false);
+    setCommentSubmittingWorkoutId(workoutId);
+    const result = await addComment(workoutId, session.user.id, { message: trimmed });
+    setCommentSubmittingWorkoutId(null);
     if ('error' in result) {
       Alert.alert('Comment failed', result.error.message);
       return;
     }
     setFeedItems((prev) =>
       prev.map((i) => {
-        if (i.workout.id !== commentModalItem.workout.id) return i;
+        if (i.workout.id !== workoutId) return i;
         const newComment: WorkoutCommentWithProfile = {
           id: result.id,
-          workout_id: commentModalItem.workout.id,
+          workout_id: workoutId,
           user_id: session.user.id,
-          message,
+          message: trimmed,
           gif_url: null,
           created_at: new Date().toISOString(),
           display_name: profile?.display_name ?? null,
@@ -253,7 +241,10 @@ export default function HomeScreen() {
         return { ...i, comments: [...(i.comments ?? []), newComment] };
       })
     );
-    closeCommentModal();
+    if (inlineCommentWorkoutId === workoutId) {
+      setInlineCommentWorkoutId(null);
+      setInlineCommentMessage('');
+    }
     refreshFeed();
   };
 
@@ -733,7 +724,7 @@ export default function HomeScreen() {
                       );
                     })()}
                   </View>
-                  {/* Comments */}
+                  {/* Comments — Instagram-style: all comments visible + inline add */}
                   <View style={[styles.commentsSection, { borderTopColor: colors.tabBarBorder }]}>
                     {(item.comments ?? []).map((c) => (
                       <View key={c.id} style={styles.commentRow}>
@@ -757,15 +748,71 @@ export default function HomeScreen() {
                       </View>
                     ))}
                     {session && (
-                      <Pressable
-                        onPress={() => openCommentModal(item)}
-                        style={[styles.commentButton, { borderColor: colors.tabBarBorder }]}
-                      >
-                        <Ionicons name="chatbubble-outline" size={16} color={colors.textMuted} />
-                        <ThemedText style={[styles.commentButtonText, { color: colors.textMuted }]}>
-                          {item.comments?.length ? `Comment (${item.comments.length})` : 'Comment'}
-                        </ThemedText>
-                      </Pressable>
+                      <View style={styles.commentInlineRow}>
+                        <TextInput
+                          style={[
+                            styles.commentInlineInput,
+                            {
+                              backgroundColor: colors.cardElevated,
+                              color: colors.text,
+                              borderColor: colors.tabBarBorder,
+                            },
+                          ]}
+                          placeholder="Add a comment..."
+                          placeholderTextColor={colors.textMuted}
+                          value={inlineCommentWorkoutId === item.workout.id ? inlineCommentMessage : ''}
+                          onChangeText={(text) => {
+                            if (inlineCommentWorkoutId === item.workout.id) setInlineCommentMessage(text);
+                          }}
+                          onFocus={() => {
+                            setInlineCommentWorkoutId(item.workout.id);
+                            setInlineCommentMessage('');
+                          }}
+                          multiline
+                          maxLength={500}
+                        />
+                        <Pressable
+                          onPress={() =>
+                            handlePostComment(
+                              item.workout.id,
+                              inlineCommentWorkoutId === item.workout.id ? inlineCommentMessage : ''
+                            )
+                          }
+                          disabled={
+                            commentSubmittingWorkoutId === item.workout.id ||
+                            (inlineCommentWorkoutId === item.workout.id ? !inlineCommentMessage.trim() : true)
+                          }
+                          style={({ pressed }) => [
+                            styles.commentInlinePostBtn,
+                            {
+                              opacity:
+                                inlineCommentWorkoutId === item.workout.id && inlineCommentMessage.trim()
+                                  ? pressed
+                                    ? 0.7
+                                    : 1
+                                  : 0.4,
+                            },
+                          ]}
+                        >
+                          {commentSubmittingWorkoutId === item.workout.id ? (
+                            <ActivityIndicator color={colors.tint} size="small" />
+                          ) : (
+                            <ThemedText
+                              style={[
+                                styles.commentInlinePostText,
+                                {
+                                  color:
+                                    inlineCommentWorkoutId === item.workout.id && inlineCommentMessage.trim()
+                                      ? colors.tint
+                                      : colors.textMuted,
+                                },
+                              ]}
+                            >
+                              Post
+                            </ThemedText>
+                          )}
+                        </Pressable>
+                      </View>
                     )}
                   </View>
                 </View>
@@ -840,77 +887,6 @@ export default function HomeScreen() {
         </Pressable>
       </Modal>
 
-      {/* Comment modal — Instagram-style */}
-      <Modal
-        visible={!!commentModalItem}
-        transparent
-        animationType="slide"
-        onRequestClose={closeCommentModal}
-      >
-        <Pressable style={styles.commentModalOverlay} onPress={closeCommentModal}>
-          <KeyboardAvoidingView
-            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-            style={styles.commentKeyboardAvoid}
-            keyboardVerticalOffset={0}
-          >
-            <Pressable
-              style={[styles.commentModalSheet, { backgroundColor: colors.background }]}
-              onPress={(e) => e.stopPropagation()}
-            >
-              <View style={[styles.commentModalHandle, { backgroundColor: colors.textMuted + '40' }]} />
-              <View style={[styles.commentModalHeader, { borderBottomColor: colors.tabBarBorder }]}>
-                <ThemedText type="defaultSemiBold" style={{ color: colors.text, fontSize: 16 }}>
-                  Add comment
-                </ThemedText>
-                <Pressable onPress={closeCommentModal} hitSlop={12} style={styles.commentModalClose}>
-                  <Ionicons name="close" size={24} color={colors.text} />
-                </Pressable>
-              </View>
-              <View style={styles.commentModalInputRow}>
-                <TextInput
-                style={[
-                  styles.commentModalInput,
-                  {
-                    backgroundColor: colors.cardElevated,
-                    color: colors.text,
-                    borderColor: colors.tabBarBorder,
-                  },
-                ]}
-                placeholder="Add a comment..."
-                placeholderTextColor={colors.textMuted}
-                value={commentMessage}
-                onChangeText={setCommentMessage}
-                multiline
-                maxLength={500}
-              />
-              <Pressable
-                onPress={handlePostComment}
-                disabled={commentSubmitting || !commentMessage.trim()}
-                style={({ pressed }) => [
-                  styles.commentPostButton,
-                  {
-                    opacity: commentMessage.trim() ? (pressed ? 0.7 : 1) : 0.4,
-                  },
-                ]}
-              >
-                {commentSubmitting ? (
-                  <ActivityIndicator color={colors.tint} size="small" />
-                ) : (
-                  <ThemedText
-                    style={[
-                      styles.commentPostButtonText,
-                      { color: commentMessage.trim() ? colors.tint : colors.textMuted },
-                    ]}
-                  >
-                    Post
-                  </ThemedText>
-                )}
-              </Pressable>
-            </View>
-          </Pressable>
-          </KeyboardAvoidingView>
-        </Pressable>
-      </Modal>
 
       {/* Reaction detail view modal */}
       <Modal
@@ -1235,17 +1211,24 @@ const styles = StyleSheet.create({
   commentAuthor: { fontSize: 13, marginBottom: 2 },
   commentText: { fontSize: 14, lineHeight: 20 },
   commentGif: { width: 120, height: 90, borderRadius: 8, marginTop: 6 },
-  commentButton: {
+  commentInlineRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 999,
-    borderWidth: 1,
-    alignSelf: 'flex-start',
+    alignItems: 'flex-end',
+    gap: 8,
+    marginTop: 6,
   },
-  commentButtonText: { fontSize: 13 },
+  commentInlineInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    fontSize: 14,
+    minHeight: 36,
+    maxHeight: 80,
+  },
+  commentInlinePostBtn: { paddingVertical: 8, paddingHorizontal: 4, justifyContent: 'center' },
+  commentInlinePostText: { fontSize: 14, fontWeight: '600' },
 
   // React modal
   reactModalOverlay: {
@@ -1261,63 +1244,6 @@ const styles = StyleSheet.create({
   },
   reactModalTitle: { marginBottom: 4, textAlign: 'center' },
   reactModalHint: { fontSize: 13, textAlign: 'center', marginBottom: 20 },
-  // Comment modal — Instagram-style
-  commentModalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'flex-end',
-  },
-  commentKeyboardAvoid: {
-    flex: 1,
-    justifyContent: 'flex-end',
-  },
-  commentModalSheet: {
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    paddingBottom: 34,
-  },
-  commentModalHandle: {
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-    alignSelf: 'center',
-    marginTop: 10,
-    marginBottom: 4,
-  },
-  commentModalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  commentModalClose: { padding: 4 },
-  commentModalInputRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    paddingHorizontal: 16,
-    paddingTop: 14,
-    gap: 10,
-  },
-  commentModalInput: {
-    flex: 1,
-    borderWidth: 1,
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    paddingTop: 10,
-    fontSize: 15,
-    minHeight: 40,
-    maxHeight: 100,
-    textAlignVertical: 'center',
-  },
-  commentPostButton: {
-    justifyContent: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 4,
-  },
-  commentPostButtonText: { fontSize: 15, fontWeight: '600' },
   reactPhotoBox: {
     width: 120,
     height: 120,
