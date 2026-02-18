@@ -466,7 +466,7 @@ export default function HomeScreen() {
                 style={[styles.nudgeCard, { backgroundColor: colors.card }]}
               >
                 <ThemedText style={styles.nudgeEmoji}>{nudge.emoji}</ThemedText>
-                <ThemedText style={[styles.nudgeTitle, { color: colors.text }]} numberOfLines={1}>
+                <ThemedText style={[styles.nudgeTitle, { color: colors.text }]} numberOfLines={2}>
                   {nudge.title}
                 </ThemedText>
                 <ThemedText style={[styles.nudgeMessage, { color: colors.textMuted }]} numberOfLines={2}>
@@ -1252,7 +1252,7 @@ const styles = StyleSheet.create({
   nudgeScrollView: { marginBottom: 16 },
   nudgeScroll: { gap: 10, paddingRight: 4 },
   nudgeCard: {
-    width: 180,
+    width: 200,
     padding: 14,
     borderRadius: 16,
   },
