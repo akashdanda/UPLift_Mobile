@@ -11,6 +11,7 @@ import { Colors } from '@/constants/theme'
 import { useAuthContext } from '@/hooks/use-auth-context'
 import { useColorScheme } from '@/hooks/use-color-scheme'
 import { acceptChallenge, cancelChallenge, getCompetitionDetails } from '@/lib/competitions'
+import { getGroupMembers, getMemberRole, type GroupMemberWithProfile } from '@/lib/groups'
 import type { CompetitionContributionWithProfile, CompetitionWithGroups } from '@/types/group'
 
 function formatTimeRemaining(endsAt: string): string {
@@ -43,6 +44,10 @@ export default function CompetitionDetailScreen() {
 
   const [competition, setCompetition] = useState<CompetitionWithGroups | null>(null)
   const [contributions, setContributions] = useState<CompetitionContributionWithProfile[]>([])
+  const [group1Members, setGroup1Members] = useState<GroupMemberWithProfile[]>([])
+  const [group2Members, setGroup2Members] = useState<GroupMemberWithProfile[]>([])
+  const [userIsStaffGroup1, setUserIsStaffGroup1] = useState(false)
+  const [userIsStaffGroup2, setUserIsStaffGroup2] = useState(false)
   const [loading, setLoading] = useState(true)
   const [acting, setActing] = useState(false)
 
@@ -60,6 +65,20 @@ export default function CompetitionDetailScreen() {
       }
       setCompetition(comp)
       setContributions(contribs)
+
+      // Load all members of both groups + user roles
+      if (comp) {
+        const [m1, m2, role1, role2] = await Promise.all([
+          getGroupMembers(comp.group1_id),
+          getGroupMembers(comp.group2_id),
+          getMemberRole(comp.group1_id, userId),
+          getMemberRole(comp.group2_id, userId),
+        ])
+        setGroup1Members(m1)
+        setGroup2Members(m2)
+        setUserIsStaffGroup1(role1 === 'owner' || role1 === 'admin')
+        setUserIsStaffGroup2(role2 === 'owner' || role2 === 'admin')
+      }
     } catch {
       Alert.alert('Error', 'Failed to load competition')
       router.back()
@@ -127,11 +146,9 @@ export default function CompetitionDetailScreen() {
   const isLosing = myScore < opponentScore
   const isTie = myScore === opponentScore
 
-  // Check if user is leader of group2 (for accepting challenges)
-  const isGroup2Leader = competition.group2.created_by === userId
-  const isGroup1Leader = competition.group1.created_by === userId
-  const canAccept = competition.status === 'pending' && competition.type === 'challenge' && isGroup2Leader
-  const canCancel = competition.status === 'pending' && (isGroup1Leader || isGroup2Leader)
+  // Check if user is owner/admin of either group (for accepting/cancelling)
+  const canAccept = competition.status === 'pending' && competition.type === 'challenge' && userIsStaffGroup2
+  const canCancel = competition.status === 'pending' && (userIsStaffGroup1 || userIsStaffGroup2)
 
   // Group contributions
   const group1Contribs = contributions.filter((c) => c.group_id === competition.group1_id)
@@ -175,60 +192,63 @@ export default function CompetitionDetailScreen() {
 
         {/* Score comparison */}
         <View style={[styles.scoreCard, { backgroundColor: colors.card, borderColor: colors.tabBarBorder }]}>
-          <View style={styles.scoreRow}>
-            <View style={styles.scoreGroup}>
-              {myGroup.avatar_url ? (
-                <Image source={{ uri: myGroup.avatar_url }} style={styles.scoreAvatar} />
-              ) : (
-                <View style={[styles.scoreAvatar, { backgroundColor: colors.tint + '20' }]}>
-                  <ThemedText style={[styles.scoreAvatarText, { color: colors.tint }]}>
-                    {getGroupInitials(myGroup.name)}
-                  </ThemedText>
-                </View>
-              )}
-              <ThemedText type="defaultSemiBold" style={[styles.scoreGroupName, { color: colors.text }]} numberOfLines={1}>
-                {myGroup.name}
-              </ThemedText>
-              <ThemedText
-                style={[
-                  styles.scoreValue,
-                  {
-                    color: isWinning ? colors.tint : isLosing ? '#ef4444' : colors.text,
-                  },
-                ]}
-              >
-                {myScore}
-              </ThemedText>
-            </View>
+          {/* Group 1 */}
+          <View style={styles.scoreGroupRow}>
+            {myGroup.avatar_url ? (
+              <Image source={{ uri: myGroup.avatar_url }} style={styles.scoreAvatar} />
+            ) : (
+              <View style={[styles.scoreAvatar, { backgroundColor: colors.tint + '20' }]}>
+                <ThemedText style={[styles.scoreAvatarText, { color: colors.tint }]}>
+                  {getGroupInitials(myGroup.name)}
+                </ThemedText>
+              </View>
+            )}
+            <ThemedText type="defaultSemiBold" style={[styles.scoreGroupName, { color: colors.text }]} numberOfLines={1}>
+              {myGroup.name}
+            </ThemedText>
+            <ThemedText
+              style={[
+                styles.scoreValue,
+                {
+                  color: isWinning ? colors.tint : isLosing ? '#ef4444' : colors.text,
+                },
+              ]}
+            >
+              {myScore}
+            </ThemedText>
+          </View>
 
-            <View style={styles.vsContainer}>
+          {/* VS divider */}
+          <View style={[styles.vsDivider, { borderTopColor: colors.tabBarBorder }]}>
+            <View style={[styles.vsBadge, { backgroundColor: colors.cardElevated }]}>
               <ThemedText style={[styles.vsText, { color: colors.textMuted }]}>VS</ThemedText>
             </View>
+          </View>
 
-            <View style={styles.scoreGroup}>
-              {opponentGroup.avatar_url ? (
-                <Image source={{ uri: opponentGroup.avatar_url }} style={styles.scoreAvatar} />
-              ) : (
-                <View style={[styles.scoreAvatar, { backgroundColor: colors.tint + '20' }]}>
-                  <ThemedText style={[styles.scoreAvatarText, { color: colors.tint }]}>
-                    {getGroupInitials(opponentGroup.name)}
-                  </ThemedText>
-                </View>
-              )}
-              <ThemedText type="defaultSemiBold" style={[styles.scoreGroupName, { color: colors.text }]} numberOfLines={1}>
-                {opponentGroup.name}
-              </ThemedText>
-              <ThemedText
-                style={[
-                  styles.scoreValue,
-                  {
-                    color: isLosing ? colors.tint : isWinning ? '#ef4444' : colors.text,
-                  },
-                ]}
-              >
-                {opponentScore}
-              </ThemedText>
-            </View>
+          {/* Group 2 */}
+          <View style={styles.scoreGroupRow}>
+            {opponentGroup.avatar_url ? (
+              <Image source={{ uri: opponentGroup.avatar_url }} style={styles.scoreAvatar} />
+            ) : (
+              <View style={[styles.scoreAvatar, { backgroundColor: colors.tint + '20' }]}>
+                <ThemedText style={[styles.scoreAvatarText, { color: colors.tint }]}>
+                  {getGroupInitials(opponentGroup.name)}
+                </ThemedText>
+              </View>
+            )}
+            <ThemedText type="defaultSemiBold" style={[styles.scoreGroupName, { color: colors.text }]} numberOfLines={1}>
+              {opponentGroup.name}
+            </ThemedText>
+            <ThemedText
+              style={[
+                styles.scoreValue,
+                {
+                  color: isLosing ? colors.tint : isWinning ? '#ef4444' : colors.text,
+                },
+              ]}
+            >
+              {opponentScore}
+            </ThemedText>
           </View>
         </View>
 
@@ -266,14 +286,14 @@ export default function CompetitionDetailScreen() {
           </Pressable>
         )}
 
-        {/* Leaderboard */}
-        {competition.status === 'active' && (
+        {/* Leaderboard — show all members of each group */}
+        {(competition.status === 'active' || competition.status === 'completed') && (
           <ThemedView style={styles.leaderboardSection}>
             <ThemedText type="subtitle" style={[styles.sectionTitle, { color: colors.text }]}>
               Leaderboard
             </ThemedText>
 
-            {/* Group 1 */}
+            {/* Group 1 members */}
             <View style={styles.groupLeaderboard}>
               <View style={styles.groupLeaderboardHeader}>
                 {competition.group1.avatar_url ? (
@@ -285,43 +305,60 @@ export default function CompetitionDetailScreen() {
                     </ThemedText>
                   </View>
                 )}
-                <ThemedText type="defaultSemiBold" style={[styles.groupLeaderboardName, { color: colors.text }]}>
+                <ThemedText type="defaultSemiBold" style={[styles.groupLeaderboardName, { color: colors.text }]} numberOfLines={1}>
                   {competition.group1.name}
                 </ThemedText>
                 <ThemedText style={[styles.groupLeaderboardScore, { color: colors.tint }]}>
                   {competition.group1_score} pts
                 </ThemedText>
               </View>
-              {group1Contribs.length === 0 ? (
-                <ThemedText style={[styles.emptyContribs, { color: colors.textMuted }]}>No contributions yet</ThemedText>
-              ) : (
-                group1Contribs
-                  .sort((a, b) => b.points - a.points)
-                  .slice(0, 10)
-                  .map((contrib, idx) => (
-                    <View key={contrib.id} style={[styles.contribRow, { backgroundColor: colors.cardElevated }]}>
-                      <ThemedText style={[styles.contribRank, { color: colors.textMuted }]}>#{idx + 1}</ThemedText>
-                      {contrib.avatar_url ? (
-                        <Image source={{ uri: contrib.avatar_url }} style={styles.contribAvatar} />
-                      ) : (
-                        <View style={[styles.contribAvatar, { backgroundColor: colors.tint + '20' }]}>
-                          <ThemedText style={[styles.contribAvatarText, { color: colors.tint }]}>
-                            {contrib.display_name?.charAt(0).toUpperCase() ?? '?'}
-                          </ThemedText>
-                        </View>
-                      )}
-                      <ThemedText style={[styles.contribName, { color: colors.text }]} numberOfLines={1}>
-                        {contrib.display_name ?? 'Unknown'}
-                      </ThemedText>
-                      <ThemedText style={[styles.contribPoints, { color: colors.tint }]}>
-                        {contrib.points} pts
-                      </ThemedText>
-                    </View>
-                  ))
-              )}
+              {(() => {
+                // Build a map of contribution points per user
+                const contribMap = new Map(
+                  group1Contribs.map((c) => [c.user_id, c.points])
+                )
+                // Merge all members with contribution data, sorted by points desc
+                const allMembers = group1Members
+                  .map((m) => ({
+                    ...m,
+                    contrib_points: contribMap.get(m.user_id) ?? 0,
+                  }))
+                  .sort((a, b) => b.contrib_points - a.contrib_points)
+
+                if (allMembers.length === 0) {
+                  return (
+                    <ThemedText style={[styles.emptyContribs, { color: colors.textMuted }]}>
+                      No members
+                    </ThemedText>
+                  )
+                }
+
+                return allMembers.map((member, idx) => (
+                  <View key={member.id} style={[styles.contribRow, { backgroundColor: colors.cardElevated }]}>
+                    <ThemedText style={[styles.contribRank, { color: idx < 3 ? colors.tint : colors.textMuted }]}>
+                      #{idx + 1}
+                    </ThemedText>
+                    {member.avatar_url ? (
+                      <Image source={{ uri: member.avatar_url }} style={styles.contribAvatar} />
+                    ) : (
+                      <View style={[styles.contribAvatar, { backgroundColor: colors.tint + '20' }]}>
+                        <ThemedText style={[styles.contribAvatarText, { color: colors.tint }]}>
+                          {member.display_name?.charAt(0).toUpperCase() ?? '?'}
+                        </ThemedText>
+                      </View>
+                    )}
+                    <ThemedText style={[styles.contribName, { color: colors.text }]} numberOfLines={1}>
+                      {member.display_name ?? 'Unknown'}
+                    </ThemedText>
+                    <ThemedText style={[styles.contribPoints, { color: member.contrib_points > 0 ? colors.tint : colors.textMuted }]}>
+                      {member.contrib_points} pts
+                    </ThemedText>
+                  </View>
+                ))
+              })()}
             </View>
 
-            {/* Group 2 */}
+            {/* Group 2 members */}
             <View style={styles.groupLeaderboard}>
               <View style={styles.groupLeaderboardHeader}>
                 {competition.group2.avatar_url ? (
@@ -333,40 +370,55 @@ export default function CompetitionDetailScreen() {
                     </ThemedText>
                   </View>
                 )}
-                <ThemedText type="defaultSemiBold" style={[styles.groupLeaderboardName, { color: colors.text }]}>
+                <ThemedText type="defaultSemiBold" style={[styles.groupLeaderboardName, { color: colors.text }]} numberOfLines={1}>
                   {competition.group2.name}
                 </ThemedText>
                 <ThemedText style={[styles.groupLeaderboardScore, { color: colors.tint }]}>
                   {competition.group2_score} pts
                 </ThemedText>
               </View>
-              {group2Contribs.length === 0 ? (
-                <ThemedText style={[styles.emptyContribs, { color: colors.textMuted }]}>No contributions yet</ThemedText>
-              ) : (
-                group2Contribs
-                  .sort((a, b) => b.points - a.points)
-                  .slice(0, 10)
-                  .map((contrib, idx) => (
-                    <View key={contrib.id} style={[styles.contribRow, { backgroundColor: colors.cardElevated }]}>
-                      <ThemedText style={[styles.contribRank, { color: colors.textMuted }]}>#{idx + 1}</ThemedText>
-                      {contrib.avatar_url ? (
-                        <Image source={{ uri: contrib.avatar_url }} style={styles.contribAvatar} />
-                      ) : (
-                        <View style={[styles.contribAvatar, { backgroundColor: colors.tint + '20' }]}>
-                          <ThemedText style={[styles.contribAvatarText, { color: colors.tint }]}>
-                            {contrib.display_name?.charAt(0).toUpperCase() ?? '?'}
-                          </ThemedText>
-                        </View>
-                      )}
-                      <ThemedText style={[styles.contribName, { color: colors.text }]} numberOfLines={1}>
-                        {contrib.display_name ?? 'Unknown'}
-                      </ThemedText>
-                      <ThemedText style={[styles.contribPoints, { color: colors.tint }]}>
-                        {contrib.points} pts
-                      </ThemedText>
-                    </View>
-                  ))
-              )}
+              {(() => {
+                const contribMap = new Map(
+                  group2Contribs.map((c) => [c.user_id, c.points])
+                )
+                const allMembers = group2Members
+                  .map((m) => ({
+                    ...m,
+                    contrib_points: contribMap.get(m.user_id) ?? 0,
+                  }))
+                  .sort((a, b) => b.contrib_points - a.contrib_points)
+
+                if (allMembers.length === 0) {
+                  return (
+                    <ThemedText style={[styles.emptyContribs, { color: colors.textMuted }]}>
+                      No members
+                    </ThemedText>
+                  )
+                }
+
+                return allMembers.map((member, idx) => (
+                  <View key={member.id} style={[styles.contribRow, { backgroundColor: colors.cardElevated }]}>
+                    <ThemedText style={[styles.contribRank, { color: idx < 3 ? colors.tint : colors.textMuted }]}>
+                      #{idx + 1}
+                    </ThemedText>
+                    {member.avatar_url ? (
+                      <Image source={{ uri: member.avatar_url }} style={styles.contribAvatar} />
+                    ) : (
+                      <View style={[styles.contribAvatar, { backgroundColor: colors.tint + '20' }]}>
+                        <ThemedText style={[styles.contribAvatarText, { color: colors.tint }]}>
+                          {member.display_name?.charAt(0).toUpperCase() ?? '?'}
+                        </ThemedText>
+                      </View>
+                    )}
+                    <ThemedText style={[styles.contribName, { color: colors.text }]} numberOfLines={1}>
+                      {member.display_name ?? 'Unknown'}
+                    </ThemedText>
+                    <ThemedText style={[styles.contribPoints, { color: member.contrib_points > 0 ? colors.tint : colors.textMuted }]}>
+                      {member.contrib_points} pts
+                    </ThemedText>
+                  </View>
+                ))
+              })()}
             </View>
           </ThemedView>
         )}
@@ -395,29 +447,39 @@ const styles = StyleSheet.create({
   scoreCard: {
     borderRadius: 16,
     borderWidth: 1,
-    padding: 20,
+    padding: 16,
     marginBottom: 16,
   },
-  scoreRow: {
+  scoreGroupRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    gap: 12,
+    paddingVertical: 8,
   },
-  scoreGroup: { alignItems: 'center', flex: 1 },
   scoreAvatar: {
-    width: 60,
-    height: 60,
-    borderRadius: 16,
-    marginBottom: 8,
+    width: 48,
+    height: 48,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
   },
-  scoreAvatarText: { fontSize: 24, fontWeight: '700' },
-  scoreGroupName: { fontSize: 16, marginBottom: 8, textAlign: 'center' },
-  scoreValue: { fontSize: 32, fontWeight: '800' },
-  vsContainer: { paddingHorizontal: 16 },
-  vsText: { fontSize: 18, fontWeight: '700' },
+  scoreAvatarText: { fontSize: 20, fontWeight: '700' },
+  scoreGroupName: { flex: 1, fontSize: 16 },
+  scoreValue: { fontSize: 28, fontWeight: '800', minWidth: 50, textAlign: 'right' },
+  vsDivider: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginVertical: 4,
+  },
+  vsBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 10,
+    marginTop: -14,
+  },
+  vsText: { fontSize: 13, fontWeight: '800' },
   actionsRow: { flexDirection: 'row', gap: 12, marginBottom: 20 },
   actionButton: {
     flex: 1,
@@ -474,5 +536,5 @@ const styles = StyleSheet.create({
   },
   contribAvatarText: { fontSize: 14, fontWeight: '600' },
   contribName: { flex: 1, fontSize: 15 },
-  contribPoints: { fontSize: 15, fontWeight: '700' },
+  contribPoints: { fontSize: 15, fontWeight: '700', minWidth: 50, textAlign: 'right' },
 })

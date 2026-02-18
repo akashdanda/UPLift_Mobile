@@ -1,11 +1,9 @@
+import { getMemberRole } from '@/lib/groups'
 import { supabase } from '@/lib/supabase'
 import type {
-  CompetitionContribution,
   CompetitionContributionWithProfile,
-  CompetitionStatus,
-  CompetitionType,
   CompetitionWithGroups,
-  GroupCompetition,
+  GroupCompetition
 } from '@/types/group'
 
 /** Queue a group for matchmaking */
@@ -54,15 +52,10 @@ export async function leaveMatchmakingQueue(
   groupId: string,
   userId: string
 ): Promise<{ error: Error | null }> {
-  // Verify user is group leader
-  const { data: group } = await supabase
-    .from('groups')
-    .select('created_by')
-    .eq('id', groupId)
-    .single()
-
-  if (!group || group.created_by !== userId) {
-    return { error: new Error('Only group leader can leave queue') }
+  // Verify user is owner or admin
+  const role = await getMemberRole(groupId, userId)
+  if (!role || role === 'member') {
+    return { error: new Error('Only owner or admin can leave queue') }
   }
 
   const { error } = await supabase
@@ -91,15 +84,10 @@ export async function challengeGroup(
   userId: string,
   durationDays: number = 7
 ): Promise<{ competition: GroupCompetition | null; error: Error | null }> {
-  // Verify user is leader of challenger group
-  const { data: challengerGroup } = await supabase
-    .from('groups')
-    .select('created_by')
-    .eq('id', challengerGroupId)
-    .single()
-
-  if (!challengerGroup || challengerGroup.created_by !== userId) {
-    return { competition: null, error: new Error('Only group leader can challenge') }
+  // Verify user is owner or admin of challenger group
+  const challengerRole = await getMemberRole(challengerGroupId, userId)
+  if (!challengerRole || challengerRole === 'member') {
+    return { competition: null, error: new Error('Only owner or admin can challenge') }
   }
 
   // Check if either group has active competition
@@ -165,15 +153,10 @@ export async function acceptChallenge(
     return { error: new Error('Competition is not pending') }
   }
 
-  // Verify user is leader of group2
-  const { data: group } = await supabase
-    .from('groups')
-    .select('created_by')
-    .eq('id', competition.group2_id)
-    .single()
-
-  if (!group || group.created_by !== userId) {
-    return { error: new Error('Only group leader can accept challenge') }
+  // Verify user is owner or admin of group2
+  const role = await getMemberRole(competition.group2_id, userId)
+  if (!role || role === 'member') {
+    return { error: new Error('Only owner or admin can accept challenge') }
   }
 
   const { error } = await supabase
@@ -202,24 +185,16 @@ export async function cancelChallenge(
     return { error: new Error('Competition not found') }
   }
 
-  // Verify user is leader of either group
-  const { data: group1 } = await supabase
-    .from('groups')
-    .select('created_by')
-    .eq('id', competition.group1_id)
-    .single()
+  // Verify user is owner or admin of either group
+  const role1 = await getMemberRole(competition.group1_id, userId)
+  const role2 = await getMemberRole(competition.group2_id, userId)
 
-  const { data: group2 } = await supabase
-    .from('groups')
-    .select('created_by')
-    .eq('id', competition.group2_id)
-    .single()
+  const hasPermission =
+    (role1 && role1 !== 'member') ||
+    (role2 && role2 !== 'member')
 
-  if (
-    (!group1 || group1.created_by !== userId) &&
-    (!group2 || group2.created_by !== userId)
-  ) {
-    return { error: new Error('Only group leader can cancel challenge') }
+  if (!hasPermission) {
+    return { error: new Error('Only owner or admin can cancel challenge') }
   }
 
   const { error } = await supabase

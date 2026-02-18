@@ -1,7 +1,7 @@
 import { supabase } from '@/lib/supabase'
-import type { Group, GroupMemberWithProfile, GroupMessage } from '@/types/group'
+import type { Group, GroupMemberWithProfile, GroupMessage, GroupRole } from '@/types/group'
 
-export type { GroupMemberWithProfile, GroupMessage }
+export type { GroupMemberWithProfile, GroupMessage, GroupRole }
 
 export type GroupWithMeta = Group & { member_count?: number }
 
@@ -111,12 +111,13 @@ export async function createGroup(
   const { error: memberError } = await supabase.from('group_members').insert({
     group_id: (group as Group).id,
     user_id: userId,
+    role: 'owner',
   })
   if (memberError) return { group: group as Group, error: memberError as Error }
   return { group: group as Group, error: null }
 }
 
-/** Update a group (only creator can update) */
+/** Update a group (owner or admin can update) */
 export async function updateGroup(
   groupId: string,
   userId: string,
@@ -129,15 +130,10 @@ export async function updateGroup(
     is_public?: boolean
   }
 ): Promise<{ error: Error | null }> {
-  // Verify user is creator
-  const { data: group } = await supabase
-    .from('groups')
-    .select('created_by')
-    .eq('id', groupId)
-    .single()
-
-  if (!group || group.created_by !== userId) {
-    return { error: new Error('Only group creator can update the group') }
+  // Verify user is owner or admin
+  const role = await getMemberRole(groupId, userId)
+  if (!role || role === 'member') {
+    return { error: new Error('Only group owner or admin can update the group') }
   }
 
   const updateData: any = {}
@@ -237,6 +233,96 @@ export async function getGroupDetails(groupId: string): Promise<GroupWithMeta | 
     .eq('group_id', groupId)
 
   return { ...(group as Group), member_count: count ?? 0 } as GroupWithMeta
+}
+
+/** Get a user's role in a group */
+export async function getMemberRole(groupId: string, userId: string): Promise<GroupRole | null> {
+  const { data } = await supabase
+    .from('group_members')
+    .select('role')
+    .eq('group_id', groupId)
+    .eq('user_id', userId)
+    .maybeSingle()
+  return (data?.role as GroupRole) ?? null
+}
+
+/** Promote a member to admin (only owner or admin can do this) */
+export async function promoteMember(
+  groupId: string,
+  actorId: string,
+  targetUserId: string
+): Promise<{ error: Error | null }> {
+  const actorRole = await getMemberRole(groupId, actorId)
+  if (!actorRole || actorRole === 'member') {
+    return { error: new Error('Only owner or admin can promote members') }
+  }
+
+  const targetRole = await getMemberRole(groupId, targetUserId)
+  if (!targetRole) return { error: new Error('User is not a member of this group') }
+  if (targetRole === 'owner') return { error: new Error('Cannot change the owner\'s role') }
+  if (targetRole === 'admin') return { error: new Error('User is already an admin') }
+
+  const { error } = await supabase
+    .from('group_members')
+    .update({ role: 'admin' })
+    .eq('group_id', groupId)
+    .eq('user_id', targetUserId)
+
+  return { error: error ?? null }
+}
+
+/** Demote an admin back to member (only owner can demote admins) */
+export async function demoteMember(
+  groupId: string,
+  actorId: string,
+  targetUserId: string
+): Promise<{ error: Error | null }> {
+  const actorRole = await getMemberRole(groupId, actorId)
+  if (actorRole !== 'owner') {
+    return { error: new Error('Only the owner can demote admins') }
+  }
+
+  const targetRole = await getMemberRole(groupId, targetUserId)
+  if (!targetRole) return { error: new Error('User is not a member of this group') }
+  if (targetRole === 'owner') return { error: new Error('Cannot demote the owner') }
+  if (targetRole === 'member') return { error: new Error('User is already a member') }
+
+  const { error } = await supabase
+    .from('group_members')
+    .update({ role: 'member' })
+    .eq('group_id', groupId)
+    .eq('user_id', targetUserId)
+
+  return { error: error ?? null }
+}
+
+/** Kick a member from the group (owner/admin can kick, but not the owner) */
+export async function kickMember(
+  groupId: string,
+  actorId: string,
+  targetUserId: string
+): Promise<{ error: Error | null }> {
+  const actorRole = await getMemberRole(groupId, actorId)
+  if (!actorRole || actorRole === 'member') {
+    return { error: new Error('Only owner or admin can kick members') }
+  }
+
+  const targetRole = await getMemberRole(groupId, targetUserId)
+  if (!targetRole) return { error: new Error('User is not a member of this group') }
+  if (targetRole === 'owner') return { error: new Error('Cannot kick the owner') }
+
+  // Admins cannot kick other admins
+  if (actorRole === 'admin' && targetRole === 'admin') {
+    return { error: new Error('Admins cannot kick other admins') }
+  }
+
+  const { error } = await supabase
+    .from('group_members')
+    .delete()
+    .eq('group_id', groupId)
+    .eq('user_id', targetUserId)
+
+  return { error: error ?? null }
 }
 
 /** Get group members with profiles, sorted by points (rank) */

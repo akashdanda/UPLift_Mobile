@@ -10,11 +10,14 @@ export type Group = {
   created_at: string
 }
 
+export type GroupRole = 'owner' | 'admin' | 'member'
+
 export type GroupMember = {
   id: string
   group_id: string
   user_id: string
   points: number
+  role: GroupRole
   joined_at: string
 }
 

@@ -25,17 +25,6 @@ import { Colors } from '@/constants/theme'
 import { useAuthContext } from '@/hooks/use-auth-context'
 import { useColorScheme } from '@/hooks/use-color-scheme'
 import {
-  deleteGroup,
-  getGroupMembers,
-  getGroupMessages,
-  isMember,
-  joinGroup,
-  leaveGroup,
-  sendGroupMessage,
-  type GroupMemberWithProfile,
-  type GroupWithMeta,
-} from '@/lib/groups'
-import {
   acceptChallenge,
   getActiveCompetitions,
   isInMatchmakingQueue,
@@ -43,6 +32,22 @@ import {
   queueForMatchmaking,
   type CompetitionWithGroups,
 } from '@/lib/competitions'
+import {
+  deleteGroup,
+  demoteMember,
+  getGroupMembers,
+  getGroupMessages,
+  getMemberRole,
+  isMember,
+  joinGroup,
+  kickMember,
+  leaveGroup,
+  promoteMember,
+  sendGroupMessage,
+  type GroupMemberWithProfile,
+  type GroupRole,
+  type GroupWithMeta,
+} from '@/lib/groups'
 import { supabase } from '@/lib/supabase'
 import type { GroupMessage } from '@/types/group'
 
@@ -79,6 +84,7 @@ export default function GroupDetailScreen() {
   const [members, setMembers] = useState<GroupMemberWithProfile[]>([])
   const [messages, setMessages] = useState<GroupMessage[]>([])
   const [isUserMember, setIsUserMember] = useState(false)
+  const [userRole, setUserRole] = useState<GroupRole | null>(null)
   const [loading, setLoading] = useState(true)
   const [joining, setJoining] = useState(false)
   const [messageText, setMessageText] = useState('')
@@ -110,8 +116,12 @@ export default function GroupDetailScreen() {
 
       setGroup({ ...groupData, member_count: count ?? 0 } as GroupWithMeta)
 
-      const member = await isMember(userId, id)
+      const [member, role] = await Promise.all([
+        isMember(userId, id),
+        getMemberRole(id, userId),
+      ])
       setIsUserMember(member)
+      setUserRole(role)
 
       // Always load members for display
       const membersData = await getGroupMembers(id)
@@ -256,7 +266,79 @@ export default function GroupDetailScreen() {
 
   if (!group) return null
 
-  const isCreator = group.created_by === userId
+  const isOwner = userRole === 'owner'
+  const isAdmin = userRole === 'admin'
+  const isStaff = isOwner || isAdmin // owner or admin
+
+  const handleMemberAction = (member: GroupMemberWithProfile) => {
+    if (!isStaff || member.user_id === userId) return // can't act on yourself
+
+    const memberRole = member.role as GroupRole
+
+    // Build action options
+    const options: Array<{ text: string; onPress: () => void; style?: 'destructive' | 'cancel' }> = []
+
+    if (memberRole === 'owner') {
+      // Nobody can act on the owner
+      return
+    }
+
+    if (memberRole === 'member') {
+      options.push({
+        text: '⬆️ Promote to Admin',
+        onPress: async () => {
+          const { error } = await promoteMember(id, userId, member.user_id)
+          if (error) Alert.alert('Error', error.message)
+          else void loadGroup()
+        },
+      })
+    }
+
+    if (memberRole === 'admin' && isOwner) {
+      options.push({
+        text: '⬇️ Demote to Member',
+        onPress: async () => {
+          const { error } = await demoteMember(id, userId, member.user_id)
+          if (error) Alert.alert('Error', error.message)
+          else void loadGroup()
+        },
+      })
+    }
+
+    // Kick option (owner can kick anyone except owner; admin can kick members only)
+    if (isOwner || (isAdmin && memberRole === 'member')) {
+      options.push({
+        text: '🚫 Kick from Group',
+        style: 'destructive',
+        onPress: () => {
+          Alert.alert(
+            'Kick Member',
+            `Remove ${member.display_name ?? 'this user'} from the group?`,
+            [
+              { text: 'Cancel', style: 'cancel' },
+              {
+                text: 'Kick',
+                style: 'destructive',
+                onPress: async () => {
+                  const { error } = await kickMember(id, userId, member.user_id)
+                  if (error) Alert.alert('Error', error.message)
+                  else void loadGroup()
+                },
+              },
+            ]
+          )
+        },
+      })
+    }
+
+    options.push({ text: 'Cancel', style: 'cancel', onPress: () => {} })
+
+    Alert.alert(
+      member.display_name ?? 'Member',
+      `Role: ${memberRole.charAt(0).toUpperCase() + memberRole.slice(1)}`,
+      options
+    )
+  }
 
   // Action buttons for the horizontal scroll (Compete is now separate and prominent)
   const actionButtons = [
@@ -271,9 +353,13 @@ export default function GroupDetailScreen() {
         ]
       : []),
     { key: 'share', icon: 'share-outline' as const, label: 'Share', color: colors.textMuted, onPress: handleShare },
-    ...(isCreator
+    ...(isStaff
       ? [
           { key: 'settings', icon: 'settings-outline' as const, label: 'Settings', color: colors.textMuted, onPress: () => router.push(`/group-settings?id=${id}`) },
+        ]
+      : []),
+    ...(isOwner
+      ? [
           { key: 'delete', icon: 'trash-outline' as const, label: 'Delete', color: '#ef4444', onPress: handleDelete },
         ]
       : []),
@@ -515,49 +601,74 @@ export default function GroupDetailScreen() {
                 <ThemedText style={[styles.emptyText, { color: colors.textMuted }]}>No members yet</ThemedText>
               ) : (
                 <View style={styles.membersList}>
-                  {members.map((member, idx) => (
-                    <View
-                      key={member.id}
-                      style={[styles.memberCard, { backgroundColor: colors.card }]}
-                    >
-                      <View style={styles.memberRankWrap}>
-                        <ThemedText
-                          style={[
-                            styles.memberRankNum,
-                            {
-                              color:
-                                idx === 0
-                                  ? colors.gold
-                                  : idx === 1
-                                  ? colors.silver
-                                  : idx === 2
-                                  ? colors.bronze
-                                  : colors.textMuted,
-                            },
-                          ]}
-                        >
-                          #{idx + 1}
-                        </ThemedText>
-                      </View>
-                      {member.avatar_url ? (
-                        <Image source={{ uri: member.avatar_url }} style={styles.memberAvatar} />
-                      ) : (
-                        <View style={[styles.memberAvatar, { backgroundColor: colors.tint + '20' }]}>
-                          <ThemedText style={[styles.memberAvatarInitials, { color: colors.tint }]}>
-                            {member.display_name?.charAt(0).toUpperCase() ?? '?'}
+                  {members.map((member, idx) => {
+                    const mRole = member.role as GroupRole
+                    const canTap = isStaff && member.user_id !== userId && mRole !== 'owner'
+                    const roleBadge =
+                      mRole === 'owner'
+                        ? { label: 'Owner', color: '#f59e0b' }
+                        : mRole === 'admin'
+                        ? { label: 'Admin', color: colors.tint }
+                        : null
+
+                    return (
+                      <Pressable
+                        key={member.id}
+                        style={[styles.memberCard, { backgroundColor: colors.card }]}
+                        onPress={() => canTap && handleMemberAction(member)}
+                        disabled={!canTap}
+                      >
+                        <View style={styles.memberRankWrap}>
+                          <ThemedText
+                            style={[
+                              styles.memberRankNum,
+                              {
+                                color:
+                                  idx === 0
+                                    ? colors.gold
+                                    : idx === 1
+                                    ? colors.silver
+                                    : idx === 2
+                                    ? colors.bronze
+                                    : colors.textMuted,
+                              },
+                            ]}
+                          >
+                            #{idx + 1}
                           </ThemedText>
                         </View>
-                      )}
-                      <View style={styles.memberCardInfo}>
-                        <ThemedText type="defaultSemiBold" style={[styles.memberCardName, { color: colors.text }]}>
-                          {member.display_name ?? 'Unknown'}
-                        </ThemedText>
-                        <ThemedText style={[styles.memberCardStats, { color: colors.textMuted }]}>
-                          {member.points} pts · {member.workouts_count} workouts
-                        </ThemedText>
-                      </View>
-                    </View>
-                  ))}
+                        {member.avatar_url ? (
+                          <Image source={{ uri: member.avatar_url }} style={styles.memberAvatar} />
+                        ) : (
+                          <View style={[styles.memberAvatar, { backgroundColor: colors.tint + '20' }]}>
+                            <ThemedText style={[styles.memberAvatarInitials, { color: colors.tint }]}>
+                              {member.display_name?.charAt(0).toUpperCase() ?? '?'}
+                            </ThemedText>
+                          </View>
+                        )}
+                        <View style={styles.memberCardInfo}>
+                          <View style={styles.memberNameRow}>
+                            <ThemedText type="defaultSemiBold" style={[styles.memberCardName, { color: colors.text }]}>
+                              {member.display_name ?? 'Unknown'}
+                            </ThemedText>
+                            {roleBadge && (
+                              <View style={[styles.roleBadge, { backgroundColor: roleBadge.color + '20' }]}>
+                                <ThemedText style={[styles.roleBadgeText, { color: roleBadge.color }]}>
+                                  {roleBadge.label}
+                                </ThemedText>
+                              </View>
+                            )}
+                          </View>
+                          <ThemedText style={[styles.memberCardStats, { color: colors.textMuted }]}>
+                            {member.points} pts · {member.workouts_count} workouts
+                          </ThemedText>
+                        </View>
+                        {canTap && (
+                          <Ionicons name="ellipsis-vertical" size={18} color={colors.textMuted} />
+                        )}
+                      </Pressable>
+                    )
+                  })}
                 </View>
               )}
             </ThemedView>
@@ -649,7 +760,7 @@ export default function GroupDetailScreen() {
               </ThemedText>
 
               {/* Matchmaking queue status */}
-              {isCreator && (
+              {isStaff && (
                 <View style={[styles.competitionCard, { backgroundColor: colors.card, borderColor: colors.tabBarBorder }]}>
                   <ThemedText type="defaultSemiBold" style={[styles.competitionCardTitle, { color: colors.text }]}>
                     Matchmaking
@@ -779,7 +890,7 @@ export default function GroupDetailScreen() {
                             </ThemedText>
                           </View>
                         </View>
-                        {comp.status === 'pending' && comp.type === 'challenge' && isCreator && (
+                        {comp.status === 'pending' && comp.type === 'challenge' && isStaff && (
                           <View style={styles.competitionPendingActions}>
                             <Pressable
                               style={[styles.competitionAcceptBtn, { backgroundColor: colors.tint }]}
@@ -806,9 +917,9 @@ export default function GroupDetailScreen() {
                     No active competitions
                   </ThemedText>
                   <ThemedText style={[styles.emptyText, { color: colors.textMuted }]}>
-                    {isCreator
+                    {isStaff
                       ? 'Queue for matchmaking or challenge another group to start competing!'
-                      : 'Your group leader can start a competition by queuing for matchmaking or challenging another group.'}
+                      : 'Your group owner or admin can start a competition by queuing for matchmaking or challenging another group.'}
                   </ThemedText>
                 </View>
               )}
@@ -994,8 +1105,15 @@ const styles = StyleSheet.create({
   },
   memberAvatarInitials: { fontSize: 18, fontWeight: '600' },
   memberCardInfo: { flex: 1 },
-  memberCardName: { fontSize: 16, marginBottom: 2 },
+  memberNameRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 2 },
+  memberCardName: { fontSize: 16 },
   memberCardStats: { fontSize: 13 },
+  roleBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+  roleBadgeText: { fontSize: 11, fontWeight: '700' },
 
   // Chat
   chatContainer: {

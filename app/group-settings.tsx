@@ -1,5 +1,5 @@
-import * as ImagePicker from 'expo-image-picker'
 import { Image } from 'expo-image'
+import * as ImagePicker from 'expo-image-picker'
 import { router, useLocalSearchParams } from 'expo-router'
 import { useCallback, useEffect, useState } from 'react'
 import {
@@ -21,8 +21,7 @@ import { Colors } from '@/constants/theme'
 import { useAuthContext } from '@/hooks/use-auth-context'
 import { useColorScheme } from '@/hooks/use-color-scheme'
 import { uploadGroupImage } from '@/lib/group-upload'
-import { getGroupDetails, updateGroup, type GroupWithMeta } from '@/lib/groups'
-import { supabase } from '@/lib/supabase'
+import { getGroupDetails, getMemberRole, updateGroup, type GroupWithMeta } from '@/lib/groups'
 
 function getGroupInitials(name: string): string {
   const parts = name.trim().split(/\s+/)
@@ -63,9 +62,10 @@ export default function GroupSettingsScreen() {
         return
       }
 
-      // Verify user is creator
-      if (groupData.created_by !== userId) {
-        Alert.alert('Error', 'Only group creator can edit settings')
+      // Verify user is owner or admin
+      const role = await getMemberRole(id, userId)
+      if (!role || role === 'member') {
+        Alert.alert('Error', 'Only group owner or admin can edit settings')
         router.back()
         return
       }
