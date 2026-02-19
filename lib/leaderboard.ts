@@ -7,7 +7,7 @@ export type LeaderboardScope = 'global' | 'friends' | 'groups'
 /** Weights for unified points (adjust to tune leaderboard) */
 const POINTS = {
   workout: 10,
-  streak: 10,
+  streakMultiplier: 2, // Each streak day multiplies points by 2
   competitionWin: 20,
 } as const
 
@@ -27,11 +27,16 @@ function computePoints(row: {
   streak: number
   competition_wins: number
 }): number {
-  return (
+  // Base points from workouts and competition wins
+  const basePoints =
     (row.workouts_count ?? 0) * POINTS.workout +
-    (row.streak ?? 0) * POINTS.streak +
     (row.competition_wins ?? 0) * POINTS.competitionWin
-  )
+
+  // Apply streak multiplier: each streak day = 2x multiplier (exponential)
+  // 0 streak = 1x, 1 streak = 2x, 2 streak = 4x, 3 streak = 8x, etc.
+  const streakMultiplier = row.streak > 0 ? Math.pow(POINTS.streakMultiplier, row.streak) : 1
+
+  return Math.round(basePoints * streakMultiplier)
 }
 
 /** Current month bounds in UTC (YYYY-MM-DD and ISO timestamps) */

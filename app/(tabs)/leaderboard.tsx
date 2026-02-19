@@ -125,7 +125,7 @@ export default function LeaderboardScreen() {
   const showPointsInfo = useCallback(() => {
     Alert.alert(
       'How Points Work',
-      `💪 Each workout: +${LEADERBOARD_POINTS.workout} pts\n🔥 Streak bonus: +${LEADERBOARD_POINTS.streak} pts per day\n🏆 Competition win: +${LEADERBOARD_POINTS.competitionWin} pts`,
+      `💪 Each workout: +${LEADERBOARD_POINTS.workout} pts\n🔥 Streak multiplier: ×${LEADERBOARD_POINTS.streakMultiplier} per day (exponential)\n🏆 Competition win: +${LEADERBOARD_POINTS.competitionWin} pts\n\nExample: 5 workouts + 1 competition win = 70 base pts\nWith a 3-day streak: 70 × 8 = 560 pts`,
       [{ text: 'OK' }]
     )
   }, [])
