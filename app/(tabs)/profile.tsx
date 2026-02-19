@@ -29,6 +29,7 @@ import {
 import { getHighlightsForProfile } from '@/lib/highlights'
 import { computeXP, getLevelFromXP } from '@/lib/levels'
 import { supabase } from '@/lib/supabase'
+import { getSpecialBadge } from '@/constants/special-badges'
 import { ACHIEVEMENT_CATEGORIES, type UserAchievementWithDetails } from '@/types/achievement'
 import type { HighlightForProfile } from '@/types/highlight'
 import type { UserLevel } from '@/types/level'
@@ -250,6 +251,7 @@ export default function ProfileScreen() {
   const displayName =
     (profile?.display_name && profile.display_name.trim()) ||
     (session ? getDisplayName(session) : '—')
+  const specialBadge = getSpecialBadge(profile?.display_name)
   const initials = getInitials(displayName, session)
 
   const stats = [
@@ -343,6 +345,14 @@ export default function ProfileScreen() {
           <ThemedText type="title" style={[styles.displayName, { color: colors.text }]}>
             {displayName}
           </ThemedText>
+          {specialBadge && (
+            <View style={[styles.specialBadge, { backgroundColor: specialBadge.bgColor }]}>
+              <ThemedText style={styles.specialBadgeEmoji}>{specialBadge.emoji}</ThemedText>
+              <ThemedText style={[styles.specialBadgeLabel, { color: specialBadge.color }]}>
+                {specialBadge.label}
+              </ThemedText>
+            </View>
+          )}
           {profile?.bio ? (
             <ThemedText style={[styles.bio, { color: colors.textMuted }]}>{profile.bio}</ThemedText>
           ) : null}
@@ -764,63 +774,76 @@ const styles = StyleSheet.create({
   scrollView: { flex: 1 },
   scrollContent: { padding: 24, paddingBottom: 40 },
 
-  header: { alignItems: 'center', marginBottom: 24 },
+  header: { alignItems: 'center', marginBottom: 28 },
   avatarRing: {
-    width: 104,
-    height: 104,
-    borderRadius: 52,
+    width: 110,
+    height: 110,
+    borderRadius: 55,
     borderWidth: 3,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 10,
+    marginBottom: 12,
   },
   avatarWrap: {
-    width: 94,
-    height: 94,
-    borderRadius: 47,
+    width: 100,
+    height: 100,
+    borderRadius: 50,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
   },
-  avatarImage: { width: 94, height: 94 },
-  avatarInitials: { fontSize: 34, fontWeight: '700' },
+  avatarImage: { width: 100, height: 100 },
+  avatarInitials: { fontSize: 36, fontWeight: '800' },
   levelBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    paddingHorizontal: 12,
+    paddingHorizontal: 14,
     paddingVertical: 5,
     borderRadius: 999,
-    marginBottom: 6,
+    marginBottom: 8,
   },
   levelEmoji: { fontSize: 14 },
-  levelTitle: { fontSize: 12, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 1 },
-  displayName: { fontSize: 24, fontWeight: '800', textAlign: 'center', marginBottom: 4 },
-  bio: {
-    fontSize: 15,
-    textAlign: 'center',
-    marginTop: 8,
-    paddingHorizontal: 24,
-    lineHeight: 20,
+  levelTitle: { fontSize: 11, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 1.5 },
+  displayName: { fontSize: 22, fontWeight: '800', textAlign: 'center', marginBottom: 4, letterSpacing: -0.3 },
+  specialBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    marginBottom: 4,
   },
-  xpSection: { width: '100%', marginTop: 10, paddingHorizontal: 20 },
-  xpLabelRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 5 },
-  xpLabel: { fontSize: 11, fontWeight: '600' },
-  xpBarOuter: { width: '100%', height: 6, borderRadius: 3, overflow: 'hidden' },
+  specialBadgeEmoji: { fontSize: 13 },
+  specialBadgeLabel: { fontSize: 12, fontWeight: '700' },
+  bio: {
+    fontSize: 14,
+    textAlign: 'center',
+    marginTop: 10,
+    paddingHorizontal: 24,
+    lineHeight: 21,
+    letterSpacing: 0.1,
+  },
+  xpSection: { width: '100%', marginTop: 14, paddingHorizontal: 20 },
+  xpLabelRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 },
+  xpLabel: { fontSize: 10, fontWeight: '700', letterSpacing: 0.8, textTransform: 'uppercase' },
+  xpBarOuter: { width: '100%', height: 5, borderRadius: 3, overflow: 'hidden' },
   xpBarInner: { height: '100%', borderRadius: 3 },
 
-  statsRow: { flexDirection: 'row', gap: 10, marginBottom: 24 },
+  statsRow: { flexDirection: 'row', gap: 8, marginBottom: 28 },
   statBox: {
     flex: 1,
-    paddingVertical: 14,
-    borderRadius: 16,
+    paddingVertical: 18,
+    borderRadius: 14,
     alignItems: 'center',
   },
-  statValue: { fontSize: 26, fontWeight: '800' },
-  statLabel: { marginTop: 2, fontSize: 11, opacity: 0.7 },
+  statValue: { fontSize: 24, lineHeight: 32, fontWeight: '800', letterSpacing: -0.5 },
+  statLabel: { marginTop: 3, fontSize: 10, fontWeight: '600', letterSpacing: 0.5, textTransform: 'uppercase', opacity: 0.6 },
 
-  highlightsSection: { marginBottom: 20 },
-  highlightsScroll: { paddingHorizontal: 4, gap: 16, paddingRight: 20 },
+  highlightsSection: { marginBottom: 24 },
+  highlightsScroll: { paddingHorizontal: 4, gap: 14, paddingRight: 20 },
   highlightCircleWrap: { alignItems: 'center', width: 76 },
   highlightCircle: {
     width: 72,
@@ -831,9 +854,9 @@ const styles = StyleSheet.create({
     borderWidth: 2,
   },
   highlightCircleImage: { width: 72, height: 72, borderRadius: 36 },
-  highlightLabel: { fontSize: 12, marginTop: 6, maxWidth: 72, textAlign: 'center' },
-  section: { marginBottom: 24 },
-  sectionTitle: { marginBottom: 12 },
+  highlightLabel: { fontSize: 11, marginTop: 6, maxWidth: 72, textAlign: 'center', fontWeight: '600', letterSpacing: 0.2 },
+  section: { marginBottom: 28 },
+  sectionTitle: { marginBottom: 14 },
   badgesContainer: {
     borderRadius: 14,
     borderWidth: 1,
@@ -850,7 +873,7 @@ const styles = StyleSheet.create({
   achievementCard: {
     width: 130,
     padding: 14,
-    borderRadius: 16,
+    borderRadius: 14,
     alignItems: 'center',
     borderWidth: 1,
   },
@@ -861,9 +884,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 8,
+    overflow: 'visible',
   },
-  achievementIcon: { fontSize: 26 },
-  achievementName: { fontSize: 12, fontWeight: '700', textAlign: 'center', marginBottom: 8, lineHeight: 16 },
+  achievementIcon: { fontSize: 26, lineHeight: 34 },
+  achievementName: { fontSize: 11, fontWeight: '700', textAlign: 'center', marginBottom: 8, lineHeight: 15, letterSpacing: 0.2 },
   progressBarOuter: {
     width: '100%',
     height: 4,
@@ -903,8 +927,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 12,
+    overflow: 'visible',
   },
-  achievementDetailIcon: { fontSize: 38 },
+  achievementDetailIcon: { fontSize: 38, lineHeight: 48 },
   achievementDetailCategory: { fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 4 },
   achievementDetailName: { fontSize: 22, fontWeight: '800', textAlign: 'center', marginBottom: 8 },
   achievementDetailDesc: { fontSize: 14, textAlign: 'center', lineHeight: 20, marginBottom: 20 },
@@ -917,9 +942,9 @@ const styles = StyleSheet.create({
   achievementDetailClose: { paddingVertical: 12, paddingHorizontal: 24, borderRadius: 12, borderWidth: 1 },
   achievementDetailCloseText: { fontSize: 15, fontWeight: '600' },
 
-  menuCard: { borderRadius: 16, overflow: 'hidden', marginBottom: 24 },
+  menuCard: { borderRadius: 14, overflow: 'hidden', marginBottom: 28 },
   menuItemWrap: { flexDirection: 'row', alignItems: 'center', padding: 16 },
-  menuItem: { fontSize: 16 },
+  menuItem: { fontSize: 15, fontWeight: '600', letterSpacing: 0.1 },
   menuItemBorder: { borderBottomWidth: StyleSheet.hairlineWidth },
 
   calendarCard: {
@@ -934,9 +959,11 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   calendarMonthLabel: {
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 14,
+    fontWeight: '800',
     textAlign: 'center',
+    letterSpacing: 0.3,
+    textTransform: 'uppercase',
   },
   calendarWeekRow: {
     flexDirection: 'row',
@@ -944,9 +971,12 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   calendarWeekday: {
-    fontSize: 12,
+    fontSize: 10,
+    fontWeight: '700',
     width: 24,
     textAlign: 'center',
+    letterSpacing: 0.3,
+    textTransform: 'uppercase',
   },
   calendarGrid: {
     flexDirection: 'row',
@@ -994,7 +1024,9 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   calendarLegendLabel: {
-    fontSize: 12,
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: 0.2,
   },
   modalOverlay: {
     flex: 1,

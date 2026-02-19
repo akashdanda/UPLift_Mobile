@@ -7,9 +7,8 @@ export type LeaderboardScope = 'global' | 'friends' | 'groups'
 /** Weights for unified points (adjust to tune leaderboard) */
 const POINTS = {
   workout: 10,
-  streak: 15,
-  group: 5,
-  friend: 3,
+  streak: 10,
+  competitionWin: 20,
 } as const
 
 export type LeaderboardRow = {
@@ -18,8 +17,7 @@ export type LeaderboardRow = {
   avatar_url: string | null
   workouts_count: number
   streak: number
-  groups_count: number
-  friends_count: number
+  competition_wins: number
   points: number
   rank: number
 }
@@ -27,14 +25,12 @@ export type LeaderboardRow = {
 function computePoints(row: {
   workouts_count: number
   streak: number
-  groups_count: number
-  friends_count: number
+  competition_wins: number
 }): number {
   return (
     (row.workouts_count ?? 0) * POINTS.workout +
     (row.streak ?? 0) * POINTS.streak +
-    (row.groups_count ?? 0) * POINTS.group +
-    (row.friends_count ?? 0) * POINTS.friend
+    (row.competition_wins ?? 0) * POINTS.competitionWin
   )
 }
 
@@ -109,31 +105,55 @@ export async function getLeaderboard(
     }
   }
 
-  const [workoutsRes, groupMembersRes, friendshipsRes] = await Promise.all([
+  // Fetch workouts this month + completed competitions with winners
+  const [workoutsRes, competitionsRes] = await Promise.all([
     supabase
       .from('workouts')
       .select('user_id, workout_date')
       .gte('workout_date', dateStart)
       .lte('workout_date', dateEnd),
     supabase
-      .from('group_members')
-      .select('user_id')
-      .gte('joined_at', tsStart)
-      .lte('joined_at', tsEnd),
-    supabase
-      .from('friendships')
-      .select('requester_id, addressee_id')
-      .eq('status', 'accepted')
-      .not('accepted_at', 'is', null)
-      .gte('accepted_at', tsStart)
-      .lte('accepted_at', tsEnd),
+      .from('group_competitions')
+      .select('group1_id, group2_id, winner_group_id')
+      .eq('status', 'completed')
+      .not('winner_group_id', 'is', null),
   ])
 
-  type Agg = { workouts: string[]; groups: number; friends: number }
+  // For competition wins, we need to map winning group → member user_ids
+  const winningGroupIds = new Set<string>()
+  ;(competitionsRes.data ?? []).forEach((c: any) => {
+    if (c.winner_group_id) winningGroupIds.add(c.winner_group_id)
+  })
+
+  // Fetch members of winning groups
+  let winsByUser = new Map<string, number>()
+  if (winningGroupIds.size > 0) {
+    const { data: winMembers } = await supabase
+      .from('group_members')
+      .select('user_id, group_id')
+      .in('group_id', [...winningGroupIds])
+
+    // Count wins per user (a user could be in multiple winning groups)
+    const groupWinCount = new Map<string, number>()
+    ;(competitionsRes.data ?? []).forEach((c: any) => {
+      if (c.winner_group_id) {
+        groupWinCount.set(c.winner_group_id, (groupWinCount.get(c.winner_group_id) ?? 0) + 1)
+      }
+    })
+
+    ;(winMembers ?? []).forEach((m: { user_id: string; group_id: string }) => {
+      const groupWins = groupWinCount.get(m.group_id) ?? 0
+      if (groupWins > 0) {
+        winsByUser.set(m.user_id, (winsByUser.get(m.user_id) ?? 0) + groupWins)
+      }
+    })
+  }
+
+  type Agg = { workouts: string[]; competition_wins: number }
   const agg = new Map<string, Agg>()
 
   const ensure = (userId: string) => {
-    if (!agg.has(userId)) agg.set(userId, { workouts: [], groups: 0, friends: 0 })
+    if (!agg.has(userId)) agg.set(userId, { workouts: [], competition_wins: 0 })
     return agg.get(userId)!
   }
 
@@ -142,13 +162,9 @@ export async function getLeaderboard(
     if (!a.workouts.includes(r.workout_date)) a.workouts.push(r.workout_date)
   })
 
-  ;(groupMembersRes.data ?? []).forEach((r: { user_id: string }) => {
-    ensure(r.user_id).groups++
-  })
-
-  ;(friendshipsRes.data ?? []).forEach((r: { requester_id: string; addressee_id: string }) => {
-    ensure(r.requester_id).friends++
-    ensure(r.addressee_id).friends++
+  // Add competition wins
+  winsByUser.forEach((wins, userId) => {
+    ensure(userId).competition_wins = wins
   })
 
   const userIds = [...agg.keys()]
@@ -166,17 +182,15 @@ export async function getLeaderboard(
     const profile = profileMap.get(id) as { id: string; display_name: string | null; avatar_url: string | null } | undefined
     const workouts_count = a.workouts.length
     const streak = computeStreak(a.workouts, dateEnd)
-    const groups_count = a.groups
-    const friends_count = a.friends
+    const competition_wins = a.competition_wins
     return {
       id,
       display_name: profile?.display_name ?? null,
       avatar_url: profile?.avatar_url ?? null,
       workouts_count,
       streak,
-      groups_count,
-      friends_count,
-      points: computePoints({ workouts_count, streak, groups_count, friends_count }),
+      competition_wins,
+      points: computePoints({ workouts_count, streak, competition_wins }),
     }
   })
 

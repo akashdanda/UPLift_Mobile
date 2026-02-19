@@ -1,4 +1,4 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native'
+import { DarkTheme, DefaultTheme, ThemeProvider, type Theme } from '@react-navigation/native'
 import { Stack } from 'expo-router'
 import { StatusBar } from 'expo-status-bar'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
@@ -10,6 +10,32 @@ import { SplashScreenController } from '@/components/splash-screen-controller'
 import { useAuthContext } from '@/hooks/use-auth-context'
 import { useColorScheme } from '@/hooks/use-color-scheme'
 import AuthProvider from '@/providers/auth-provider'
+
+const UpliftDark: Theme = {
+  ...DarkTheme,
+  colors: {
+    ...DarkTheme.colors,
+    primary: '#A78BFA',
+    background: '#08060D',
+    card: '#0E0B14',
+    text: '#E8E4F0',
+    border: 'rgba(167,139,250,0.10)',
+    notification: '#A78BFA',
+  },
+}
+
+const UpliftLight: Theme = {
+  ...DefaultTheme,
+  colors: {
+    ...DefaultTheme.colors,
+    primary: '#7C3AED',
+    background: '#FAF9FC',
+    card: '#FFFFFF',
+    text: '#1A1025',
+    border: 'rgba(124,58,237,0.08)',
+    notification: '#7C3AED',
+  },
+}
 
 // Separate RootNavigator so we can access the AuthContext
 function RootNavigator() {
@@ -46,7 +72,7 @@ function RootNavigator() {
         />
         <Stack.Screen
           name="competition-detail"
-          options={{ title: 'War Details', headerBackTitle: 'Groups' }}
+          options={{ title: 'Competition Details', headerBackTitle: 'Groups' }}
         />
         <Stack.Screen name="create-duel" options={{ title: '1v1 Challenge', presentation: 'modal', headerBackTitle: 'Profile' }} />
         <Stack.Screen name="duel-detail" options={{ title: 'Challenge', headerBackTitle: 'Profile' }} />
@@ -83,7 +109,7 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+        <ThemeProvider value={colorScheme === 'dark' ? UpliftDark : UpliftLight}>
           <AuthProvider>
             <SplashScreenController />
             <RootNavigator />

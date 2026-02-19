@@ -16,7 +16,7 @@ import { ThemedText } from '@/components/themed-text'
 import { Colors } from '@/constants/theme'
 import { useAuthContext } from '@/hooks/use-auth-context'
 import { useColorScheme } from '@/hooks/use-color-scheme'
-import { createDuel } from '@/lib/duels'
+import { createDuel, hasExistingDuel } from '@/lib/duels'
 import { getFriends, type FriendWithProfile } from '@/lib/friends'
 import type { DuelType } from '@/types/duel'
 
@@ -48,6 +48,8 @@ export default function CreateDuelScreen() {
   const [duelType, setDuelType] = useState<DuelType>('workout_count')
   const [duration, setDuration] = useState(7)
   const [submitting, setSubmitting] = useState(false)
+  const [existingDuelStatus, setExistingDuelStatus] = useState<'pending' | 'active' | null>(null)
+  const [checkingDuel, setCheckingDuel] = useState(false)
 
   useEffect(() => {
     if (!session) return
@@ -55,6 +57,23 @@ export default function CreateDuelScreen() {
       .then(setFriends)
       .finally(() => setLoading(false))
   }, [session])
+
+  // Check for existing duel when friend is selected
+  useEffect(() => {
+    if (!session || !selectedFriend) {
+      setExistingDuelStatus(null)
+      return
+    }
+    setCheckingDuel(true)
+    hasExistingDuel(session.user.id, selectedFriend)
+      .then(({ hasDuel, status }) => {
+        setExistingDuelStatus(hasDuel ? status : null)
+      })
+      .catch(() => {
+        setExistingDuelStatus(null)
+      })
+      .finally(() => setCheckingDuel(false))
+  }, [session, selectedFriend])
 
   const selectedProfile = friends.find((f) => f.id === selectedFriend)
 
@@ -68,7 +87,7 @@ export default function CreateDuelScreen() {
       return
     }
     if (duel) {
-      Alert.alert('Challenge Sent! ⚔️', 'Your friend will receive the challenge.', [
+      Alert.alert('Challenge Sent', 'Your friend will receive the challenge.', [
         { text: 'View', onPress: () => router.replace(`/duel-detail?id=${duel.id}`) },
         { text: 'OK', onPress: () => router.back() },
       ])
@@ -87,7 +106,7 @@ export default function CreateDuelScreen() {
         {/* Title */}
         <View style={styles.header}>
           <ThemedText type="title" style={[styles.title, { color: colors.text }]}>
-            ⚔️ Challenge a Friend
+            Challenge a Friend
           </ThemedText>
           <ThemedText style={[styles.subtitle, { color: colors.textMuted }]}>
             Start a head-to-head challenge and compete directly!
@@ -229,13 +248,22 @@ export default function CreateDuelScreen() {
         {/* Preview */}
         {selectedProfile && (
           <View style={[styles.previewCard, { backgroundColor: colors.card, borderColor: colors.tint + '30' }]}>
-            <ThemedText style={styles.previewEmoji}>⚔️</ThemedText>
+            <ThemedText style={styles.previewEmoji}>🏆</ThemedText>
             <ThemedText type="defaultSemiBold" style={[styles.previewTitle, { color: colors.text }]}>
               You vs {selectedProfile.display_name || 'Friend'}
             </ThemedText>
             <ThemedText style={[styles.previewMeta, { color: colors.textMuted }]}>
               {duelType === 'workout_count' ? 'Most workouts' : 'Most active days'} in {duration} days
             </ThemedText>
+            {existingDuelStatus && (
+              <View style={[styles.existingDuelWarning, { backgroundColor: (existingDuelStatus === 'pending' ? '#EAB308' : colors.tint) + '20' }]}>
+                <ThemedText style={[styles.existingDuelText, { color: existingDuelStatus === 'pending' ? '#EAB308' : colors.tint }]}>
+                  {existingDuelStatus === 'pending'
+                    ? '⚠️ You already have a pending challenge with this friend'
+                    : '⚠️ You already have an active challenge with this friend'}
+                </ThemedText>
+              </View>
+            )}
           </View>
         )}
 
@@ -243,15 +271,20 @@ export default function CreateDuelScreen() {
         <Pressable
           style={[
             styles.submitButton,
-            { backgroundColor: selectedFriend ? colors.tint : colors.tint + '50' },
+            {
+              backgroundColor:
+                selectedFriend && !existingDuelStatus ? colors.tint : colors.tint + '50',
+            },
           ]}
           onPress={handleCreate}
-          disabled={!selectedFriend || submitting}
+          disabled={!selectedFriend || submitting || !!existingDuelStatus || checkingDuel}
         >
           {submitting ? (
             <ActivityIndicator color="#fff" />
           ) : (
-            <ThemedText style={styles.submitText}>⚔️ Send Challenge</ThemedText>
+            <ThemedText style={styles.submitText}>
+              {existingDuelStatus ? 'Challenge Already Exists' : 'Send Challenge'}
+            </ThemedText>
           )}
         </Pressable>
       </ScrollView>
@@ -265,9 +298,9 @@ const styles = StyleSheet.create({
   content: { padding: 24, paddingBottom: 40 },
   header: { marginBottom: 28 },
   title: { marginBottom: 6 },
-  subtitle: { fontSize: 15, lineHeight: 22 },
+  subtitle: { fontSize: 14, lineHeight: 21, letterSpacing: 0.1 },
   section: { marginBottom: 28 },
-  sectionTitle: { marginBottom: 12, fontSize: 16 },
+  sectionTitle: { marginBottom: 12, fontSize: 13, fontWeight: '800', letterSpacing: 0.5, textTransform: 'uppercase' },
   friendScroll: { gap: 10, paddingVertical: 4 },
   friendChip: {
     flexDirection: 'row',
@@ -288,7 +321,7 @@ const styles = StyleSheet.create({
   },
   chipAvatarImage: { width: 36, height: 36 },
   chipInitials: { fontSize: 14, fontWeight: '600' },
-  chipName: { fontSize: 15, fontWeight: '500', maxWidth: 100 },
+  chipName: { fontSize: 14, fontWeight: '700', maxWidth: 100, letterSpacing: 0.1 },
   typeRow: { flexDirection: 'row', gap: 12 },
   typeCard: {
     flex: 1,
@@ -297,8 +330,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   typeEmoji: { fontSize: 28, marginBottom: 8 },
-  typeLabel: { fontSize: 14, marginBottom: 4 },
-  typeDesc: { fontSize: 12, textAlign: 'center', lineHeight: 16 },
+  typeLabel: { fontSize: 13, fontWeight: '700', marginBottom: 4, letterSpacing: 0.2 },
+  typeDesc: { fontSize: 11, textAlign: 'center', lineHeight: 16, letterSpacing: 0.1 },
   durationRow: { flexDirection: 'row', gap: 10, flexWrap: 'wrap' },
   durationPill: {
     paddingHorizontal: 18,
@@ -306,7 +339,7 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     borderWidth: 1,
   },
-  durationText: { fontSize: 14, fontWeight: '600' },
+  durationText: { fontSize: 13, fontWeight: '700', letterSpacing: 0.2 },
   previewCard: {
     padding: 20,
     borderRadius: 16,
@@ -315,8 +348,8 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   previewEmoji: { fontSize: 36, marginBottom: 8 },
-  previewTitle: { fontSize: 18, marginBottom: 4 },
-  previewMeta: { fontSize: 14 },
+  previewTitle: { fontSize: 17, fontWeight: '700', marginBottom: 4, letterSpacing: -0.2 },
+  previewMeta: { fontSize: 13, fontWeight: '600', letterSpacing: 0.1 },
   submitButton: {
     paddingVertical: 16,
     borderRadius: 14,
@@ -324,6 +357,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     minHeight: 52,
   },
-  submitText: { color: '#fff', fontSize: 17, fontWeight: '600' },
-  emptyText: { fontSize: 14, padding: 12 },
+  submitText: { color: '#fff', fontSize: 15, fontWeight: '800', letterSpacing: 0.5, textTransform: 'uppercase' },
+  emptyText: { fontSize: 13, padding: 12, letterSpacing: 0.1 },
+  existingDuelWarning: {
+    marginTop: 12,
+    padding: 12,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  existingDuelText: {
+    fontSize: 12,
+    fontWeight: '700',
+    textAlign: 'center',
+    letterSpacing: 0.2,
+  },
 })

@@ -386,7 +386,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  topBarTitle: { fontSize: 20, fontWeight: '700' },
+  topBarTitle: { fontSize: 20, fontWeight: '800', letterSpacing: -0.3 },
 
   // Search
   searchContainer: { paddingHorizontal: 20, paddingVertical: 10 },
@@ -398,7 +398,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     gap: 10,
   },
-  searchInput: { flex: 1, fontSize: 15, padding: 0 },
+  searchInput: { flex: 1, fontSize: 14, padding: 0, letterSpacing: 0.1 },
 
   // Tabs
   tabBar: {
@@ -413,12 +413,12 @@ const styles = StyleSheet.create({
     borderBottomColor: 'transparent',
   },
   tabActive: {},
-  tabLabel: { fontSize: 15 },
-  tabLabelActive: { fontWeight: '700' },
+  tabLabel: { fontSize: 13, fontWeight: '600', letterSpacing: 0.3, textTransform: 'uppercase' },
+  tabLabelActive: { fontWeight: '800' },
 
   // Sections
   section: { padding: CARD_PADDING },
-  sectionTitle: { fontSize: 18, fontWeight: '700', marginBottom: 16 },
+  sectionTitle: { fontSize: 16, fontWeight: '800', marginBottom: 16, letterSpacing: -0.2, textTransform: 'uppercase' },
 
   // Grid
   grid: {
@@ -445,11 +445,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  gridAvatarText: { fontSize: 20, fontWeight: '700' },
-  gridName: { fontSize: 15, lineHeight: 20, marginBottom: 4 },
+  gridAvatarText: { fontSize: 20, fontWeight: '800' },
+  gridName: { fontSize: 14, fontWeight: '700', lineHeight: 19, marginBottom: 4, letterSpacing: 0.1 },
   gridTagsRow: { marginBottom: 2 },
-  gridTag: { fontSize: 12 },
-  gridMeta: { fontSize: 12, marginBottom: 4 },
+  gridTag: { fontSize: 11, fontWeight: '600', letterSpacing: 0.2 },
+  gridMeta: { fontSize: 11, marginBottom: 4, letterSpacing: 0.1 },
   gridBottomRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -463,13 +463,13 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
     borderRadius: 6,
   },
-  visibilityText: { fontSize: 10, fontWeight: '600' },
+  visibilityText: { fontSize: 9, fontWeight: '700', letterSpacing: 0.5, textTransform: 'uppercase' },
   gridJoinBtn: {
     paddingVertical: 10,
-    borderRadius: 20,
+    borderRadius: 12,
     alignItems: 'center',
   },
-  gridJoinBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  gridJoinBtnText: { color: '#fff', fontWeight: '800', fontSize: 13, letterSpacing: 0.5, textTransform: 'uppercase' },
 
   // My groups list
   myGroupsList: { gap: 8 },
@@ -493,10 +493,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginRight: 14,
   },
-  myGroupAvatarText: { fontSize: 18, fontWeight: '700' },
+  myGroupAvatarText: { fontSize: 18, fontWeight: '800' },
   myGroupInfo: { flex: 1, minWidth: 0 },
-  myGroupName: { fontSize: 16, marginBottom: 2 },
-  myGroupMeta: { fontSize: 13 },
+  myGroupName: { fontSize: 15, fontWeight: '700', marginBottom: 2, letterSpacing: 0.1 },
+  myGroupMeta: { fontSize: 12, fontWeight: '500', letterSpacing: 0.1 },
 
   // Discover header
   discoverHeader: {
@@ -505,21 +505,21 @@ const styles = StyleSheet.create({
     gap: 8,
     marginBottom: 16,
   },
-  discoverTitle: { fontSize: 18, fontWeight: '700' },
+  discoverTitle: { fontSize: 16, fontWeight: '800', letterSpacing: -0.2, textTransform: 'uppercase' },
 
   // Loading / empty
   loadingRow: { paddingVertical: 40, alignItems: 'center' },
   emptyCard: {
-    padding: 32,
-    borderRadius: 20,
+    padding: 36,
+    borderRadius: 16,
     alignItems: 'center',
   },
-  emptyTitle: { fontSize: 18, marginBottom: 6 },
-  emptyText: { textAlign: 'center', fontSize: 14, lineHeight: 22, marginBottom: 16 },
+  emptyTitle: { fontSize: 17, fontWeight: '800', marginBottom: 8, letterSpacing: -0.2 },
+  emptyText: { textAlign: 'center', fontSize: 13, lineHeight: 20, marginBottom: 20, letterSpacing: 0.1 },
   emptyCreateBtn: {
     paddingHorizontal: 24,
     paddingVertical: 12,
-    borderRadius: 20,
+    borderRadius: 12,
   },
-  emptyCreateBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
+  emptyCreateBtnText: { color: '#fff', fontWeight: '800', fontSize: 13, letterSpacing: 0.5, textTransform: 'uppercase' },
 })

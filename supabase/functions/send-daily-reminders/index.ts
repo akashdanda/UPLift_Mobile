@@ -103,7 +103,7 @@ Deno.serve(async (req: Request) => {
       }
       const body = getMessage(false, friendsPostedCount, hoursLeft)
       if (!body) continue
-      messages.push({ to: token, title: 'UPLift', body })
+      messages.push({ to: token, title: 'Uplift', body })
     }
 
     let sent = 0

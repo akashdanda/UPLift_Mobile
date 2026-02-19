@@ -281,22 +281,35 @@ export async function getCompetitionDetails(
     return { competition: null, contributions: [], error: compError as Error }
   }
 
+  // Fetch raw contributions (no profile join — we get profiles from group members)
   const { data: contributions } = await supabase
     .from('competition_member_contributions')
-    .select(
-      `
-      *,
-      profile:profiles!competition_member_contributions_user_id_fkey(id, display_name, avatar_url)
-    `
-    )
+    .select('*')
     .eq('competition_id', competitionId)
     .order('points', { ascending: false })
 
+  const rawContribs = contributions ?? []
+
+  // Fetch display names for contributors
+  const userIds = [...new Set(rawContribs.map((c: any) => c.user_id))]
+  let profileMap = new Map<string, { display_name: string | null; avatar_url: string | null }>()
+
+  if (userIds.length > 0) {
+    const { data: profiles } = await supabase
+      .from('profiles')
+      .select('id, display_name, avatar_url')
+      .in('id', userIds)
+
+    for (const p of profiles ?? []) {
+      profileMap.set(p.id, { display_name: p.display_name, avatar_url: p.avatar_url })
+    }
+  }
+
   const contributionsWithProfile: CompetitionContributionWithProfile[] =
-    (contributions ?? []).map((c: any) => ({
+    rawContribs.map((c: any) => ({
       ...c,
-      display_name: c.profile?.display_name ?? null,
-      avatar_url: c.profile?.avatar_url ?? null,
+      display_name: profileMap.get(c.user_id)?.display_name ?? null,
+      avatar_url: profileMap.get(c.user_id)?.avatar_url ?? null,
     }))
 
   return {

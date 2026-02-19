@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "UPLift",
-    "slug": "UPLift",
+    "name": "Uplift",
+    "slug": "Uplift",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -30,8 +30,8 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Allow UPLift to access your photos for profile and workout images.",
-          "cameraPermission": "Allow UPLift to use the camera to take workout photos."
+          "photosPermission": "Allow Uplift to access your photos for profile and workout images.",
+          "cameraPermission": "Allow Uplift to use the camera to take workout photos."
         }
       ],
       [
@@ -40,7 +40,7 @@
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#ffffff",
+          "backgroundColor": "#000000",
           "dark": {
             "backgroundColor": "#000000"
           }

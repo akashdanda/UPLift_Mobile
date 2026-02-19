@@ -236,7 +236,7 @@ export default function GroupDetailScreen() {
     const url = Linking.createURL(`/group-detail?id=${id}`)
     try {
       await Share.share({
-        message: `Check out "${group.name}" on UPLift!\n\n${url}`,
+        message: `Check out "${group.name}" on Uplift!\n\n${url}`,
       })
     } catch {}
   }
@@ -462,13 +462,10 @@ export default function GroupDetailScreen() {
             <View style={styles.competeButtonContainer}>
               <Pressable
                 style={[styles.competeButton, { backgroundColor: colors.tint }]}
-                onPress={() => setActiveTab('competitions')}
+                onPress={() => setActiveTab(activeTab === 'competitions' ? 'overview' : 'competitions')}
               >
                 <Ionicons name="trophy" size={28} color="#fff" />
                 <ThemedText style={styles.competeButtonText}>Compete</ThemedText>
-                {activeTab === 'competitions' && (
-                  <View style={styles.competeButtonActiveIndicator} />
-                )}
               </Pressable>
             </View>
           )}
@@ -984,18 +981,18 @@ const styles = StyleSheet.create({
 
   // Info
   infoSection: { paddingHorizontal: 20, marginBottom: 16 },
-  groupName: { fontSize: 26, fontWeight: '800', marginBottom: 10 },
+  groupName: { fontSize: 24, fontWeight: '800', marginBottom: 10, letterSpacing: -0.5 },
   metaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 16, marginBottom: 12 },
   metaItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  metaText: { fontSize: 13 },
+  metaText: { fontSize: 12, fontWeight: '600', letterSpacing: 0.2 },
   locationRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
     marginTop: 8,
   },
-  locationText: { fontSize: 14 },
-  description: { fontSize: 15, lineHeight: 22, marginBottom: 4 },
+  locationText: { fontSize: 13, fontWeight: '600' },
+  description: { fontSize: 14, lineHeight: 21, marginBottom: 4, letterSpacing: 0.1 },
 
   // Prominent Compete Button
   competeButtonContainer: {
@@ -1019,9 +1016,10 @@ const styles = StyleSheet.create({
   },
   competeButtonText: {
     color: '#fff',
-    fontSize: 20,
+    fontSize: 16,
     fontWeight: '800',
-    letterSpacing: 0.5,
+    letterSpacing: 1,
+    textTransform: 'uppercase',
   },
   competeButtonActiveIndicator: {
     position: 'absolute',
@@ -1053,24 +1051,24 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginBottom: 6,
   },
-  actionBtnLabel: { fontSize: 11, fontWeight: '600' },
+  actionBtnLabel: { fontSize: 10, fontWeight: '700', letterSpacing: 0.3, textTransform: 'uppercase' },
 
   // Tab content
   tabContent: { paddingHorizontal: 20, paddingTop: 16 },
-  contentSectionTitle: { fontSize: 18, fontWeight: '700', marginBottom: 12 },
+  contentSectionTitle: { fontSize: 14, fontWeight: '800', marginBottom: 14, letterSpacing: 0.5, textTransform: 'uppercase' },
 
   // Overview
   aboutSection: { marginBottom: 20 },
-  aboutText: { fontSize: 15, lineHeight: 22 },
+  aboutText: { fontSize: 14, lineHeight: 21, letterSpacing: 0.1 },
   tagsSection: { marginBottom: 20 },
   tagsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  tagChip: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 16 },
-  tagChipText: { fontSize: 13, fontWeight: '600' },
+  tagChip: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 12 },
+  tagChipText: { fontSize: 12, fontWeight: '700', letterSpacing: 0.2 },
 
   // Member preview
   membersPreview: { marginBottom: 20 },
   memberPreviewHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  seeAllLink: { fontSize: 14, fontWeight: '600' },
+  seeAllLink: { fontSize: 12, fontWeight: '700', letterSpacing: 0.3, textTransform: 'uppercase' },
   memberAvatarsRow: { flexDirection: 'row', gap: 8 },
   memberAvatarPreviewWrap: {},
   memberAvatarPreview: {
@@ -1093,7 +1091,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
   },
   memberRankWrap: { width: 36, alignItems: 'center' },
-  memberRankNum: { fontSize: 16, fontWeight: '800' },
+  memberRankNum: { fontSize: 15, fontWeight: '800', letterSpacing: -0.3 },
   memberAvatar: {
     width: 44,
     height: 44,
@@ -1106,14 +1104,14 @@ const styles = StyleSheet.create({
   memberAvatarInitials: { fontSize: 18, fontWeight: '600' },
   memberCardInfo: { flex: 1 },
   memberNameRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 2 },
-  memberCardName: { fontSize: 16 },
-  memberCardStats: { fontSize: 13 },
+  memberCardName: { fontSize: 15, fontWeight: '700', letterSpacing: 0.1 },
+  memberCardStats: { fontSize: 11, fontWeight: '600', letterSpacing: 0.2 },
   roleBadge: {
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 8,
   },
-  roleBadgeText: { fontSize: 11, fontWeight: '700' },
+  roleBadgeText: { fontSize: 9, fontWeight: '800', letterSpacing: 0.5, textTransform: 'uppercase' },
 
   // Chat
   chatContainer: {
@@ -1133,14 +1131,14 @@ const styles = StyleSheet.create({
   },
   msgRow: { marginBottom: 14 },
   msgRowOwn: { alignItems: 'flex-end' },
-  msgSender: { fontSize: 12, fontWeight: '600', marginBottom: 3, marginLeft: 4 },
+  msgSender: { fontSize: 11, fontWeight: '700', marginBottom: 3, marginLeft: 4, letterSpacing: 0.2 },
   msgBubble: {
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: 18,
     maxWidth: '78%',
   },
-  msgText: { fontSize: 15, lineHeight: 20 },
+  msgText: { fontSize: 14, lineHeight: 20, letterSpacing: 0.1 },
   msgTime: { fontSize: 10, marginTop: 3, marginHorizontal: 4 },
   chatInputRow: {
     flexDirection: 'row',
@@ -1178,26 +1176,26 @@ const styles = StyleSheet.create({
     padding: 16,
     marginBottom: 20,
   },
-  competitionCardTitle: { fontSize: 18, marginBottom: 4 },
-  competitionCardDesc: { fontSize: 14, lineHeight: 20, marginBottom: 12 },
+  competitionCardTitle: { fontSize: 16, fontWeight: '800', marginBottom: 4, letterSpacing: -0.2 },
+  competitionCardDesc: { fontSize: 13, lineHeight: 19, marginBottom: 12, letterSpacing: 0.1 },
   queueStatusRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
-  queueStatusText: { fontSize: 14, fontWeight: '600' },
+  queueStatusText: { fontSize: 12, fontWeight: '700', letterSpacing: 0.3 },
   competitionButton: {
     paddingVertical: 12,
     borderRadius: 12,
     alignItems: 'center',
     marginBottom: 8,
   },
-  competitionButtonText: { color: '#fff', fontWeight: '700', fontSize: 15 },
+  competitionButtonText: { color: '#fff', fontWeight: '800', fontSize: 13, letterSpacing: 0.5, textTransform: 'uppercase' },
   competitionButtonSecondary: {
     paddingVertical: 12,
     borderRadius: 12,
     borderWidth: 1,
     alignItems: 'center',
   },
-  competitionButtonTextSecondary: { fontSize: 15, fontWeight: '600' },
+  competitionButtonTextSecondary: { fontSize: 13, fontWeight: '700', letterSpacing: 0.3 },
   competitionsList: { marginTop: 8 },
-  competitionSectionTitle: { fontSize: 16, marginBottom: 12 },
+  competitionSectionTitle: { fontSize: 13, fontWeight: '800', marginBottom: 12, letterSpacing: 0.5, textTransform: 'uppercase' },
   competitionItem: {
     borderRadius: 16,
     borderWidth: 1,
@@ -1220,8 +1218,8 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   competitionOpponentInitials: { fontSize: 16, fontWeight: '700' },
-  competitionOpponentName: { fontSize: 16, marginBottom: 2 },
-  competitionType: { fontSize: 12 },
+  competitionOpponentName: { fontSize: 15, fontWeight: '700', marginBottom: 2, letterSpacing: 0.1 },
+  competitionType: { fontSize: 11, fontWeight: '600', letterSpacing: 0.2, textTransform: 'uppercase' },
   competitionScoreRow: {
     flexDirection: 'row',
     gap: 12,
@@ -1232,13 +1230,13 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     backgroundColor: 'rgba(0,0,0,0.02)',
   },
-  competitionScoreLabel: { fontSize: 12, marginBottom: 4 },
-  competitionScoreValue: { fontSize: 24, fontWeight: '800' },
+  competitionScoreLabel: { fontSize: 10, fontWeight: '700', marginBottom: 4, letterSpacing: 0.5, textTransform: 'uppercase' },
+  competitionScoreValue: { fontSize: 24, fontWeight: '800', letterSpacing: -0.5 },
   competitionPendingActions: { marginTop: 12 },
   competitionAcceptBtn: {
     paddingVertical: 10,
     borderRadius: 12,
     alignItems: 'center',
   },
-  competitionAcceptBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  competitionAcceptBtnText: { color: '#fff', fontWeight: '800', fontSize: 12, letterSpacing: 0.5, textTransform: 'uppercase' },
 })

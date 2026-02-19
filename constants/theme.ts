@@ -1,17 +1,17 @@
 /**
- * UPLift theme — modern fitness palette with light and dark mode.
- * 2026 refresh: two-tier cards, warm accent for streaks, softer whites.
+ * Uplift theme — black & purple modern fitness palette.
+ * Deep blacks with vibrant purple accents, easy on the eyes.
  */
 
 import { Platform } from 'react-native';
 
-// Primary accent: teal (energetic, clean)
-const primaryLight = '#0D9488';
-const primaryDark = '#2DD4BF';
+// Primary accent: purple (vibrant, modern)
+const primaryLight = '#7C3AED';
+const primaryDark = '#A78BFA';
 
 // Warm accent for streaks / fire
-const warmLight = '#EA580C';
-const warmDark = '#F97316';
+const warmLight = '#F59E0B';
+const warmDark = '#FBBF24';
 
 // Rank medal colors
 const gold = '#EAB308';
@@ -20,38 +20,38 @@ const bronze = '#D97706';
 
 export const Colors = {
   light: {
-    text: '#0F172A',
-    textMuted: '#64748B',
-    background: '#F8FAFC',
+    text: '#1A1025',
+    textMuted: '#6B6280',
+    background: '#FAF9FC',
     card: '#FFFFFF',
-    cardElevated: '#F1F5F9',
+    cardElevated: '#F3F0F8',
     tint: primaryLight,
     warm: warmLight,
     gold,
     silver,
     bronze,
-    icon: '#64748B',
-    tabIconDefault: '#94A3B8',
+    icon: '#6B6280',
+    tabIconDefault: '#A09BB0',
     tabIconSelected: primaryLight,
     tabBarBackground: '#FFFFFF',
-    tabBarBorder: 'rgba(0,0,0,0.06)',
+    tabBarBorder: 'rgba(124,58,237,0.08)',
   },
   dark: {
-    text: '#E2E8F0',
-    textMuted: '#94A3B8',
-    background: '#0F172A',
-    card: '#1E293B',
-    cardElevated: '#253548',
+    text: '#E8E4F0',
+    textMuted: '#8B83A0',
+    background: '#08060D',
+    card: '#13101A',
+    cardElevated: '#1C1826',
     tint: primaryDark,
     warm: warmDark,
     gold,
     silver,
     bronze,
-    icon: '#94A3B8',
-    tabIconDefault: '#64748B',
+    icon: '#8B83A0',
+    tabIconDefault: '#5A5370',
     tabIconSelected: primaryDark,
-    tabBarBackground: '#1E293B',
-    tabBarBorder: 'rgba(255,255,255,0.06)',
+    tabBarBackground: '#0E0B14',
+    tabBarBorder: 'rgba(167,139,250,0.10)',
   },
 };
 

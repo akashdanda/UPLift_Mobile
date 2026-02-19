@@ -3,7 +3,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { router } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -22,10 +22,12 @@ import Animated, {
 } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { NotificationsModal } from '@/components/notifications-modal';
 import { ThemedText } from '@/components/themed-text';
 import { Colors } from '@/constants/theme';
 import { useAuthContext } from '@/hooks/use-auth-context';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { getUnreadNotificationCount, markNotificationsAsRead } from '@/lib/notifications';
 import { getAchievementFeedPosts, hasStreakFreezeAvailable, useStreakFreeze } from '@/lib/achievements';
 import { addComment } from '@/lib/comments';
 import {
@@ -138,6 +140,73 @@ export default function HomeScreen() {
   const [inlineCommentWorkoutId, setInlineCommentWorkoutId] = useState<string | null>(null);
   const [inlineCommentMessage, setInlineCommentMessage] = useState('');
   const [commentSubmittingWorkoutId, setCommentSubmittingWorkoutId] = useState<string | null>(null);
+  
+  // Highlight workout when navigating from notification
+  const [highlightedWorkoutId, setHighlightedWorkoutId] = useState<string | null>(null);
+
+  // Notifications
+  const [notificationsVisible, setNotificationsVisible] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const scrollViewRef = useRef<ScrollView>(null);
+  const workoutRefs = useRef<Map<string, { ref: View | null; y: number }>>(new Map());
+  const [pendingWorkoutNavigation, setPendingWorkoutNavigation] = useState<{ workoutId: string; expandComments: boolean } | null>(null);
+
+  const handleOpenNotifications = () => {
+    setNotificationsVisible(true);
+    // Mark as read when opened
+    markNotificationsAsRead().then(() => {
+      // Refresh unread count
+      if (session) {
+        getUnreadNotificationCount(session.user.id).then(setUnreadCount).catch(() => setUnreadCount(0));
+      }
+    });
+  };
+
+  const navigateToWorkout = useCallback((workoutId: string, expandComments = false) => {
+    // Close notifications modal
+    setNotificationsVisible(false);
+    
+    // Set pending navigation - will be handled when feed loads
+    setPendingWorkoutNavigation({ workoutId, expandComments });
+    
+    // Navigate to home tab if not already there
+    router.push('/(tabs)/');
+    
+    // Refresh feed to ensure workout is loaded
+    refreshFeed();
+  }, [refreshFeed]);
+
+  // Handle pending workout navigation when feed items change
+  useEffect(() => {
+    if (pendingWorkoutNavigation && feedItems.length > 0) {
+      const { workoutId, expandComments } = pendingWorkoutNavigation;
+      const workoutIndex = feedItems.findIndex((item) => item.workout.id === workoutId);
+      
+      if (workoutIndex >= 0) {
+        // If it's a comment notification, expand comments
+        if (expandComments) {
+          setInlineCommentWorkoutId(workoutId);
+        }
+        
+        // Highlight the workout temporarily
+        setHighlightedWorkoutId(workoutId);
+        
+        // Scroll to workout after a short delay to ensure layout is complete
+        setTimeout(() => {
+          const workoutData = workoutRefs.current.get(workoutId);
+          if (workoutData?.y !== undefined && scrollViewRef.current) {
+            scrollViewRef.current.scrollTo({ y: workoutData.y - 100, animated: true });
+          }
+          
+          // Remove highlight after a few seconds
+          setTimeout(() => setHighlightedWorkoutId(null), 3000);
+        }, 500);
+      }
+      
+      // Clear pending navigation
+      setPendingWorkoutNavigation(null);
+    }
+  }, [pendingWorkoutNavigation, feedItems]);
 
 
   const refreshFeed = useCallback(() => {
@@ -340,6 +409,8 @@ export default function HomeScreen() {
       hasStreakFreezeAvailable(session.user.id).then(setFreezeAvailable);
       // Daily reminder (for in-app banner and future push)
       getDailyReminderInfo(session.user.id).then(setReminderInfo);
+      // Load unread notification count
+      getUnreadNotificationCount(session.user.id).then(setUnreadCount).catch(() => setUnreadCount(0));
     }, [session])
   );
 
@@ -348,6 +419,7 @@ export default function HomeScreen() {
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]} edges={['top']}>
       <ScrollView
+        ref={scrollViewRef}
         style={styles.scrollView}
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
@@ -356,12 +428,28 @@ export default function HomeScreen() {
         <View style={styles.headerRow}>
           <View style={{ flex: 1 }}>
             <ThemedText type="title" style={styles.greeting}>
-              UPLift
+              Uplift
             </ThemedText>
             <ThemedText style={[styles.headerSub, { color: colors.textMuted }]}>
               Your fitness community
             </ThemedText>
           </View>
+          <Pressable
+            onPress={handleOpenNotifications}
+            style={({ pressed }) => [
+              styles.notificationsButton,
+              pressed && { opacity: 0.7 },
+            ]}
+          >
+            <Ionicons name="notifications-outline" size={24} color={colors.text} />
+            {unreadCount > 0 && (
+              <View style={[styles.notificationBadge, { backgroundColor: '#EF4444' }]}>
+                <ThemedText style={styles.notificationBadgeText}>
+                  {unreadCount > 99 ? '99+' : unreadCount}
+                </ThemedText>
+              </View>
+            )}
+          </Pressable>
         </View>
 
         {/* Streak banner */}
@@ -624,10 +712,27 @@ export default function HomeScreen() {
             </View>
           ) : (
             <View style={styles.feedList}>
-              {feedItems.map((item) => (
+              {feedItems.map((item, index) => {
+                const isHighlighted = highlightedWorkoutId === item.workout.id;
+                return (
                 <View
                   key={item.workout.id}
-                  style={[styles.feedCard, { backgroundColor: colors.card }]}
+                  ref={(ref) => {
+                    if (ref) {
+                      const existing = workoutRefs.current.get(item.workout.id) || { ref: null, y: 0 };
+                      workoutRefs.current.set(item.workout.id, { ...existing, ref });
+                    }
+                  }}
+                  onLayout={(event) => {
+                    const { y } = event.nativeEvent.layout;
+                    const existing = workoutRefs.current.get(item.workout.id) || { ref: null, y: 0 };
+                    workoutRefs.current.set(item.workout.id, { ...existing, y });
+                  }}
+                  style={[
+                    styles.feedCard,
+                    { backgroundColor: colors.card },
+                    isHighlighted && { borderWidth: 2, borderColor: colors.tint },
+                  ]}
                 >
                   <Pressable
                     style={styles.feedCardHeader}
@@ -816,7 +921,8 @@ export default function HomeScreen() {
                     )}
                   </View>
                 </View>
-              ))}
+                )
+              })}
             </View>
           )}
         </View>
@@ -946,6 +1052,19 @@ export default function HomeScreen() {
           </View>
         </Pressable>
       </Modal>
+
+      {/* Notifications Modal */}
+      <NotificationsModal
+        visible={notificationsVisible}
+        onClose={() => {
+          setNotificationsVisible(false);
+          // Refresh unread count after closing
+          if (session) {
+            getUnreadNotificationCount(session.user.id).then(setUnreadCount).catch(() => setUnreadCount(0));
+          }
+        }}
+        onNavigateToWorkout={navigateToWorkout}
+      />
     </SafeAreaView>
   );
 }
@@ -956,22 +1075,43 @@ const styles = StyleSheet.create({
   content: { padding: 20, paddingBottom: 40 },
 
   // Header
-  headerRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
-  greeting: { fontSize: 28, fontWeight: '800' },
-  headerSub: { fontSize: 14, marginTop: 2 },
+  headerRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 24 },
+  greeting: { fontSize: 26, fontWeight: '800', letterSpacing: -0.5 },
+  headerSub: { fontSize: 13, marginTop: 3, letterSpacing: 0.2 },
+  notificationsButton: {
+    position: 'relative',
+    padding: 8,
+    marginLeft: 12,
+  },
+  notificationBadge: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+  },
+  notificationBadgeText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '800',
+  },
 
   // Streak banner
   streakBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 16,
-    borderRadius: 16,
+    padding: 18,
+    borderRadius: 18,
     marginBottom: 20,
-    gap: 12,
+    gap: 14,
   },
   streakText: { flex: 1 },
-  streakValue: { fontSize: 17 },
-  streakHint: { fontSize: 13, marginTop: 2 },
+  streakValue: { fontSize: 16, fontWeight: '700', letterSpacing: -0.2 },
+  streakHint: { fontSize: 12, marginTop: 3, letterSpacing: 0.1 },
   freezeButton: {
     marginTop: 10,
     paddingVertical: 8,
@@ -982,89 +1122,92 @@ const styles = StyleSheet.create({
   },
   freezeButtonText: {
     color: '#fff',
-    fontSize: 13,
-    fontWeight: '700',
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.3,
+    textTransform: 'uppercase',
   },
 
   reminderBanner: {
     flexDirection: 'row',
     alignItems: 'center',
     padding: 14,
-    borderRadius: 12,
+    borderRadius: 14,
     marginBottom: 16,
     gap: 12,
     borderWidth: StyleSheet.hairlineWidth,
   },
-  reminderBannerText: { flex: 1, fontSize: 14 },
+  reminderBannerText: { flex: 1, fontSize: 13, fontWeight: '600', letterSpacing: 0.1 },
 
   // Quick actions — pill buttons
-  quickActions: { flexDirection: 'row', gap: 10, marginBottom: 24 },
+  quickActions: { flexDirection: 'row', gap: 10, marginBottom: 28 },
   actionPill: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 14,
-    borderRadius: 999,
+    gap: 7,
+    paddingVertical: 15,
+    borderRadius: 14,
   },
   actionPillOutline: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 14,
-    borderRadius: 999,
-    borderWidth: 1,
+    gap: 7,
+    paddingVertical: 15,
+    borderRadius: 14,
+    borderWidth: 1.5,
   },
-  actionPillPressed: { opacity: 0.8 },
-  actionPillText: { color: '#fff', fontSize: 14, fontWeight: '600' },
-  actionPillTextOutline: { fontSize: 14, fontWeight: '600' },
+  actionPillPressed: { opacity: 0.75 },
+  actionPillText: { color: '#fff', fontSize: 14, fontWeight: '700', letterSpacing: 0.3 },
+  actionPillTextOutline: { fontSize: 14, fontWeight: '700', letterSpacing: 0.3 },
 
   // Sections
-  section: { marginBottom: 24 },
-  sectionTitle: { fontSize: 20, fontWeight: '700', marginBottom: 12 },
+  section: { marginBottom: 28 },
+  sectionTitle: { fontSize: 18, fontWeight: '800', marginBottom: 14, letterSpacing: -0.3, textTransform: 'uppercase' },
 
   // Today's workout
-  todayCard: { borderRadius: 20, overflow: 'hidden' },
+  todayCard: { borderRadius: 16, overflow: 'hidden' },
   todayImage: { width: '100%', aspectRatio: 1 },
-  captionRow: { padding: 14 },
-  todayCaption: { fontSize: 15, lineHeight: 22 },
+  captionRow: { padding: 16 },
+  todayCaption: { fontSize: 14, lineHeight: 21, letterSpacing: 0.1 },
 
   // Empty state
   emptyCard: {
-    padding: 32,
-    borderRadius: 20,
+    padding: 36,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  emptyText: { textAlign: 'center', fontSize: 14, lineHeight: 22 },
+  emptyText: { textAlign: 'center', fontSize: 14, lineHeight: 22, letterSpacing: 0.1 },
 
   // Feed
-  feedList: { gap: 16 },
-  feedCard: { borderRadius: 20, overflow: 'hidden' },
+  feedList: { gap: 20 },
+  feedCard: { borderRadius: 16, overflow: 'hidden' },
   feedCardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     padding: 14,
+    paddingHorizontal: 16,
   },
   feedAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
     marginRight: 12,
   },
-  feedAvatarImage: { width: 40, height: 40 },
-  feedAvatarInitials: { fontSize: 14, fontWeight: '600' },
+  feedAvatarImage: { width: 42, height: 42 },
+  feedAvatarInitials: { fontSize: 14, fontWeight: '700' },
   feedCardMeta: { flex: 1 },
-  feedName: { fontSize: 15 },
-  feedDate: { fontSize: 12, marginTop: 1 },
+  feedName: { fontSize: 14, fontWeight: '700', letterSpacing: 0.1 },
+  feedDate: { fontSize: 11, marginTop: 2, letterSpacing: 0.2, textTransform: 'uppercase' },
   feedImage: { width: '100%', aspectRatio: 1 },
-  feedCaption: { padding: 14, fontSize: 15, lineHeight: 22 },
+  feedCaption: { padding: 16, fontSize: 14, lineHeight: 21, letterSpacing: 0.1 },
 
   // Tagged friends
   taggedRow: {
@@ -1182,7 +1325,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 999,
   },
-  reactButtonText: { fontSize: 13, fontWeight: '600' },
+  reactButtonText: { fontSize: 12, fontWeight: '700', letterSpacing: 0.2 },
 
   // Comments
   commentsSection: {
@@ -1208,8 +1351,8 @@ const styles = StyleSheet.create({
   commentAvatarImage: { width: 28, height: 28 },
   commentAvatarInitials: { fontSize: 11, fontWeight: '600' },
   commentBody: { flex: 1, minWidth: 0 },
-  commentAuthor: { fontSize: 13, marginBottom: 2 },
-  commentText: { fontSize: 14, lineHeight: 20 },
+  commentAuthor: { fontSize: 12, fontWeight: '700', marginBottom: 2, letterSpacing: 0.1 },
+  commentText: { fontSize: 13, lineHeight: 19, letterSpacing: 0.1 },
   commentGif: { width: 120, height: 90, borderRadius: 8, marginTop: 6 },
   commentInlineRow: {
     flexDirection: 'row',
@@ -1228,7 +1371,7 @@ const styles = StyleSheet.create({
     maxHeight: 80,
   },
   commentInlinePostBtn: { paddingVertical: 8, paddingHorizontal: 4, justifyContent: 'center' },
-  commentInlinePostText: { fontSize: 14, fontWeight: '600' },
+  commentInlinePostText: { fontSize: 13, fontWeight: '700', letterSpacing: 0.2 },
 
   // React modal
   reactModalOverlay: {
@@ -1242,8 +1385,8 @@ const styles = StyleSheet.create({
     padding: 24,
     paddingBottom: 40,
   },
-  reactModalTitle: { marginBottom: 4, textAlign: 'center' },
-  reactModalHint: { fontSize: 13, textAlign: 'center', marginBottom: 20 },
+  reactModalTitle: { marginBottom: 4, textAlign: 'center', fontWeight: '800', letterSpacing: -0.3 },
+  reactModalHint: { fontSize: 12, textAlign: 'center', marginBottom: 20, letterSpacing: 0.1 },
   reactPhotoBox: {
     width: 120,
     height: 120,
@@ -1280,7 +1423,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     alignItems: 'center',
   },
-  reactSubmitButtonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  reactSubmitButtonText: { color: '#fff', fontSize: 14, fontWeight: '800', letterSpacing: 0.5, textTransform: 'uppercase' },
   reactCancelButton: {
     paddingVertical: 12,
     borderRadius: 14,
@@ -1295,11 +1438,11 @@ const styles = StyleSheet.create({
   nudgeCard: {
     width: 200,
     padding: 14,
-    borderRadius: 16,
+    borderRadius: 14,
   },
   nudgeEmoji: { fontSize: 22, marginBottom: 6 },
-  nudgeTitle: { fontSize: 13, fontWeight: '700', marginBottom: 3 },
-  nudgeMessage: { fontSize: 12, lineHeight: 16 },
+  nudgeTitle: { fontSize: 12, fontWeight: '800', marginBottom: 3, letterSpacing: 0.2 },
+  nudgeMessage: { fontSize: 11, lineHeight: 16, letterSpacing: 0.1 },
 
   // Flashback cards
   flashbackScroll: { gap: 14, paddingRight: 4 },
@@ -1316,7 +1459,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   flashbackEmoji: { fontSize: 18 },
-  flashbackLabel: { fontSize: 13, fontWeight: '700' },
+  flashbackLabel: { fontSize: 12, fontWeight: '800', letterSpacing: 0.3 },
   flashbackImage: {
     width: 220,
     height: 220,
@@ -1360,6 +1503,6 @@ const styles = StyleSheet.create({
   },
   achievementFeedIcon: { fontSize: 22 },
   achievementFeedTextBlock: { flex: 1, minWidth: 0 },
-  achievementFeedMessage: { fontSize: 14, fontWeight: '600', lineHeight: 20 },
-  achievementFeedTime: { fontSize: 11, marginTop: 2 },
+  achievementFeedMessage: { fontSize: 13, fontWeight: '700', lineHeight: 19, letterSpacing: 0.1 },
+  achievementFeedTime: { fontSize: 10, marginTop: 3, fontWeight: '600', letterSpacing: 0.2, textTransform: 'uppercase' },
 });

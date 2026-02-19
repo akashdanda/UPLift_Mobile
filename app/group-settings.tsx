@@ -332,10 +332,10 @@ const styles = StyleSheet.create({
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   scrollView: { flex: 1 },
   scrollContent: { padding: 20, paddingBottom: 40 },
-  title: { fontSize: 28, fontWeight: '800', marginBottom: 24 },
+  title: { fontSize: 24, fontWeight: '800', marginBottom: 24, letterSpacing: -0.5 },
 
-  section: { marginBottom: 24 },
-  sectionTitle: { fontSize: 18, fontWeight: '700', marginBottom: 12 },
+  section: { marginBottom: 28 },
+  sectionTitle: { fontSize: 13, fontWeight: '800', marginBottom: 14, letterSpacing: 0.5, textTransform: 'uppercase' },
 
   avatarSection: { alignItems: 'center', gap: 12 },
   avatarContainer: {
@@ -354,14 +354,15 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     borderWidth: 1,
   },
-  changePhotoText: { fontSize: 14, fontWeight: '600' },
+  changePhotoText: { fontSize: 12, fontWeight: '700', letterSpacing: 0.3, textTransform: 'uppercase' },
 
   input: {
     borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 14,
+    borderRadius: 14,
+    paddingHorizontal: 16,
     paddingVertical: 12,
-    fontSize: 16,
+    fontSize: 15,
+    letterSpacing: 0.1,
   },
   textArea: {
     minHeight: 80,
@@ -375,14 +376,14 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   switchLabel: { flex: 1, marginRight: 12 },
-  switchTitle: { fontSize: 16, marginBottom: 4 },
-  switchDescription: { fontSize: 13 },
+  switchTitle: { fontSize: 15, fontWeight: '700', marginBottom: 4, letterSpacing: 0.1 },
+  switchDescription: { fontSize: 12, letterSpacing: 0.1 },
 
   saveButton: {
     paddingVertical: 16,
-    borderRadius: 12,
+    borderRadius: 14,
     alignItems: 'center',
     marginTop: 8,
   },
-  saveButtonText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  saveButtonText: { color: '#fff', fontSize: 15, fontWeight: '800', letterSpacing: 0.5, textTransform: 'uppercase' },
 })

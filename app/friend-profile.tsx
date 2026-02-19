@@ -22,6 +22,7 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 
 import { ThemedText } from '@/components/themed-text'
 import { ThemedView } from '@/components/themed-view'
+import { getSpecialBadge } from '@/constants/special-badges'
 import { Colors } from '@/constants/theme'
 import { useColorScheme } from '@/hooks/use-color-scheme'
 import { getUserAchievements } from '@/lib/achievements'
@@ -150,6 +151,7 @@ export default function FriendProfileScreen() {
   }, [id])
 
   const displayName = profile?.display_name || 'Athlete'
+  const specialBadge = getSpecialBadge(profile?.display_name)
   const initials = useMemo(() => getInitials(profile?.display_name ?? null), [profile?.display_name])
   const showAvatarImage = !!profile?.avatar_url
 
@@ -256,6 +258,14 @@ export default function FriendProfileScreen() {
           <ThemedText type="title" style={[styles.displayName, { color: colors.text }]}>
             {displayName}
           </ThemedText>
+          {specialBadge && (
+            <View style={[styles.specialBadge, { backgroundColor: specialBadge.bgColor }]}>
+              <ThemedText style={styles.specialBadgeEmoji}>{specialBadge.emoji}</ThemedText>
+              <ThemedText style={[styles.specialBadgeLabel, { color: specialBadge.color }]}>
+                {specialBadge.label}
+              </ThemedText>
+            </View>
+          )}
           {profile.bio && (
             <ThemedText style={[styles.bio, { color: colors.textMuted }]}>{profile.bio}</ThemedText>
           )}
@@ -265,7 +275,7 @@ export default function FriendProfileScreen() {
             style={[styles.challengeButton, { backgroundColor: colors.tint }]}
             onPress={() => router.push(`/create-duel?friendId=${id}` as Href)}
           >
-            <ThemedText style={styles.challengeButtonText}>⚔️ Challenge</ThemedText>
+            <ThemedText style={styles.challengeButtonText}>Challenge</ThemedText>
           </Pressable>
         </ThemedView>
 
@@ -638,41 +648,57 @@ const styles = StyleSheet.create({
   },
   avatarInitials: {
     fontSize: 32,
-    fontWeight: '600',
+    fontWeight: '800',
   },
   levelBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    paddingHorizontal: 12,
+    paddingHorizontal: 14,
     paddingVertical: 5,
     borderRadius: 999,
-    marginBottom: 6,
+    marginBottom: 8,
   },
   levelEmoji: { fontSize: 14 },
-  levelTitle: { fontSize: 12, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 1 },
+  levelTitle: { fontSize: 11, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 1.5 },
   displayName: {
     marginBottom: 4,
     textAlign: 'center',
+    letterSpacing: -0.3,
   },
+  specialBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    marginBottom: 4,
+  },
+  specialBadgeEmoji: { fontSize: 13 },
+  specialBadgeLabel: { fontSize: 12, fontWeight: '700' },
   bio: {
-    fontSize: 15,
+    fontSize: 14,
     textAlign: 'center',
-    marginTop: 8,
+    marginTop: 10,
     paddingHorizontal: 24,
-    lineHeight: 20,
+    lineHeight: 21,
+    letterSpacing: 0.1,
   },
   challengeButton: {
     marginTop: 14,
     paddingVertical: 12,
     paddingHorizontal: 28,
-    borderRadius: 12,
+    borderRadius: 14,
     alignItems: 'center',
   },
   challengeButtonText: {
     color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 14,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
   },
   section: {
     marginBottom: 24,
@@ -693,11 +719,16 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   statValue: {
-    fontSize: 24,
+    fontSize: 22,
+    fontWeight: '800',
+    letterSpacing: -0.5,
   },
   statLabel: {
     marginTop: 4,
-    fontSize: 12,
+    fontSize: 10,
+    fontWeight: '600',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
   },
   highlightsSection: { marginBottom: 20 },
   highlightsScroll: { paddingHorizontal: 4, gap: 16, paddingRight: 20 },
@@ -711,7 +742,7 @@ const styles = StyleSheet.create({
     borderWidth: 2,
   },
   highlightCircleImage: { width: 72, height: 72, borderRadius: 36 },
-  highlightLabel: { fontSize: 12, marginTop: 6, maxWidth: 72, textAlign: 'center' },
+  highlightLabel: { fontSize: 11, fontWeight: '600', marginTop: 6, maxWidth: 72, textAlign: 'center', letterSpacing: 0.2 },
   // Calendar styles
   calendarCard: {
     borderRadius: 14,
@@ -719,10 +750,12 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   calendarMonthLabel: {
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 14,
+    fontWeight: '800',
     marginBottom: 12,
     textAlign: 'center',
+    letterSpacing: 0.3,
+    textTransform: 'uppercase',
   },
   calendarWeekRow: {
     flexDirection: 'row',

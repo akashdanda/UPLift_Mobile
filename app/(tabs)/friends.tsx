@@ -168,66 +168,7 @@ export default function FriendsScreen() {
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
-        {/* Active Duels */}
-        {activeDuels.length > 0 && (
-          <>
-            <ThemedText type="subtitle" style={[styles.sectionTitle, { color: colors.text }]}>
-              ⚔️ Active Challenges
-            </ThemedText>
-            <View style={[styles.listCard, { backgroundColor: colors.card, borderColor: colors.tabBarBorder }]}>
-              {activeDuels.map((duel) => {
-                const iAmChallenger = duel.challenger_id === userId
-                const opName = iAmChallenger ? duel.opponent_display_name : duel.challenger_display_name
-                const opAvatar = iAmChallenger ? duel.opponent_avatar_url : duel.challenger_avatar_url
-                const myScore = iAmChallenger ? duel.challenger_score : duel.opponent_score
-                const theirScore = iAmChallenger ? duel.opponent_score : duel.challenger_score
-                return (
-                  <Pressable
-                    key={duel.id}
-                    style={[styles.friendRow, { borderBottomColor: colors.tabBarBorder }]}
-                    onPress={() => router.push(`/duel-detail?id=${duel.id}`)}
-                  >
-                    <View style={[styles.avatarSmall, { backgroundColor: colors.tint + '25' }]}>
-                      {opAvatar ? (
-                        <Image source={{ uri: opAvatar }} style={styles.avatarSmallImage} />
-                      ) : (
-                        <ThemedText style={[styles.avatarInitials, { color: colors.tint }]}>
-                          {getInitials(opName)}
-                        </ThemedText>
-                      )}
-                    </View>
-                    <View style={styles.resultInfo}>
-                      <ThemedText style={[styles.resultName, { color: colors.text }]}>
-                        vs {opName || 'Opponent'}
-                      </ThemedText>
-                      <ThemedText style={[styles.resultMeta, { color: colors.textMuted }]}>
-                        {duel.status === 'pending'
-                          ? (duel.opponent_id === userId ? 'Waiting for your response' : 'Waiting for response…')
-                          : `${myScore} - ${theirScore} • ${duel.type === 'workout_count' ? 'Workouts' : 'Streak'}`}
-                      </ThemedText>
-                    </View>
-                    <View style={[styles.duelStatusBadge, { backgroundColor: duel.status === 'pending' ? '#EAB308' + '20' : colors.tint + '20' }]}>
-                      <ThemedText style={[styles.duelStatusText, { color: duel.status === 'pending' ? '#EAB308' : colors.tint }]}>
-                        {duel.status === 'pending' ? 'Pending' : 'Active'}
-                      </ThemedText>
-                    </View>
-                  </Pressable>
-                )
-              })}
-            </View>
-          </>
-        )}
-
-        {/* Challenge button */}
-        <Pressable
-          style={[styles.challengeMainBtn, { backgroundColor: colors.tint }]}
-          onPress={() => router.push('/create-duel')}
-        >
-          <Ionicons name="flash" size={18} color="#fff" />
-          <ThemedText style={styles.challengeMainBtnText}>⚔️ Start a 1v1 Challenge</ThemedText>
-        </Pressable>
-
-        {/* Add friend */}
+        {/* Add friend - FIRST PRIORITY */}
         <ThemedText type="subtitle" style={[styles.sectionTitle, { color: colors.text }]}>
           Add friend
         </ThemedText>
@@ -301,57 +242,57 @@ export default function FriendsScreen() {
           </View>
         )}
 
-        {/* Pending requests */}
-        <ThemedText type="subtitle" style={[styles.sectionTitle, { color: colors.text }]}>
-          Pending requests
-        </ThemedText>
-        {pending.length === 0 ? (
-          <ThemedText style={[styles.emptyHint, { color: colors.textMuted }]}>No pending requests</ThemedText>
-        ) : (
-          <View style={[styles.listCard, { backgroundColor: colors.card, borderColor: colors.tabBarBorder }]}>
-            {pending.map(({ friendship, requester }) => (
-              <View key={friendship.id} style={[styles.friendRow, { borderBottomColor: colors.tabBarBorder }]}>
-                <View style={[styles.avatarSmall, { backgroundColor: colors.tint + '25' }]}>
-                  {requester.avatar_url ? (
-                    <Image source={{ uri: requester.avatar_url }} style={styles.avatarSmallImage} />
-                  ) : (
-                    <ThemedText style={[styles.avatarInitials, { color: colors.tint }]}>
-                      {getInitials(requester.display_name)}
-                    </ThemedText>
-                  )}
-                </View>
-                <View style={styles.resultInfo}>
-                  <ThemedText style={[styles.resultName, { color: colors.text }]}>
-                    {requester.display_name || 'No name'}
-                  </ThemedText>
-                  <ThemedText style={[styles.resultMeta, { color: colors.textMuted }]}>Wants to be friends</ThemedText>
-                </View>
-                <View style={styles.pendingActions}>
-                  <Pressable
-                    style={[styles.acceptButton, { backgroundColor: colors.tint }]}
-                    onPress={() => handleAccept(friendship.id)}
-                    disabled={actingId === friendship.id}
-                  >
-                    {actingId === friendship.id ? (
-                      <ActivityIndicator color="#fff" size="small" />
+        {/* Pending requests - SECOND PRIORITY */}
+        {pending.length > 0 && (
+          <>
+            <ThemedText type="subtitle" style={[styles.sectionTitle, { color: colors.text }]}>
+              Pending requests
+            </ThemedText>
+            <View style={[styles.listCard, { backgroundColor: colors.card, borderColor: colors.tabBarBorder }]}>
+              {pending.map(({ friendship, requester }) => (
+                <View key={friendship.id} style={[styles.friendRow, { borderBottomColor: colors.tabBarBorder }]}>
+                  <View style={[styles.avatarSmall, { backgroundColor: colors.tint + '25' }]}>
+                    {requester.avatar_url ? (
+                      <Image source={{ uri: requester.avatar_url }} style={styles.avatarSmallImage} />
                     ) : (
-                      <ThemedText style={styles.addButtonText}>Accept</ThemedText>
+                      <ThemedText style={[styles.avatarInitials, { color: colors.tint }]}>
+                        {getInitials(requester.display_name)}
+                      </ThemedText>
                     )}
-                  </Pressable>
-                  <Pressable
-                    style={[styles.declineButton, { borderColor: colors.tabBarBorder }]}
-                    onPress={() => handleDecline(friendship.id)}
-                    disabled={actingId === friendship.id}
-                  >
-                    <ThemedText style={[styles.declineButtonText, { color: colors.textMuted }]}>Decline</ThemedText>
-                  </Pressable>
+                  </View>
+                  <View style={styles.resultInfo}>
+                    <ThemedText style={[styles.resultName, { color: colors.text }]}>
+                      {requester.display_name || 'No name'}
+                    </ThemedText>
+                    <ThemedText style={[styles.resultMeta, { color: colors.textMuted }]}>Wants to be friends</ThemedText>
+                  </View>
+                  <View style={styles.pendingActions}>
+                    <Pressable
+                      style={[styles.acceptButton, { backgroundColor: colors.tint }]}
+                      onPress={() => handleAccept(friendship.id)}
+                      disabled={actingId === friendship.id}
+                    >
+                      {actingId === friendship.id ? (
+                        <ActivityIndicator color="#fff" size="small" />
+                      ) : (
+                        <ThemedText style={styles.addButtonText}>Accept</ThemedText>
+                      )}
+                    </Pressable>
+                    <Pressable
+                      style={[styles.declineButton, { borderColor: colors.tabBarBorder }]}
+                      onPress={() => handleDecline(friendship.id)}
+                      disabled={actingId === friendship.id}
+                    >
+                      <ThemedText style={[styles.declineButtonText, { color: colors.textMuted }]}>Decline</ThemedText>
+                    </Pressable>
+                  </View>
                 </View>
-              </View>
-            ))}
-          </View>
+              ))}
+            </View>
+          </>
         )}
 
-        {/* Friends list */}
+        {/* Friends list - MAIN CONTENT */}
         <ThemedText type="subtitle" style={[styles.sectionTitle, { color: colors.text }]}>
           Friends
         </ThemedText>
@@ -402,7 +343,7 @@ export default function FriendsScreen() {
             ))}
           </View>
         )}
-        {/* Suggested Friends (Mutuals) */}
+        {/* Suggested Friends (Mutuals) - DISCOVERY */}
         {mutualSuggestions.length > 0 && (
           <>
             <ThemedText type="subtitle" style={[styles.sectionTitle, { color: colors.text }]}>
@@ -463,11 +404,11 @@ export default function FriendsScreen() {
           </>
         )}
 
-        {/* Workout Buddy Suggestions */}
+        {/* Workout Buddy Suggestions - DISCOVERY */}
         {buddySuggestions.length > 0 && (
           <>
             <ThemedText type="subtitle" style={[styles.sectionTitle, { color: colors.text }]}>
-              🤝 Workout Buddies
+              Workout Buddies
             </ThemedText>
             <ThemedText style={[styles.buddyHint, { color: colors.textMuted }]}>
               Users with similar goals and schedules
@@ -521,6 +462,70 @@ export default function FriendsScreen() {
             </View>
           </>
         )}
+
+        {/* Challenges Section - SECONDARY PRIORITY */}
+        <View style={[styles.challengesDivider, { backgroundColor: colors.tabBarBorder }]} />
+        <ThemedText type="subtitle" style={[styles.sectionTitle, { color: colors.text }]}>
+          Challenges
+        </ThemedText>
+
+        {/* Challenge button */}
+        <Pressable
+          style={[styles.challengeMainBtn, { backgroundColor: colors.tint }]}
+          onPress={() => router.push('/create-duel')}
+        >
+          <Ionicons name="flash" size={18} color="#fff" />
+          <ThemedText style={styles.challengeMainBtnText}>Start a 1v1 Challenge</ThemedText>
+        </Pressable>
+
+        {/* Active Duels */}
+        {activeDuels.length > 0 ? (
+          <View style={[styles.listCard, { backgroundColor: colors.card, borderColor: colors.tabBarBorder }]}>
+            {activeDuels.map((duel) => {
+              const iAmChallenger = duel.challenger_id === userId
+              const opName = iAmChallenger ? duel.opponent_display_name : duel.challenger_display_name
+              const opAvatar = iAmChallenger ? duel.opponent_avatar_url : duel.challenger_avatar_url
+              const myScore = iAmChallenger ? duel.challenger_score : duel.opponent_score
+              const theirScore = iAmChallenger ? duel.opponent_score : duel.challenger_score
+              return (
+                <Pressable
+                  key={duel.id}
+                  style={[styles.friendRow, { borderBottomColor: colors.tabBarBorder }]}
+                  onPress={() => router.push(`/duel-detail?id=${duel.id}`)}
+                >
+                  <View style={[styles.avatarSmall, { backgroundColor: colors.tint + '25' }]}>
+                    {opAvatar ? (
+                      <Image source={{ uri: opAvatar }} style={styles.avatarSmallImage} />
+                    ) : (
+                      <ThemedText style={[styles.avatarInitials, { color: colors.tint }]}>
+                        {getInitials(opName)}
+                      </ThemedText>
+                    )}
+                  </View>
+                  <View style={styles.resultInfo}>
+                    <ThemedText style={[styles.resultName, { color: colors.text }]}>
+                      vs {opName || 'Opponent'}
+                    </ThemedText>
+                    <ThemedText style={[styles.resultMeta, { color: colors.textMuted }]}>
+                      {duel.status === 'pending'
+                        ? (duel.opponent_id === userId ? 'Waiting for your response' : 'Waiting for response…')
+                        : `${myScore} - ${theirScore} • ${duel.type === 'workout_count' ? 'Workouts' : 'Streak'}`}
+                    </ThemedText>
+                  </View>
+                  <View style={[styles.duelStatusBadge, { backgroundColor: duel.status === 'pending' ? '#EAB308' + '20' : colors.tint + '20' }]}>
+                    <ThemedText style={[styles.duelStatusText, { color: duel.status === 'pending' ? '#EAB308' : colors.tint }]}>
+                      {duel.status === 'pending' ? 'Pending' : 'Active'}
+                    </ThemedText>
+                  </View>
+                </Pressable>
+              )
+            })}
+          </View>
+        ) : (
+          <ThemedText style={[styles.emptyHint, { color: colors.textMuted }]}>
+            No active challenges. Start one above!
+          </ThemedText>
+        )}
       </ScrollView>
     </SafeAreaView>
   )
@@ -537,21 +542,22 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  topBarTitle: { fontSize: 28 },
+  topBarTitle: { fontSize: 24, fontWeight: '800', letterSpacing: -0.3 },
   scrollView: { flex: 1 },
   scrollContent: { padding: 24, paddingBottom: 40 },
-  sectionTitle: { marginBottom: 12 },
+  sectionTitle: { marginBottom: 14 },
   searchRow: { flexDirection: 'row', gap: 12, marginBottom: 16 },
   searchInput: {
     flex: 1,
     borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 14,
+    borderRadius: 14,
+    paddingHorizontal: 16,
     paddingVertical: 12,
-    fontSize: 16,
+    fontSize: 14,
+    letterSpacing: 0.1,
   },
   searchButton: { paddingHorizontal: 20, borderRadius: 12, justifyContent: 'center' },
-  searchButtonText: { color: '#fff', fontWeight: '600' },
+  searchButtonText: { color: '#fff', fontWeight: '700', fontSize: 13, letterSpacing: 0.3, textTransform: 'uppercase' },
   centeredRow: { paddingVertical: 16, alignItems: 'center' },
   resultsCard: { borderWidth: 1, borderRadius: 14, overflow: 'hidden', marginBottom: 24 },
   listCard: { borderWidth: 1, borderRadius: 14, overflow: 'hidden', marginBottom: 24 },
@@ -577,13 +583,13 @@ const styles = StyleSheet.create({
     marginRight: 12,
   },
   avatarSmallImage: { width: 44, height: 44 },
-  avatarInitials: { fontSize: 16, fontWeight: '600' },
+  avatarInitials: { fontSize: 15, fontWeight: '700' },
   resultInfo: { flex: 1 },
-  resultName: { fontSize: 16, fontWeight: '600' },
-  resultMeta: { fontSize: 13, marginTop: 2 },
+  resultName: { fontSize: 15, fontWeight: '700', letterSpacing: 0.1 },
+  resultMeta: { fontSize: 12, marginTop: 2, fontWeight: '500', letterSpacing: 0.1 },
   addButton: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 10 },
-  addButtonText: { color: '#fff', fontWeight: '600', fontSize: 14 },
-  statusLabel: { fontSize: 14 },
+  addButtonText: { color: '#fff', fontWeight: '700', fontSize: 13, letterSpacing: 0.3 },
+  statusLabel: { fontSize: 13, fontWeight: '600' },
   pendingActions: { flexDirection: 'row', gap: 8 },
   acceptButton: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10 },
   declineButton: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, borderWidth: 1 },
@@ -593,6 +599,10 @@ const styles = StyleSheet.create({
   emptyHint: { marginBottom: 24, fontSize: 14 },
   duelStatusBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
   duelStatusText: { fontSize: 12, fontWeight: '600' },
+  challengesDivider: {
+    height: StyleSheet.hairlineWidth,
+    marginVertical: 32,
+  },
   challengeMainBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -600,8 +610,8 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingVertical: 14,
     borderRadius: 14,
-    marginBottom: 24,
+    marginBottom: 16,
   },
-  challengeMainBtnText: { color: '#fff', fontSize: 16, fontWeight: '600' },
-  buddyHint: { fontSize: 13, marginBottom: 10, marginTop: -4 },
+  challengeMainBtnText: { color: '#fff', fontSize: 14, fontWeight: '800', letterSpacing: 0.5, textTransform: 'uppercase' },
+  buddyHint: { fontSize: 12, marginBottom: 10, marginTop: -4, letterSpacing: 0.1 },
 })

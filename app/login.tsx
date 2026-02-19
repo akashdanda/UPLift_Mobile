@@ -64,7 +64,7 @@ export default function LoginScreen() {
         <ThemedView style={styles.inner}>
         <View style={styles.header}>
           <ThemedText type="title" style={[styles.logo, { color: colors.text }]}>
-            UPLift
+            Uplift
           </ThemedText>
           <ThemedText style={[styles.tagline, { color: colors.textMuted }]}>
             Your fitness community
@@ -172,17 +172,22 @@ const styles = StyleSheet.create({
     marginBottom: 32,
   },
   logo: {
-    fontSize: 36,
-    fontWeight: '700',
+    fontSize: 34,
+    fontWeight: '800',
     letterSpacing: 0.5,
-    marginBottom: 4,
+    marginBottom: 6,
   },
   tagline: {
-    fontSize: 15,
+    fontSize: 13,
+    fontWeight: '600',
+    letterSpacing: 0.3,
+    textTransform: 'uppercase',
   },
   sectionLabel: {
     marginBottom: 12,
-    fontSize: 18,
+    fontSize: 16,
+    fontWeight: '800',
+    letterSpacing: -0.2,
   },
   formCard: {
     borderRadius: 16,
@@ -212,8 +217,10 @@ const styles = StyleSheet.create({
   },
   primaryButtonText: {
     color: '#fff',
-    fontSize: 17,
-    fontWeight: '600',
+    fontSize: 15,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
   },
   orRow: {
     flexDirection: 'row',

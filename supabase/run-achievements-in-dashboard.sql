@@ -189,7 +189,7 @@ INSERT INTO public.achievements (key, name, description, category, icon, require
   ('first_post',          'First Post',            'Log your very first workout',                 'social', '👥', 'workouts_count',     1,   10),
   ('reactions_10',        '10 Reactions',           'Receive 10 reactions on your posts',          'social', '👥', 'reactions_received',  10,  20),
   ('comments_10',         '10 Comments',            'Receive 10 comments on your posts',           'social', '👥', 'comments_received',   10,  30),
-  ('friends_3',           'Invite 3 Friends',       'Add 3 friends on UPLift',                     'social', '👥', 'friends_count',       3,   40),
+  ('friends_3',           'Invite 3 Friends',       'Add 3 friends on Uplift',                     'social', '👥', 'friends_count',       3,   40),
   -- 🎯 Goals
   ('weekly_goal_4',  'Weekly Warrior',       'Hit your weekly goal 4 weeks in a row', 'goals', '🎯', 'weekly_goal_streak', 4,  10),
   ('perfect_month',  'Perfect Month',        'Log a workout every day for a full month', 'goals', '🎯', 'perfect_month',      1,  20)

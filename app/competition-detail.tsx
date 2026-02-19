@@ -286,139 +286,160 @@ export default function CompetitionDetailScreen() {
           </Pressable>
         )}
 
-        {/* Leaderboard — show all members of each group */}
+        {/* Leaderboard — two columns side by side */}
         {(competition.status === 'active' || competition.status === 'completed') && (
           <ThemedView style={styles.leaderboardSection}>
             <ThemedText type="subtitle" style={[styles.sectionTitle, { color: colors.text }]}>
               Leaderboard
             </ThemedText>
 
-            {/* Group 1 members */}
-            <View style={styles.groupLeaderboard}>
-              <View style={styles.groupLeaderboardHeader}>
-                {competition.group1.avatar_url ? (
-                  <Image source={{ uri: competition.group1.avatar_url }} style={styles.groupLeaderboardAvatar} />
-                ) : (
-                  <View style={[styles.groupLeaderboardAvatar, { backgroundColor: colors.tint + '20' }]}>
-                    <ThemedText style={[styles.groupLeaderboardAvatarText, { color: colors.tint }]}>
-                      {getGroupInitials(competition.group1.name)}
-                    </ThemedText>
-                  </View>
-                )}
-                <ThemedText type="defaultSemiBold" style={[styles.groupLeaderboardName, { color: colors.text }]} numberOfLines={1}>
-                  {competition.group1.name}
-                </ThemedText>
-                <ThemedText style={[styles.groupLeaderboardScore, { color: colors.tint }]}>
-                  {competition.group1_score} pts
-                </ThemedText>
-              </View>
-              {(() => {
-                // Build a map of contribution points per user
-                const contribMap = new Map(
-                  group1Contribs.map((c) => [c.user_id, c.points])
-                )
-                // Merge all members with contribution data, sorted by points desc
-                const allMembers = group1Members
-                  .map((m) => ({
-                    ...m,
-                    contrib_points: contribMap.get(m.user_id) ?? 0,
-                  }))
-                  .sort((a, b) => b.contrib_points - a.contrib_points)
-
-                if (allMembers.length === 0) {
-                  return (
-                    <ThemedText style={[styles.emptyContribs, { color: colors.textMuted }]}>
-                      No members
-                    </ThemedText>
+            <View style={styles.leaderboardColumns}>
+              {/* Group 1 column */}
+              <View style={styles.leaderboardCol}>
+                <View style={styles.colHeader}>
+                  {competition.group1.avatar_url ? (
+                    <Image source={{ uri: competition.group1.avatar_url }} style={styles.colAvatar} />
+                  ) : (
+                    <View style={[styles.colAvatar, { backgroundColor: colors.tint + '20' }]}>
+                      <ThemedText style={[styles.colAvatarText, { color: colors.tint }]}>
+                        {getGroupInitials(competition.group1.name)}
+                      </ThemedText>
+                    </View>
+                  )}
+                  <ThemedText type="defaultSemiBold" style={[styles.colGroupName, { color: colors.text }]} numberOfLines={1}>
+                    {competition.group1.name}
+                  </ThemedText>
+                  <ThemedText style={[styles.colGroupScore, { color: colors.tint }]}>
+                    {competition.group1_score} pts
+                  </ThemedText>
+                </View>
+                {(() => {
+                  const contribMap = new Map(
+                    group1Contribs.map((c) => [c.user_id, c.points])
                   )
-                }
+                  const allMembers = group1Members
+                    .map((m) => ({
+                      ...m,
+                      contrib_points: contribMap.get(m.user_id) ?? 0,
+                    }))
+                    .sort((a, b) => b.contrib_points - a.contrib_points)
 
-                return allMembers.map((member, idx) => (
-                  <View key={member.id} style={[styles.contribRow, { backgroundColor: colors.cardElevated }]}>
-                    <ThemedText style={[styles.contribRank, { color: idx < 3 ? colors.tint : colors.textMuted }]}>
-                      #{idx + 1}
-                    </ThemedText>
-                    {member.avatar_url ? (
-                      <Image source={{ uri: member.avatar_url }} style={styles.contribAvatar} />
-                    ) : (
-                      <View style={[styles.contribAvatar, { backgroundColor: colors.tint + '20' }]}>
-                        <ThemedText style={[styles.contribAvatarText, { color: colors.tint }]}>
-                          {member.display_name?.charAt(0).toUpperCase() ?? '?'}
+                  if (allMembers.length === 0) {
+                    return (
+                      <ThemedText style={[styles.emptyContribs, { color: colors.textMuted }]}>
+                        No members
+                      </ThemedText>
+                    )
+                  }
+
+                  return allMembers.map((member, idx) => (
+                    <Pressable
+                      key={member.id}
+                      style={[styles.colMemberRow, { backgroundColor: colors.cardElevated }]}
+                      onPress={() => {
+                        if (member.user_id === userId) {
+                          router.push('/(tabs)/profile')
+                        } else {
+                          router.push({ pathname: '/friend-profile', params: { id: member.user_id } })
+                        }
+                      }}
+                    >
+                      <View style={styles.colMemberLeft}>
+                        {member.avatar_url ? (
+                          <Image source={{ uri: member.avatar_url }} style={styles.colMemberAvatar} />
+                        ) : (
+                          <View style={[styles.colMemberAvatar, { backgroundColor: colors.tint + '20' }]}>
+                            <ThemedText style={[styles.colMemberInitial, { color: colors.tint }]}>
+                              {member.display_name?.charAt(0).toUpperCase() ?? '?'}
+                            </ThemedText>
+                          </View>
+                        )}
+                        <ThemedText style={[styles.colMemberName, { color: colors.text }]} numberOfLines={1}>
+                          {member.display_name ?? 'Unknown'}
                         </ThemedText>
                       </View>
-                    )}
-                    <ThemedText style={[styles.contribName, { color: colors.text }]} numberOfLines={1}>
-                      {member.display_name ?? 'Unknown'}
-                    </ThemedText>
-                    <ThemedText style={[styles.contribPoints, { color: member.contrib_points > 0 ? colors.tint : colors.textMuted }]}>
-                      {member.contrib_points} pts
-                    </ThemedText>
-                  </View>
-                ))
-              })()}
-            </View>
-
-            {/* Group 2 members */}
-            <View style={styles.groupLeaderboard}>
-              <View style={styles.groupLeaderboardHeader}>
-                {competition.group2.avatar_url ? (
-                  <Image source={{ uri: competition.group2.avatar_url }} style={styles.groupLeaderboardAvatar} />
-                ) : (
-                  <View style={[styles.groupLeaderboardAvatar, { backgroundColor: colors.tint + '20' }]}>
-                    <ThemedText style={[styles.groupLeaderboardAvatarText, { color: colors.tint }]}>
-                      {getGroupInitials(competition.group2.name)}
-                    </ThemedText>
-                  </View>
-                )}
-                <ThemedText type="defaultSemiBold" style={[styles.groupLeaderboardName, { color: colors.text }]} numberOfLines={1}>
-                  {competition.group2.name}
-                </ThemedText>
-                <ThemedText style={[styles.groupLeaderboardScore, { color: colors.tint }]}>
-                  {competition.group2_score} pts
-                </ThemedText>
+                      <ThemedText style={[styles.colMemberPts, { color: member.contrib_points > 0 ? colors.tint : colors.textMuted }]}>
+                        {member.contrib_points}
+                      </ThemedText>
+                    </Pressable>
+                  ))
+                })()}
               </View>
-              {(() => {
-                const contribMap = new Map(
-                  group2Contribs.map((c) => [c.user_id, c.points])
-                )
-                const allMembers = group2Members
-                  .map((m) => ({
-                    ...m,
-                    contrib_points: contribMap.get(m.user_id) ?? 0,
-                  }))
-                  .sort((a, b) => b.contrib_points - a.contrib_points)
 
-                if (allMembers.length === 0) {
-                  return (
-                    <ThemedText style={[styles.emptyContribs, { color: colors.textMuted }]}>
-                      No members
-                    </ThemedText>
+              {/* Divider */}
+              <View style={[styles.colDivider, { backgroundColor: colors.tabBarBorder }]} />
+
+              {/* Group 2 column */}
+              <View style={styles.leaderboardCol}>
+                <View style={styles.colHeader}>
+                  {competition.group2.avatar_url ? (
+                    <Image source={{ uri: competition.group2.avatar_url }} style={styles.colAvatar} />
+                  ) : (
+                    <View style={[styles.colAvatar, { backgroundColor: colors.tint + '20' }]}>
+                      <ThemedText style={[styles.colAvatarText, { color: colors.tint }]}>
+                        {getGroupInitials(competition.group2.name)}
+                      </ThemedText>
+                    </View>
+                  )}
+                  <ThemedText type="defaultSemiBold" style={[styles.colGroupName, { color: colors.text }]} numberOfLines={1}>
+                    {competition.group2.name}
+                  </ThemedText>
+                  <ThemedText style={[styles.colGroupScore, { color: colors.tint }]}>
+                    {competition.group2_score} pts
+                  </ThemedText>
+                </View>
+                {(() => {
+                  const contribMap = new Map(
+                    group2Contribs.map((c) => [c.user_id, c.points])
                   )
-                }
+                  const allMembers = group2Members
+                    .map((m) => ({
+                      ...m,
+                      contrib_points: contribMap.get(m.user_id) ?? 0,
+                    }))
+                    .sort((a, b) => b.contrib_points - a.contrib_points)
 
-                return allMembers.map((member, idx) => (
-                  <View key={member.id} style={[styles.contribRow, { backgroundColor: colors.cardElevated }]}>
-                    <ThemedText style={[styles.contribRank, { color: idx < 3 ? colors.tint : colors.textMuted }]}>
-                      #{idx + 1}
-                    </ThemedText>
-                    {member.avatar_url ? (
-                      <Image source={{ uri: member.avatar_url }} style={styles.contribAvatar} />
-                    ) : (
-                      <View style={[styles.contribAvatar, { backgroundColor: colors.tint + '20' }]}>
-                        <ThemedText style={[styles.contribAvatarText, { color: colors.tint }]}>
-                          {member.display_name?.charAt(0).toUpperCase() ?? '?'}
+                  if (allMembers.length === 0) {
+                    return (
+                      <ThemedText style={[styles.emptyContribs, { color: colors.textMuted }]}>
+                        No members
+                      </ThemedText>
+                    )
+                  }
+
+                  return allMembers.map((member, idx) => (
+                    <Pressable
+                      key={member.id}
+                      style={[styles.colMemberRow, { backgroundColor: colors.cardElevated }]}
+                      onPress={() => {
+                        if (member.user_id === userId) {
+                          router.push('/(tabs)/profile')
+                        } else {
+                          router.push({ pathname: '/friend-profile', params: { id: member.user_id } })
+                        }
+                      }}
+                    >
+                      <View style={styles.colMemberLeft}>
+                        {member.avatar_url ? (
+                          <Image source={{ uri: member.avatar_url }} style={styles.colMemberAvatar} />
+                        ) : (
+                          <View style={[styles.colMemberAvatar, { backgroundColor: colors.tint + '20' }]}>
+                            <ThemedText style={[styles.colMemberInitial, { color: colors.tint }]}>
+                              {member.display_name?.charAt(0).toUpperCase() ?? '?'}
+                            </ThemedText>
+                          </View>
+                        )}
+                        <ThemedText style={[styles.colMemberName, { color: colors.text }]} numberOfLines={1}>
+                          {member.display_name ?? 'Unknown'}
                         </ThemedText>
                       </View>
-                    )}
-                    <ThemedText style={[styles.contribName, { color: colors.text }]} numberOfLines={1}>
-                      {member.display_name ?? 'Unknown'}
-                    </ThemedText>
-                    <ThemedText style={[styles.contribPoints, { color: member.contrib_points > 0 ? colors.tint : colors.textMuted }]}>
-                      {member.contrib_points} pts
-                    </ThemedText>
-                  </View>
-                ))
-              })()}
+                      <ThemedText style={[styles.colMemberPts, { color: member.contrib_points > 0 ? colors.tint : colors.textMuted }]}>
+                        {member.contrib_points}
+                      </ThemedText>
+                    </Pressable>
+                  ))
+                })()}
+              </View>
             </View>
           </ThemedView>
         )}
@@ -433,28 +454,29 @@ const styles = StyleSheet.create({
   scrollView: { flex: 1 },
   scrollContent: { padding: 20, paddingBottom: 40 },
   header: { marginBottom: 20 },
-  title: { fontSize: 28, fontWeight: '800', marginBottom: 4 },
-  subtitle: { fontSize: 15 },
+  title: { fontSize: 24, fontWeight: '800', marginBottom: 4, letterSpacing: -0.5 },
+  subtitle: { fontSize: 13, fontWeight: '600', letterSpacing: 0.2 },
   statusBanner: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    padding: 12,
-    borderRadius: 12,
+    padding: 14,
+    borderRadius: 14,
     marginBottom: 16,
   },
-  statusText: { fontSize: 14, fontWeight: '600' },
+  statusText: { fontSize: 12, fontWeight: '700', letterSpacing: 0.3, textTransform: 'uppercase' },
   scoreCard: {
     borderRadius: 16,
     borderWidth: 1,
-    padding: 16,
+    padding: 20,
     marginBottom: 16,
+    overflow: 'visible',
   },
   scoreGroupRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    paddingVertical: 8,
+    paddingVertical: 12,
   },
   scoreAvatar: {
     width: 48,
@@ -465,8 +487,8 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   scoreAvatarText: { fontSize: 20, fontWeight: '700' },
-  scoreGroupName: { flex: 1, fontSize: 16 },
-  scoreValue: { fontSize: 28, fontWeight: '800', minWidth: 50, textAlign: 'right' },
+  scoreGroupName: { flex: 1, fontSize: 15, fontWeight: '700', flexShrink: 1, letterSpacing: 0.1 },
+  scoreValue: { fontSize: 28, lineHeight: 36, fontWeight: '800', minWidth: 60, textAlign: 'right', flexShrink: 0, letterSpacing: -0.5 },
   vsDivider: {
     borderTopWidth: StyleSheet.hairlineWidth,
     alignItems: 'center',
@@ -491,50 +513,65 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
     borderWidth: 1,
   },
-  actionButtonText: { color: '#fff', fontWeight: '700', fontSize: 15 },
-  actionButtonTextSecondary: { fontSize: 15, fontWeight: '600' },
+  actionButtonText: { color: '#fff', fontWeight: '800', fontSize: 14, letterSpacing: 0.5, textTransform: 'uppercase' },
+  actionButtonTextSecondary: { fontSize: 14, fontWeight: '700', letterSpacing: 0.3 },
   leaderboardSection: { marginTop: 8 },
-  sectionTitle: { fontSize: 20, fontWeight: '700', marginBottom: 16 },
-  groupLeaderboard: { marginBottom: 24 },
-  groupLeaderboardHeader: {
+  sectionTitle: { fontSize: 16, fontWeight: '800', marginBottom: 16, letterSpacing: 0.5, textTransform: 'uppercase' },
+  leaderboardColumns: {
     flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  leaderboardCol: {
+    flex: 1,
+  },
+  colHeader: {
     alignItems: 'center',
-    gap: 12,
     marginBottom: 12,
-    paddingBottom: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: 'rgba(0,0,0,0.1)',
+    paddingBottom: 10,
   },
-  groupLeaderboardAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
-  },
-  groupLeaderboardAvatarText: { fontSize: 16, fontWeight: '700' },
-  groupLeaderboardName: { flex: 1, fontSize: 16 },
-  groupLeaderboardScore: { fontSize: 16, fontWeight: '700' },
-  emptyContribs: { fontSize: 14, textAlign: 'center', paddingVertical: 20 },
-  contribRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 12,
-    borderRadius: 12,
-    marginBottom: 8,
-    gap: 12,
-  },
-  contribRank: { width: 30, fontSize: 14, fontWeight: '600' },
-  contribAvatar: {
+  colAvatar: {
     width: 36,
     height: 36,
-    borderRadius: 18,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
+    marginBottom: 6,
   },
-  contribAvatarText: { fontSize: 14, fontWeight: '600' },
-  contribName: { flex: 1, fontSize: 15 },
-  contribPoints: { fontSize: 15, fontWeight: '700', minWidth: 50, textAlign: 'right' },
+  colAvatarText: { fontSize: 14, fontWeight: '700' },
+  colGroupName: { fontSize: 12, fontWeight: '700', textAlign: 'center', letterSpacing: 0.2 },
+  colGroupScore: { fontSize: 13, fontWeight: '800', marginTop: 2, letterSpacing: -0.3 },
+  colDivider: {
+    width: StyleSheet.hairlineWidth,
+    alignSelf: 'stretch',
+    marginHorizontal: 6,
+  },
+  colMemberRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 8,
+    borderRadius: 10,
+    marginBottom: 6,
+  },
+  colMemberLeft: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    minWidth: 0,
+  },
+  colMemberAvatar: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+    flexShrink: 0,
+  },
+  colMemberInitial: { fontSize: 12, fontWeight: '600' },
+  colMemberName: { fontSize: 11, fontWeight: '600', flexShrink: 1, letterSpacing: 0.1 },
+  colMemberPts: { fontSize: 13, fontWeight: '800', marginLeft: 4, flexShrink: 0, letterSpacing: -0.3 },
+  emptyContribs: { fontSize: 12, textAlign: 'center', paddingVertical: 16 },
 })

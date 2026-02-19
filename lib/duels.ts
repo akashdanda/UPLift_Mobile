@@ -15,17 +15,26 @@ export async function createDuel(
   }
 
   // Check no active/pending duel already exists between these two
+  // Check both directions: A challenging B, or B challenging A
   const { data: existing } = await supabase
     .from('duels')
-    .select('id')
+    .select('id, status')
     .or(
       `and(challenger_id.eq.${challengerId},opponent_id.eq.${opponentId}),and(challenger_id.eq.${opponentId},opponent_id.eq.${challengerId})`
     )
     .in('status', ['pending', 'active'])
+    .limit(1)
     .maybeSingle()
 
   if (existing) {
-    return { duel: null, error: new Error('You already have an active challenge with this friend') }
+    return {
+      duel: null,
+      error: new Error(
+        existing.status === 'pending'
+          ? 'You already have a pending challenge with this friend'
+          : 'You already have an active challenge with this friend'
+      ),
+    }
   }
 
   const { data, error } = await supabase
@@ -221,6 +230,33 @@ export async function getPendingDuelInvites(
   return getUserDuels(userId, ['pending']).then((duels) =>
     duels.filter((d) => d.opponent_id === userId)
   )
+}
+
+// ──────────────────────────────────────────────
+// Check if there's an existing active/pending duel between two users
+// ──────────────────────────────────────────────
+export async function hasExistingDuel(
+  userId1: string,
+  userId2: string
+): Promise<{ hasDuel: boolean; status: 'pending' | 'active' | null }> {
+  const { data: existing } = await supabase
+    .from('duels')
+    .select('status')
+    .or(
+      `and(challenger_id.eq.${userId1},opponent_id.eq.${userId2}),and(challenger_id.eq.${userId2},opponent_id.eq.${userId1})`
+    )
+    .in('status', ['pending', 'active'])
+    .limit(1)
+    .maybeSingle()
+
+  if (!existing) {
+    return { hasDuel: false, status: null }
+  }
+
+  return {
+    hasDuel: true,
+    status: existing.status as 'pending' | 'active',
+  }
 }
 
 // ──────────────────────────────────────────────

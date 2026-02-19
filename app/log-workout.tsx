@@ -441,14 +441,15 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   retakeButtonText: { fontSize: 14 },
-  label: { fontSize: 14, marginBottom: 8 },
+  label: { fontSize: 12, fontWeight: '700', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 8 },
   input: {
     borderWidth: 1,
-    borderRadius: 12,
+    borderRadius: 14,
     paddingHorizontal: 16,
     paddingVertical: 14,
-    fontSize: 16,
+    fontSize: 15,
     marginBottom: 24,
+    letterSpacing: 0.1,
   },
   tagToggle: {
     flexDirection: 'row',
@@ -494,5 +495,5 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     minHeight: 52,
   },
-  primaryButtonText: { color: '#fff', fontSize: 17, fontWeight: '600' },
+  primaryButtonText: { color: '#fff', fontSize: 15, fontWeight: '800', letterSpacing: 0.5, textTransform: 'uppercase' },
 })

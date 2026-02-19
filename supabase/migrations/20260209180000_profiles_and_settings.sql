@@ -1,4 +1,4 @@
--- Profiles table: extends auth.users for UPLift app
+-- Profiles table: extends auth.users for Uplift app
 CREATE TABLE IF NOT EXISTS public.profiles (
   id UUID REFERENCES auth.users(id) ON DELETE CASCADE PRIMARY KEY,
   display_name TEXT,
