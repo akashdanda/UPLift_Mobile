@@ -430,7 +430,7 @@ export default function HomeScreen() {
               Uplift
             </ThemedText>
             <ThemedText style={[styles.headerSub, { color: colors.textMuted }]}>
-              Your fitness community
+              Become your best self together
             </ThemedText>
           </View>
           <Pressable
@@ -1438,8 +1438,9 @@ const styles = StyleSheet.create({
     width: 200,
     padding: 14,
     borderRadius: 14,
+    overflow: 'visible',
   },
-  nudgeEmoji: { fontSize: 22, marginBottom: 6 },
+  nudgeEmoji: { fontSize: 22, marginBottom: 6, lineHeight: 30 },
   nudgeTitle: { fontSize: 12, fontWeight: '800', marginBottom: 3, letterSpacing: 0.2 },
   nudgeMessage: { fontSize: 11, lineHeight: 16, letterSpacing: 0.1 },
 
@@ -1487,6 +1488,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     padding: 14,
     marginBottom: 10,
+    overflow: 'visible',
   },
   achievementFeedRow: {
     flexDirection: 'row',
@@ -1499,8 +1501,9 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'visible',
   },
-  achievementFeedIcon: { fontSize: 22 },
+  achievementFeedIcon: { fontSize: 22, lineHeight: 30 },
   achievementFeedTextBlock: { flex: 1, minWidth: 0 },
   achievementFeedMessage: { fontSize: 13, fontWeight: '700', lineHeight: 19, letterSpacing: 0.1 },
   achievementFeedTime: { fontSize: 10, marginTop: 3, fontWeight: '600', letterSpacing: 0.2, textTransform: 'uppercase' },

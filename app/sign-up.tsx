@@ -79,7 +79,7 @@ export default function SignUpScreen() {
             Uplift
           </ThemedText>
           <ThemedText style={[styles.tagline, { color: colors.textMuted }]}>
-            Your fitness community
+            Become your best self together
           </ThemedText>
         </View>
 

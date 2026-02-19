@@ -611,9 +611,18 @@ export default function GroupDetailScreen() {
                     return (
                       <Pressable
                         key={member.id}
-                        style={[styles.memberCard, { backgroundColor: colors.card }]}
-                        onPress={() => canTap && handleMemberAction(member)}
-                        disabled={!canTap}
+                        style={({ pressed }) => [
+                          styles.memberCard,
+                          { backgroundColor: colors.card },
+                          pressed && { opacity: 0.7 },
+                        ]}
+                        onPress={() => {
+                          if (member.user_id === userId) {
+                            router.push('/(tabs)/profile')
+                          } else {
+                            router.push({ pathname: '/friend-profile', params: { id: member.user_id } })
+                          }
+                        }}
                       >
                         <View style={styles.memberRankWrap}>
                           <ThemedText
@@ -661,7 +670,15 @@ export default function GroupDetailScreen() {
                           </ThemedText>
                         </View>
                         {canTap && (
-                          <Ionicons name="ellipsis-vertical" size={18} color={colors.textMuted} />
+                          <Pressable
+                            onPress={(e) => {
+                              e.stopPropagation()
+                              handleMemberAction(member)
+                            }}
+                            style={({ pressed }) => [pressed && { opacity: 0.6 }]}
+                          >
+                            <Ionicons name="ellipsis-vertical" size={18} color={colors.textMuted} />
+                          </Pressable>
                         )}
                       </Pressable>
                     )
