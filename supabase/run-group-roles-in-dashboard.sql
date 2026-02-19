@@ -30,12 +30,12 @@ BEGIN
 END $$;
 
 -- 2) Set existing group creators as owners
-UPDATE public.group_members
+UPDATE public.group_members gm
 SET "role" = 'owner'
 FROM public.groups g
-WHERE public.group_members.group_id = g.id
-  AND public.group_members.user_id = g.created_by
-  AND public.group_members."role" = 'member';
+WHERE gm.group_id = g.id
+  AND gm.user_id = g.created_by
+  AND gm."role" = 'member';
 
 -- 3) Index for fast role lookups
 CREATE INDEX IF NOT EXISTS idx_group_members_role ON public.group_members(group_id, "role");

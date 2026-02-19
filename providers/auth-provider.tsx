@@ -33,6 +33,11 @@ export default function AuthProvider({ children }: PropsWithChildren) {
     await supabase.auth.signOut()
   }, [])
 
+  const resetPassword = useCallback(async (email: string) => {
+    const { error } = await supabase.auth.resetPasswordForEmail(email)
+    return { error: error ?? null }
+  }, [])
+
   const fetchProfile = useCallback(async () => {
     if (!session) return
     try {
@@ -182,6 +187,7 @@ export default function AuthProvider({ children }: PropsWithChildren) {
         signUp,
         signInWithGoogle,
         signOut,
+        resetPassword,
         updateProfile,
         refreshProfile,
       }}

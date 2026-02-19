@@ -27,7 +27,6 @@ import { ThemedText } from '@/components/themed-text';
 import { Colors } from '@/constants/theme';
 import { useAuthContext } from '@/hooks/use-auth-context';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { getUnreadNotificationCount, markNotificationsAsRead } from '@/lib/notifications';
 import { getAchievementFeedPosts, hasStreakFreezeAvailable, useStreakFreeze } from '@/lib/achievements';
 import { addComment } from '@/lib/comments';
 import {
@@ -39,6 +38,7 @@ import { getFriendsWorkouts, type FeedItem } from '@/lib/feed';
 import { getFlashbacks, type FlashbackItem } from '@/lib/flashbacks';
 import { getFriends } from '@/lib/friends';
 import { computeXP, getLevelFromXP } from '@/lib/levels';
+import { getUnreadNotificationCount, markNotificationsAsRead } from '@/lib/notifications';
 import { addReaction, removeReaction } from '@/lib/reactions';
 import { getSocialNudges, type SocialNudge } from '@/lib/social-hooks';
 import { supabase } from '@/lib/supabase';
@@ -151,6 +151,10 @@ export default function HomeScreen() {
   const workoutRefs = useRef<Map<string, { ref: View | null; y: number }>>(new Map());
   const [pendingWorkoutNavigation, setPendingWorkoutNavigation] = useState<{ workoutId: string; expandComments: boolean } | null>(null);
 
+  const refreshFeed = useCallback(() => {
+    if (session) getFriendsWorkouts(session.user.id).then(setFeedItems);
+  }, [session]);
+
   const handleOpenNotifications = () => {
     setNotificationsVisible(true);
     // Mark as read when opened
@@ -170,7 +174,7 @@ export default function HomeScreen() {
     setPendingWorkoutNavigation({ workoutId, expandComments });
     
     // Navigate to home tab if not already there
-    router.push('/(tabs)/');
+    router.push('/(tabs)/' as any);
     
     // Refresh feed to ensure workout is loaded
     refreshFeed();
@@ -207,11 +211,6 @@ export default function HomeScreen() {
       setPendingWorkoutNavigation(null);
     }
   }, [pendingWorkoutNavigation, feedItems]);
-
-
-  const refreshFeed = useCallback(() => {
-    if (session) getFriendsWorkouts(session.user.id).then(setFeedItems);
-  }, [session]);
 
   const openReactModal = (item: FeedItem) => {
     setReactModalItem(item);
