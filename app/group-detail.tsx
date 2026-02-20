@@ -9,6 +9,7 @@ import {
   Alert,
   Dimensions,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -37,7 +38,9 @@ import {
   demoteMember,
   getGroupMembers,
   getGroupMessages,
+  getGroupPendingInvites,
   getMemberRole,
+  inviteToGroup,
   isMember,
   joinGroup,
   kickMember,
@@ -48,6 +51,7 @@ import {
   type GroupRole,
   type GroupWithMeta,
 } from '@/lib/groups'
+import { getFriends, type FriendWithProfile } from '@/lib/friends'
 import { supabase } from '@/lib/supabase'
 import type { GroupMessage } from '@/types/group'
 
@@ -93,6 +97,12 @@ export default function GroupDetailScreen() {
   const [activeCompetitions, setActiveCompetitions] = useState<CompetitionWithGroups[]>([])
   const [inQueue, setInQueue] = useState(false)
   const [loadingCompetitions, setLoadingCompetitions] = useState(false)
+
+  const [inviteModalVisible, setInviteModalVisible] = useState(false)
+  const [inviteFriends, setInviteFriends] = useState<FriendWithProfile[]>([])
+  const [invitePendingIds, setInvitePendingIds] = useState<Set<string>>(new Set())
+  const [inviteSendingId, setInviteSendingId] = useState<string | null>(null)
+  const [inviteLoading, setInviteLoading] = useState(false)
 
   const chatScrollRef = useRef<ScrollView>(null)
   const userId = session?.user?.id ?? ''
@@ -241,6 +251,38 @@ export default function GroupDetailScreen() {
     } catch {}
   }
 
+  const handleOpenInvite = async () => {
+    if (!userId || !id) return
+    setInviteModalVisible(true)
+    setInviteLoading(true)
+    try {
+      const [friends, pendingIds] = await Promise.all([
+        getFriends(userId),
+        getGroupPendingInvites(id),
+      ])
+      const memberIds = new Set(members.map((m) => m.user_id))
+      const pendingSet = new Set(pendingIds)
+      setInviteFriends(friends.filter((f) => !memberIds.has(f.id)))
+      setInvitePendingIds(pendingSet)
+    } catch {
+      Alert.alert('Error', 'Failed to load friends')
+    } finally {
+      setInviteLoading(false)
+    }
+  }
+
+  const handleSendInvite = async (friendId: string) => {
+    if (!userId || !id) return
+    setInviteSendingId(friendId)
+    const { error } = await inviteToGroup(id, userId, friendId)
+    setInviteSendingId(null)
+    if (error) {
+      Alert.alert('Error', error.message)
+    } else {
+      setInvitePendingIds((prev) => new Set([...prev, friendId]))
+    }
+  }
+
   const handleSendMessage = async () => {
     if (!messageText.trim() || !isUserMember || !id || !userId) return
     setSending(true)
@@ -349,6 +391,7 @@ export default function GroupDetailScreen() {
     { key: 'members', icon: 'people-outline' as const, label: 'Members', color: colors.textMuted, onPress: () => setActiveTab('members') },
     ...(isUserMember
       ? [
+          { key: 'invite', icon: 'person-add-outline' as const, label: 'Invite', color: colors.tint, onPress: handleOpenInvite },
           { key: 'chat', icon: 'chatbubbles-outline' as const, label: 'Chat', color: colors.textMuted, onPress: () => setActiveTab('chat') },
         ]
       : []),
@@ -941,6 +984,82 @@ export default function GroupDetailScreen() {
           )}
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Invite Friends Modal */}
+      <Modal
+        visible={inviteModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setInviteModalVisible(false)}
+      >
+        <Pressable style={styles.inviteOverlay} onPress={() => setInviteModalVisible(false)}>
+          <Pressable style={[styles.inviteSheet, { backgroundColor: colors.card }]} onPress={(e) => e.stopPropagation()}>
+            <View style={styles.inviteHandle} />
+            <ThemedText type="subtitle" style={[styles.inviteTitle, { color: colors.text }]}>
+              Invite Friends
+            </ThemedText>
+            <ThemedText style={[styles.inviteSubtitle, { color: colors.textMuted }]}>
+              Select friends to invite to {group?.name}
+            </ThemedText>
+
+            {inviteLoading ? (
+              <View style={styles.inviteCentered}>
+                <ActivityIndicator size="large" color={colors.tint} />
+              </View>
+            ) : inviteFriends.length === 0 ? (
+              <View style={styles.inviteCentered}>
+                <Ionicons name="people-outline" size={36} color={colors.textMuted + '50'} />
+                <ThemedText style={[styles.inviteEmptyText, { color: colors.textMuted }]}>
+                  No friends to invite — they may already be members
+                </ThemedText>
+              </View>
+            ) : (
+              <ScrollView style={styles.inviteList} showsVerticalScrollIndicator={false}>
+                {inviteFriends.map((friend) => {
+                  const isPending = invitePendingIds.has(friend.id)
+                  const isSending = inviteSendingId === friend.id
+                  return (
+                    <View key={friend.id} style={[styles.inviteRow, { borderBottomColor: colors.tabBarBorder }]}>
+                      <View style={styles.inviteRowLeft}>
+                        {friend.avatar_url ? (
+                          <Image source={{ uri: friend.avatar_url }} style={styles.inviteAvatar} />
+                        ) : (
+                          <View style={[styles.inviteAvatar, { backgroundColor: colors.tint + '20' }]}>
+                            <ThemedText style={[styles.inviteAvatarInitial, { color: colors.tint }]}>
+                              {friend.display_name?.charAt(0).toUpperCase() ?? '?'}
+                            </ThemedText>
+                          </View>
+                        )}
+                        <ThemedText type="defaultSemiBold" style={[styles.inviteName, { color: colors.text }]}>
+                          {friend.display_name ?? 'Unknown'}
+                        </ThemedText>
+                      </View>
+                      {isPending ? (
+                        <View style={[styles.inviteSentBadge, { backgroundColor: colors.textMuted + '15' }]}>
+                          <Ionicons name="checkmark" size={14} color={colors.textMuted} />
+                          <ThemedText style={[styles.inviteSentText, { color: colors.textMuted }]}>Sent</ThemedText>
+                        </View>
+                      ) : (
+                        <Pressable
+                          style={[styles.inviteBtn, { backgroundColor: colors.tint }]}
+                          onPress={() => handleSendInvite(friend.id)}
+                          disabled={isSending}
+                        >
+                          {isSending ? (
+                            <ActivityIndicator size="small" color="#fff" />
+                          ) : (
+                            <ThemedText style={styles.inviteBtnText}>Invite</ThemedText>
+                          )}
+                        </Pressable>
+                      )}
+                    </View>
+                  )
+                })}
+              </ScrollView>
+            )}
+          </Pressable>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   )
 }
@@ -1256,4 +1375,104 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   competitionAcceptBtnText: { color: '#fff', fontWeight: '800', fontSize: 12, letterSpacing: 0.5, textTransform: 'uppercase' },
+
+  // Invite modal
+  inviteOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  inviteSheet: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingTop: 12,
+    paddingHorizontal: 20,
+    paddingBottom: 40,
+    maxHeight: '70%',
+  },
+  inviteHandle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(128,128,128,0.3)',
+    alignSelf: 'center',
+    marginBottom: 16,
+  },
+  inviteTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    textAlign: 'center',
+    marginBottom: 4,
+    letterSpacing: -0.3,
+  },
+  inviteSubtitle: {
+    fontSize: 13,
+    textAlign: 'center',
+    marginBottom: 20,
+    letterSpacing: 0.1,
+  },
+  inviteCentered: {
+    alignItems: 'center',
+    paddingVertical: 40,
+    gap: 12,
+  },
+  inviteEmptyText: {
+    fontSize: 14,
+    textAlign: 'center',
+    maxWidth: 240,
+    lineHeight: 20,
+  },
+  inviteList: {
+    flexGrow: 0,
+  },
+  inviteRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  inviteRowLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    gap: 12,
+  },
+  inviteAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  inviteAvatarInitial: { fontSize: 16, fontWeight: '700' },
+  inviteName: { fontSize: 15, fontWeight: '700', letterSpacing: 0.1 },
+  inviteBtn: {
+    paddingHorizontal: 18,
+    paddingVertical: 8,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 72,
+  },
+  inviteBtnText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '800',
+    letterSpacing: 0.3,
+  },
+  inviteSentBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 10,
+  },
+  inviteSentText: {
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+  },
 })

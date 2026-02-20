@@ -389,3 +389,133 @@ export async function sendGroupMessage(
 
   return { error: error ?? null }
 }
+
+// ============================================================
+// Group Invites
+// ============================================================
+
+export type GroupInvite = {
+  id: string
+  group_id: string
+  invited_by: string
+  invited_user_id: string
+  status: 'pending' | 'accepted' | 'declined'
+  created_at: string
+}
+
+export type GroupInviteWithDetails = GroupInvite & {
+  group_name?: string
+  inviter_name?: string
+}
+
+/** Invite a friend to a group */
+export async function inviteToGroup(
+  groupId: string,
+  inviterId: string,
+  inviteeId: string
+): Promise<{ error: Error | null }> {
+  const already = await isMember(inviteeId, groupId)
+  if (already) return { error: new Error('User is already a member') }
+
+  const { error } = await supabase.from('group_invites').insert({
+    group_id: groupId,
+    invited_by: inviterId,
+    invited_user_id: inviteeId,
+  })
+
+  if (error) {
+    if (error.code === '23505') return { error: new Error('Invite already sent') }
+    return { error }
+  }
+  return { error: null }
+}
+
+/** Get pending invites for a group (for the invite modal) */
+export async function getGroupPendingInvites(groupId: string): Promise<string[]> {
+  const { data } = await supabase
+    .from('group_invites')
+    .select('invited_user_id')
+    .eq('group_id', groupId)
+    .eq('status', 'pending')
+  return (data ?? []).map((r) => r.invited_user_id)
+}
+
+/** Get pending group invites received by a user */
+export async function getPendingGroupInvitesForUser(
+  userId: string
+): Promise<GroupInviteWithDetails[]> {
+  const { data: invites } = await supabase
+    .from('group_invites')
+    .select('*')
+    .eq('invited_user_id', userId)
+    .eq('status', 'pending')
+    .order('created_at', { ascending: false })
+
+  if (!invites?.length) return []
+
+  const groupIds = [...new Set(invites.map((i) => i.group_id))]
+  const inviterIds = [...new Set(invites.map((i) => i.invited_by))]
+
+  const [{ data: groups }, { data: profiles }] = await Promise.all([
+    supabase.from('groups').select('id, name').in('id', groupIds),
+    supabase.from('profiles').select('id, display_name').in('id', inviterIds),
+  ])
+
+  const groupMap = new Map((groups ?? []).map((g) => [g.id, g.name]))
+  const profileMap = new Map((profiles ?? []).map((p) => [p.id, p.display_name]))
+
+  return (invites as GroupInvite[]).map((inv) => ({
+    ...inv,
+    group_name: groupMap.get(inv.group_id) ?? 'Unknown Group',
+    inviter_name: profileMap.get(inv.invited_by) ?? 'Someone',
+  }))
+}
+
+/** Accept a group invite (adds user as member and updates invite status) */
+export async function acceptGroupInvite(
+  inviteId: string,
+  userId: string
+): Promise<{ error: Error | null }> {
+  const { data: invite } = await supabase
+    .from('group_invites')
+    .select('*')
+    .eq('id', inviteId)
+    .eq('invited_user_id', userId)
+    .single()
+
+  if (!invite) return { error: new Error('Invite not found') }
+
+  const { error: joinError } = await supabase.from('group_members').insert({
+    group_id: invite.group_id,
+    user_id: userId,
+  })
+
+  if (joinError) {
+    if (joinError.code === '23505') {
+      // Already a member, just update the invite status
+    } else {
+      return { error: joinError }
+    }
+  }
+
+  const { error: updateError } = await supabase
+    .from('group_invites')
+    .update({ status: 'accepted' })
+    .eq('id', inviteId)
+
+  return { error: updateError ?? null }
+}
+
+/** Decline a group invite */
+export async function declineGroupInvite(
+  inviteId: string,
+  userId: string
+): Promise<{ error: Error | null }> {
+  const { error } = await supabase
+    .from('group_invites')
+    .update({ status: 'declined' })
+    .eq('id', inviteId)
+    .eq('invited_user_id', userId)
+
+  return { error: error ?? null }
+}

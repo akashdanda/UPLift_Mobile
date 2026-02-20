@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   Alert,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -729,7 +730,7 @@ export default function HomeScreen() {
                   }}
                   style={[
                     styles.feedCard,
-                    { backgroundColor: colors.card },
+                    { backgroundColor: colors.card, borderColor: colors.tint + '10' },
                     isHighlighted && { borderWidth: 2, borderColor: colors.tint },
                   ]}
                 >
@@ -737,7 +738,7 @@ export default function HomeScreen() {
                     style={styles.feedCardHeader}
                     onPress={() => router.push(`/friend-profile?id=${item.workout.user_id}`)}
                   >
-                    <View style={[styles.feedAvatar, { backgroundColor: colors.tint + '20' }]}>
+                    <View style={[styles.feedAvatar, { backgroundColor: colors.tint + '18', borderColor: colors.tint + '50' }]}>
                       {item.avatar_url ? (
                         <Image source={{ uri: item.avatar_url }} style={styles.feedAvatarImage} />
                       ) : (
@@ -775,7 +776,7 @@ export default function HomeScreen() {
                       ))}
                     </View>
                   )}
-                  <View style={[styles.reactionRow, { borderTopColor: colors.tabBarBorder }]}>
+                  <View style={[styles.reactionRow, { borderTopColor: colors.tint + '10' }]}>
                     <ScrollView
                       horizontal
                       showsHorizontalScrollIndicator={false}
@@ -811,8 +812,9 @@ export default function HomeScreen() {
                       return myReaction ? (
                         <Pressable
                           onPress={() => handleRemoveReaction(item)}
-                          style={[styles.reactButton, { backgroundColor: colors.textMuted + '20' }]}
+                          style={[styles.reactButton, { backgroundColor: colors.textMuted + '15', borderColor: colors.textMuted + '25' }]}
                         >
+                          <Ionicons name="close-circle-outline" size={16} color={colors.textMuted} />
                           <ThemedText style={[styles.reactButtonText, { color: colors.textMuted }]}>
                             Remove
                           </ThemedText>
@@ -820,16 +822,16 @@ export default function HomeScreen() {
                       ) : (
                         <Pressable
                           onPress={() => openReactModal(item)}
-                          style={[styles.reactButton, { backgroundColor: colors.tint + '20' }]}
+                          style={[styles.reactButton, { backgroundColor: colors.tint + '15', borderColor: colors.tint + '30' }]}
                         >
-                          <Ionicons name="add-circle-outline" size={18} color={colors.tint} />
+                          <Ionicons name="add-circle-outline" size={16} color={colors.tint} />
                           <ThemedText style={[styles.reactButtonText, { color: colors.tint }]}>React</ThemedText>
                         </Pressable>
                       );
                     })()}
                   </View>
                   {/* Comments — Instagram-style: all comments visible + inline add */}
-                  <View style={[styles.commentsSection, { borderTopColor: colors.tabBarBorder }]}>
+                  <View style={[styles.commentsSection, { borderTopColor: colors.tint + '10' }]}>
                     {(item.comments ?? []).map((c) => (
                       <View key={c.id} style={styles.commentRow}>
                         <View style={[styles.commentAvatar, { backgroundColor: colors.tint + '20' }]}>
@@ -1183,86 +1185,100 @@ const styles = StyleSheet.create({
   emptyText: { textAlign: 'center', fontSize: 14, lineHeight: 22, letterSpacing: 0.1 },
 
   // Feed
-  feedList: { gap: 20 },
-  feedCard: { borderRadius: 16, overflow: 'hidden' },
+  feedList: { gap: 28 },
+  feedCard: {
+    borderRadius: 20,
+    overflow: 'hidden',
+    borderWidth: 1,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.12,
+        shadowRadius: 12,
+      },
+      android: { elevation: 6 },
+    }),
+  },
   feedCardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 14,
+    paddingVertical: 14,
     paddingHorizontal: 16,
   },
   feedAvatar: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
     marginRight: 12,
+    borderWidth: 2,
   },
-  feedAvatarImage: { width: 42, height: 42 },
-  feedAvatarInitials: { fontSize: 14, fontWeight: '700' },
+  feedAvatarImage: { width: 44, height: 44 },
+  feedAvatarInitials: { fontSize: 15, fontWeight: '700' },
   feedCardMeta: { flex: 1 },
-  feedName: { fontSize: 14, fontWeight: '700', letterSpacing: 0.1 },
-  feedDate: { fontSize: 11, marginTop: 2, letterSpacing: 0.2, textTransform: 'uppercase' },
+  feedName: { fontSize: 15, fontWeight: '800', letterSpacing: 0.1 },
+  feedDate: { fontSize: 11, marginTop: 2, letterSpacing: 0.3, textTransform: 'uppercase', fontWeight: '500' },
   feedImage: { width: '100%', aspectRatio: 1 },
-  feedCaption: { padding: 16, fontSize: 14, lineHeight: 21, letterSpacing: 0.1 },
+  feedCaption: { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 6, fontSize: 14, lineHeight: 21, letterSpacing: 0.15 },
 
   // Tagged friends
   taggedRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingBottom: 8,
+    paddingHorizontal: 16,
+    paddingBottom: 10,
     gap: 4,
     flexWrap: 'wrap',
   },
-  taggedLabel: { fontSize: 13 },
-  taggedName: { fontSize: 13, fontWeight: '600' },
+  taggedLabel: { fontSize: 13, fontWeight: '500' },
+  taggedName: { fontSize: 13, fontWeight: '700' },
 
   // Reactions (BeReal-style)
   reactionRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderTopWidth: 1,
     gap: 10,
   },
-  reactionBubbles: { flexDirection: 'row', alignItems: 'center', gap: 6, flexGrow: 0 },
+  reactionBubbles: { flexDirection: 'row', alignItems: 'center', gap: 8, flexGrow: 0 },
   reactionBubbleWrap: {
-    width: 46,
-    height: 46,
+    width: 48,
+    height: 48,
   },
   reactionBubble: {
-    width: 46,
-    height: 46,
+    width: 48,
+    height: 48,
   },
   reactionBubblePhotoWrap: {
     position: 'absolute',
     top: 0,
     left: 0,
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     overflow: 'hidden',
   },
   reactionBubblePlaceholder: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
   },
-  reactionBubbleImage: { width: 36, height: 36 },
+  reactionBubbleImage: { width: 38, height: 38 },
   reactionBubbleInitials: { fontSize: 12, fontWeight: '600' },
   reactionEmojiBadge: {
     position: 'absolute',
-    bottom: 0,
-    right: 0,
+    bottom: -1,
+    right: -1,
   },
-  reactionEmojiText: { fontSize: 14 },
+  reactionEmojiText: { fontSize: 15 },
 
   // Reaction detail view modal — Instagram-style
   reactionViewOverlay: {
@@ -1319,58 +1335,59 @@ const styles = StyleSheet.create({
   reactButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 12,
+    gap: 5,
+    paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 999,
+    borderWidth: 1,
   },
-  reactButtonText: { fontSize: 12, fontWeight: '700', letterSpacing: 0.2 },
+  reactButtonText: { fontSize: 12, fontWeight: '700', letterSpacing: 0.3 },
 
   // Comments
   commentsSection: {
-    borderTopWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: 14,
-    paddingTop: 10,
-    paddingBottom: 12,
+    borderTopWidth: 1,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 14,
   },
   commentRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    marginBottom: 10,
+    marginBottom: 12,
   },
   commentAvatar: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
     marginRight: 10,
   },
-  commentAvatarImage: { width: 28, height: 28 },
-  commentAvatarInitials: { fontSize: 11, fontWeight: '600' },
+  commentAvatarImage: { width: 30, height: 30 },
+  commentAvatarInitials: { fontSize: 11, fontWeight: '700' },
   commentBody: { flex: 1, minWidth: 0 },
-  commentAuthor: { fontSize: 12, fontWeight: '700', marginBottom: 2, letterSpacing: 0.1 },
-  commentText: { fontSize: 13, lineHeight: 19, letterSpacing: 0.1 },
-  commentGif: { width: 120, height: 90, borderRadius: 8, marginTop: 6 },
+  commentAuthor: { fontSize: 13, fontWeight: '800', marginBottom: 2, letterSpacing: 0.1 },
+  commentText: { fontSize: 13, lineHeight: 19, letterSpacing: 0.15 },
+  commentGif: { width: 120, height: 90, borderRadius: 10, marginTop: 6 },
   commentInlineRow: {
     flexDirection: 'row',
     alignItems: 'flex-end',
     gap: 8,
-    marginTop: 6,
+    marginTop: 8,
   },
   commentInlineInput: {
     flex: 1,
     borderWidth: 1,
-    borderRadius: 20,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+    borderRadius: 22,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
     fontSize: 14,
-    minHeight: 36,
+    minHeight: 40,
     maxHeight: 80,
   },
-  commentInlinePostBtn: { paddingVertical: 8, paddingHorizontal: 4, justifyContent: 'center' },
-  commentInlinePostText: { fontSize: 13, fontWeight: '700', letterSpacing: 0.2 },
+  commentInlinePostBtn: { paddingVertical: 10, paddingHorizontal: 6, justifyContent: 'center' },
+  commentInlinePostText: { fontSize: 13, fontWeight: '800', letterSpacing: 0.3 },
 
   // React modal
   reactModalOverlay: {

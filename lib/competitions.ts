@@ -5,6 +5,11 @@ import type {
   CompetitionWithGroups,
   GroupCompetition
 } from '@/types/group'
+export type {
+  CompetitionContributionWithProfile,
+  CompetitionWithGroups,
+  GroupCompetition
+} from '@/types/group'
 
 /** Queue a group for matchmaking */
 export async function queueForMatchmaking(

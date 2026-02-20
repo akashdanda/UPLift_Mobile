@@ -20,10 +20,14 @@ import { Colors } from '@/constants/theme'
 import { useAuthContext } from '@/hooks/use-auth-context'
 import { useColorScheme } from '@/hooks/use-color-scheme'
 import {
+  acceptGroupInvite,
+  declineGroupInvite,
   getDiscoverGroups,
   getMyGroups,
+  getPendingGroupInvitesForUser,
   joinGroup,
   searchGroups,
+  type GroupInviteWithDetails,
   type GroupWithMeta,
 } from '@/lib/groups'
 
@@ -54,6 +58,8 @@ export default function GroupsScreen() {
   const [searchResults, setSearchResults] = useState<(GroupWithMeta & { _joined?: boolean })[]>([])
   const [searching, setSearching] = useState(false)
   const [showSearch, setShowSearch] = useState(false)
+  const [pendingInvites, setPendingInvites] = useState<GroupInviteWithDetails[]>([])
+  const [respondingInviteId, setRespondingInviteId] = useState<string | null>(null)
 
   const userId = session?.user?.id ?? ''
 
@@ -61,14 +67,16 @@ export default function GroupsScreen() {
     if (!userId) {
       setMyGroups([])
       setDiscoverGroups([])
+      setPendingInvites([])
       setLoading(false)
       return
     }
     setLoading(true)
-    Promise.all([getMyGroups(userId), getDiscoverGroups(userId)])
-      .then(([my, discover]) => {
+    Promise.all([getMyGroups(userId), getDiscoverGroups(userId), getPendingGroupInvitesForUser(userId)])
+      .then(([my, discover, invites]) => {
         setMyGroups(my)
         setDiscoverGroups(discover)
+        setPendingInvites(invites)
       })
       .finally(() => setLoading(false))
   }, [userId])
@@ -88,6 +96,29 @@ export default function GroupsScreen() {
     else {
       await refreshProfile()
       load()
+    }
+  }
+
+  const handleAcceptInvite = async (inviteId: string) => {
+    if (!userId) return
+    setRespondingInviteId(inviteId)
+    const { error } = await acceptGroupInvite(inviteId, userId)
+    setRespondingInviteId(null)
+    if (error) Alert.alert('Error', error.message)
+    else {
+      await refreshProfile()
+      load()
+    }
+  }
+
+  const handleDeclineInvite = async (inviteId: string) => {
+    if (!userId) return
+    setRespondingInviteId(inviteId)
+    const { error } = await declineGroupInvite(inviteId, userId)
+    setRespondingInviteId(null)
+    if (error) Alert.alert('Error', error.message)
+    else {
+      setPendingInvites((prev) => prev.filter((i) => i.id !== inviteId))
     }
   }
 
@@ -310,6 +341,57 @@ export default function GroupsScreen() {
           </View>
         )}
 
+        {/* Pending group invites */}
+        {activeTab === 'my' && !showSearch && pendingInvites.length > 0 && (
+          <View style={[styles.section, { paddingBottom: 0 }]}>
+            <ThemedText type="subtitle" style={[styles.sectionTitle, { color: colors.text }]}>
+              Invitations ({pendingInvites.length})
+            </ThemedText>
+            <View style={styles.invitesList}>
+              {pendingInvites.map((invite) => {
+                const isResponding = respondingInviteId === invite.id
+                return (
+                  <View key={invite.id} style={[styles.inviteCard, { backgroundColor: colors.card, borderColor: colors.tint + '20' }]}>
+                    <View style={styles.inviteCardTop}>
+                      <View style={[styles.inviteCardIcon, { backgroundColor: colors.tint + '15' }]}>
+                        <Ionicons name="mail-outline" size={20} color={colors.tint} />
+                      </View>
+                      <View style={styles.inviteCardInfo}>
+                        <ThemedText type="defaultSemiBold" style={[styles.inviteCardGroup, { color: colors.text }]} numberOfLines={1}>
+                          {invite.group_name}
+                        </ThemedText>
+                        <ThemedText style={[styles.inviteCardFrom, { color: colors.textMuted }]} numberOfLines={1}>
+                          Invited by {invite.inviter_name}
+                        </ThemedText>
+                      </View>
+                    </View>
+                    <View style={styles.inviteCardActions}>
+                      <Pressable
+                        style={[styles.inviteDeclineBtn, { borderColor: colors.tabBarBorder }]}
+                        onPress={() => handleDeclineInvite(invite.id)}
+                        disabled={isResponding}
+                      >
+                        <ThemedText style={[styles.inviteDeclineBtnText, { color: colors.textMuted }]}>Decline</ThemedText>
+                      </Pressable>
+                      <Pressable
+                        style={[styles.inviteAcceptBtn, { backgroundColor: colors.tint }]}
+                        onPress={() => handleAcceptInvite(invite.id)}
+                        disabled={isResponding}
+                      >
+                        {isResponding ? (
+                          <ActivityIndicator size="small" color="#fff" />
+                        ) : (
+                          <ThemedText style={styles.inviteAcceptBtnText}>Accept</ThemedText>
+                        )}
+                      </Pressable>
+                    </View>
+                  </View>
+                )
+              })}
+            </View>
+          </View>
+        )}
+
         {/* My Groups tab */}
         {activeTab === 'my' && !showSearch && (
           <View style={styles.section}>
@@ -522,4 +604,48 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   emptyCreateBtnText: { color: '#fff', fontWeight: '800', fontSize: 13, letterSpacing: 0.5, textTransform: 'uppercase' },
+
+  // Group invites
+  invitesList: { gap: 10 },
+  inviteCard: {
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 14,
+  },
+  inviteCardTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 12,
+  },
+  inviteCardIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  inviteCardInfo: { flex: 1, minWidth: 0 },
+  inviteCardGroup: { fontSize: 15, fontWeight: '800', letterSpacing: 0.1, marginBottom: 2 },
+  inviteCardFrom: { fontSize: 12, fontWeight: '600', letterSpacing: 0.1 },
+  inviteCardActions: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  inviteDeclineBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: 'center',
+  },
+  inviteDeclineBtnText: { fontSize: 13, fontWeight: '700', letterSpacing: 0.3 },
+  inviteAcceptBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  inviteAcceptBtnText: { color: '#fff', fontSize: 13, fontWeight: '800', letterSpacing: 0.3 },
 })
