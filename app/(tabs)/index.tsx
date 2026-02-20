@@ -24,6 +24,7 @@ import Animated, {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { NotificationsModal } from '@/components/notifications-modal';
+import { ReportModal } from '@/components/report-modal';
 import { ThemedText } from '@/components/themed-text';
 import { Colors } from '@/constants/theme';
 import { useAuthContext } from '@/hooks/use-auth-context';
@@ -153,6 +154,15 @@ export default function HomeScreen() {
   
   // Highlight workout when navigating from notification
   const [highlightedWorkoutId, setHighlightedWorkoutId] = useState<string | null>(null);
+  
+  // Report modal
+  const [reportModalVisible, setReportModalVisible] = useState(false);
+  const [reportTarget, setReportTarget] = useState<{
+    workoutId?: string;
+    userId?: string;
+    groupId?: string;
+    name?: string;
+  } | null>(null);
 
   // Notifications
   const [notificationsVisible, setNotificationsVisible] = useState(false);
@@ -743,28 +753,47 @@ export default function HomeScreen() {
                     isHighlighted && { borderWidth: 2, borderColor: colors.tint },
                   ]}
                 >
-                  <Pressable
-                    style={styles.feedCardHeader}
-                    onPress={() => router.push(`/friend-profile?id=${item.workout.user_id}`)}
-                  >
-                    <View style={[styles.feedAvatar, { backgroundColor: colors.tint + '18', borderColor: colors.tint + '50' }]}>
-                      {item.avatar_url ? (
-                        <Image source={{ uri: item.avatar_url }} style={styles.feedAvatarImage} />
-                      ) : (
-                        <ThemedText style={[styles.feedAvatarInitials, { color: colors.tint }]}>
-                          {getInitials(item.display_name)}
+                  <View style={styles.feedCardHeader}>
+                    <Pressable
+                      style={styles.feedCardHeaderLeft}
+                      onPress={() => router.push(`/friend-profile?id=${item.workout.user_id}`)}
+                    >
+                      <View style={[styles.feedAvatar, { backgroundColor: colors.tint + '18', borderColor: colors.tint + '50' }]}>
+                        {item.avatar_url ? (
+                          <Image source={{ uri: item.avatar_url }} style={styles.feedAvatarImage} />
+                        ) : (
+                          <ThemedText style={[styles.feedAvatarInitials, { color: colors.tint }]}>
+                            {getInitials(item.display_name)}
+                          </ThemedText>
+                        )}
+                      </View>
+                      <View style={styles.feedCardMeta}>
+                        <ThemedText type="defaultSemiBold" style={[styles.feedName, { color: colors.text }]}>
+                          {item.display_name || 'Anonymous'}
                         </ThemedText>
-                      )}
-                    </View>
-                    <View style={styles.feedCardMeta}>
-                      <ThemedText type="defaultSemiBold" style={[styles.feedName, { color: colors.text }]}>
-                        {item.display_name || 'Anonymous'}
-                      </ThemedText>
-                      <ThemedText style={[styles.feedDate, { color: colors.textMuted }]}>
-                        {formatFeedDate(item.workout.workout_date)}
-                      </ThemedText>
-                    </View>
-                  </Pressable>
+                        <ThemedText style={[styles.feedDate, { color: colors.textMuted }]}>
+                          {formatFeedDate(item.workout.workout_date)}
+                        </ThemedText>
+                      </View>
+                    </Pressable>
+                    {item.workout.user_id !== session?.user?.id && (
+                      <Pressable
+                        onPress={() => {
+                          setReportTarget({
+                            workoutId: item.workout.id,
+                            name: `${item.display_name}'s post`,
+                          });
+                          setReportModalVisible(true);
+                        }}
+                        style={({ pressed }) => [
+                          styles.feedCardMenuButton,
+                          pressed && { opacity: 0.7 },
+                        ]}
+                      >
+                        <Ionicons name="ellipsis-horizontal" size={20} color={colors.textMuted} />
+                      </Pressable>
+                    )}
+                  </View>
                   <ZoomableFeedImage imageUrl={item.workout.image_url} style={styles.feedImage} />
                   {item.workout.caption ? (
                     <ThemedText style={[styles.feedCaption, { color: colors.text }]}>
@@ -1096,6 +1125,22 @@ export default function HomeScreen() {
         }}
         onNavigateToWorkout={navigateToWorkout}
       />
+
+      {/* Report Modal */}
+      {session && reportTarget && (
+        <ReportModal
+          visible={reportModalVisible}
+          onClose={() => {
+            setReportModalVisible(false);
+            setReportTarget(null);
+          }}
+          reporterId={session.user.id}
+          reportedUserId={reportTarget.userId}
+          reportedWorkoutId={reportTarget.workoutId}
+          reportedGroupId={reportTarget.groupId}
+          reportedEntityName={reportTarget.name}
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -1235,6 +1280,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 14,
     paddingHorizontal: 16,
+  },
+  feedCardHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  feedCardMenuButton: {
+    padding: 8,
+    marginLeft: 8,
   },
   feedAvatar: {
     width: 44,
