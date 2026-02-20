@@ -29,6 +29,7 @@ const BADGE_DEFS: Record<string, SpecialBadge> = {
 const USER_BADGES: Record<string, SpecialBadge> = {
   'jonah chiss': BADGE_DEFS.developer,
   'ash kash': BADGE_DEFS.developer,
+  'peter koppany': BADGE_DEFS.developer,
   'gabriel april': BADGE_DEFS.betaTester,
 }
 

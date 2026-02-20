@@ -178,9 +178,18 @@ export default function GroupDetailScreen() {
           table: 'group_messages',
           filter: `group_id=eq.${id}`,
         },
-        (payload) => {
+        async (payload) => {
           const newMessage = payload.new as GroupMessage
-          setMessages((prev) => [...prev, newMessage])
+          // Check if message already exists (avoid duplicates)
+          setMessages((prev) => {
+            if (prev.some((m) => m.id === newMessage.id)) {
+              return prev
+            }
+            return [...prev, newMessage]
+          })
+          // Refresh messages to get latest (ensures we have all messages in order)
+          const messagesData = await getGroupMessages(id)
+          setMessages(messagesData.reverse())
           setTimeout(() => chatScrollRef.current?.scrollToEnd({ animated: true }), 100)
         }
       )
@@ -190,6 +199,16 @@ export default function GroupDetailScreen() {
       supabase.removeChannel(channel)
     }
   }, [isUserMember, id])
+
+  // Reload messages when chat tab becomes active
+  useEffect(() => {
+    if (activeTab === 'chat' && isUserMember && id) {
+      getGroupMessages(id).then((messagesData) => {
+        setMessages(messagesData.reverse())
+        setTimeout(() => chatScrollRef.current?.scrollToEnd({ animated: false }), 100)
+      })
+    }
+  }, [activeTab, isUserMember, id])
 
   const handleJoin = async () => {
     if (!userId || !id) return
@@ -292,6 +311,9 @@ export default function GroupDetailScreen() {
       Alert.alert('Error', error.message)
     } else {
       setMessageText('')
+      // Reload messages immediately to show the sent message
+      const messagesData = await getGroupMessages(id)
+      setMessages(messagesData.reverse())
       setTimeout(() => chatScrollRef.current?.scrollToEnd({ animated: true }), 100)
     }
   }
