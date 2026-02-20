@@ -427,16 +427,29 @@ export async function inviteToGroup(
   const already = await isMember(inviteeId, groupId)
   if (already) return { error: new Error('User is already a member') }
 
+  // Check for an existing invite row
+  const { data: existing } = await supabase
+    .from('group_invites')
+    .select('id, status')
+    .eq('group_id', groupId)
+    .eq('invited_user_id', inviteeId)
+    .maybeSingle()
+
+  if (existing) {
+    if (existing.status === 'pending') {
+      return { error: new Error('Invite already sent') }
+    }
+    // Stale invite (accepted/declined) — remove it so we can re-invite
+    await supabase.from('group_invites').delete().eq('id', existing.id)
+  }
+
   const { error } = await supabase.from('group_invites').insert({
     group_id: groupId,
     invited_by: inviterId,
     invited_user_id: inviteeId,
   })
 
-  if (error) {
-    if (error.code === '23505') return { error: new Error('Invite already sent') }
-    return { error }
-  }
+  if (error) return { error }
   return { error: null }
 }
 
