@@ -31,7 +31,7 @@ export const LEVEL_TIERS: LevelDefinition[] = [
     tier: 'silver',
     title: 'Silver',
     emoji: '🥈',
-    minXP: 150,
+    minXP: 50_000,       // ~1 week
     color: '#94A3B8',
     glowColor: '#94A3B830',
   },
@@ -39,7 +39,7 @@ export const LEVEL_TIERS: LevelDefinition[] = [
     tier: 'gold',
     title: 'Gold',
     emoji: '🥇',
-    minXP: 400,
+    minXP: 100_000,      // ~2 weeks
     color: '#EAB308',
     glowColor: '#EAB30830',
   },
@@ -47,7 +47,7 @@ export const LEVEL_TIERS: LevelDefinition[] = [
     tier: 'platinum',
     title: 'Platinum',
     emoji: '💎',
-    minXP: 700,
+    minXP: 200_000,      // ~1 month
     color: '#6366F1',
     glowColor: '#6366F130',
   },
@@ -55,7 +55,7 @@ export const LEVEL_TIERS: LevelDefinition[] = [
     tier: 'diamond',
     title: 'Diamond',
     emoji: '💠',
-    minXP: 1100,
+    minXP: 375_000,      // ~3 months
     color: '#22D3EE',
     glowColor: '#22D3EE30',
   },
@@ -63,7 +63,7 @@ export const LEVEL_TIERS: LevelDefinition[] = [
     tier: 'master',
     title: 'Master',
     emoji: '⚜️',
-    minXP: 2000,
+    minXP: 625_000,      // ~6 months
     color: '#EC4899',
     glowColor: '#EC489930',
   },
@@ -71,7 +71,7 @@ export const LEVEL_TIERS: LevelDefinition[] = [
     tier: 'legend',
     title: 'Legend',
     emoji: '👑',
-    minXP: 3500,
+    minXP: 1_000_000,    // ~1 year
     color: '#F59E0B',
     glowColor: '#F59E0B30',
   },

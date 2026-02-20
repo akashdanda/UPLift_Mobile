@@ -48,7 +48,16 @@ import type { WorkoutCommentWithProfile } from '@/types/comment';
 import type { WorkoutReactionWithProfile } from '@/types/reaction';
 import type { Workout } from '@/types/workout';
 
-const REACTION_EMOJIS = ['🔥', '💪', '👍', '❤️', '😂', '😮', '🙌', '😊'];
+const REACTION_EMOJIS_FREQUENT = ['🔥', '💪', '👍', '❤️', '😂', '😮', '🙌', '😊'];
+
+const REACTION_EMOJI_SECTIONS: { title: string; emojis: string[] }[] = [
+  { title: 'Smileys', emojis: ['😀', '😃', '😄', '😁', '😆', '😅', '🤣', '😂', '🙂', '😉', '😊', '😇', '🥰', '😍', '🤩', '😘', '😋', '😛', '😜', '🤪', '😝', '🤗', '🤭', '🤫', '🤔', '🫡', '🤐', '🤨', '😐', '😑', '😶', '😏', '😒', '🙄', '😬', '😮‍💨', '🤥', '😌', '😔', '🤤', '😴', '😷', '🤒', '🤕', '🤢', '🤮', '🥵', '🥶', '🥴', '😵', '🤯', '🤠', '🥳', '🥸', '😎', '🤓', '🧐', '😱', '😨', '😰', '😥', '😢', '😭', '😤', '😡', '🤬', '💀', '☠️', '💩', '🤡', '👹', '👻', '👽', '🤖', '😺', '😸', '😹', '😻', '😼', '😽', '🙀', '😿', '😾'] },
+  { title: 'Gestures & People', emojis: ['👋', '🤚', '🖐️', '✋', '🖖', '👌', '🤌', '🤏', '✌️', '🤞', '🫰', '🤟', '🤘', '🤙', '👈', '👉', '👆', '👇', '☝️', '👍', '👎', '✊', '👊', '🤛', '🤜', '👏', '🙌', '🫶', '👐', '🤲', '🤝', '🙏', '💪', '🦾', '🏋️', '🚴', '🏃', '🧘', '🏄', '⛹️', '🤸'] },
+  { title: 'Hearts & Symbols', emojis: ['❤️', '🧡', '💛', '💚', '💙', '💜', '🖤', '🤍', '🤎', '💔', '❤️‍🔥', '💕', '💞', '💓', '💗', '💖', '💘', '💝', '💟', '❣️', '💯', '💢', '💥', '💫', '💦', '💨', '🔥', '⭐', '🌟', '✨', '⚡', '🎯', '🏆', '🥇', '🥈', '🥉', '🏅', '🎖️', '🎉', '🎊'] },
+  { title: 'Fitness & Sport', emojis: ['💪', '🏋️', '🏃', '🚴', '🏊', '🧘', '🤸', '⛹️', '🏄', '🚣', '🧗', '🤾', '🏌️', '🤺', '🥊', '🥋', '⚽', '🏀', '🏈', '⚾', '🎾', '🏐', '🏓', '🏸', '🥅', '⛳', '🥏', '🎳', '🏒', '🤿'] },
+  { title: 'Food & Drink', emojis: ['🍎', '🍌', '🥑', '🥦', '🥕', '🍗', '🥩', '🍳', '🥚', '🥛', '🧃', '💧', '☕', '🍵', '🧋', '🥤', '🍺', '🍷', '🥂', '🍾'] },
+  { title: 'Animals & Nature', emojis: ['🐶', '🐱', '🐭', '🐹', '🐰', '🦊', '🐻', '🐼', '🐨', '🐯', '🦁', '🐮', '🐷', '🐸', '🐵', '🐔', '🐧', '🐦', '🦅', '🦋', '🌸', '🌺', '🌻', '🌹', '🌳', '🌴', '🌵', '🍀', '🌈', '☀️'] },
+];
 
 // Zoomable feed image component
 function ZoomableFeedImage({ imageUrl, style }: { imageUrl: string; style: any }) {
@@ -936,7 +945,7 @@ export default function HomeScreen() {
         onRequestClose={closeReactModal}
       >
         <Pressable style={styles.reactModalOverlay} onPress={closeReactModal}>
-          <Pressable style={[styles.reactModalContent, { backgroundColor: colors.card }]} onPress={(e) => e.stopPropagation()}>
+          <View style={[styles.reactModalContent, { backgroundColor: colors.card }]}>
             <ThemedText type="subtitle" style={[styles.reactModalTitle, { color: colors.text }]}>
               Add reaction
             </ThemedText>
@@ -957,7 +966,7 @@ export default function HomeScreen() {
               )}
             </Pressable>
             <View style={styles.reactEmojiRow}>
-              {REACTION_EMOJIS.map((emoji) => (
+              {REACTION_EMOJIS_FREQUENT.map((emoji) => (
                 <Pressable
                   key={emoji}
                   onPress={() => setReactPendingEmoji(emoji)}
@@ -971,6 +980,27 @@ export default function HomeScreen() {
                 </Pressable>
               ))}
             </View>
+            <ScrollView style={styles.reactEmojiScroll} showsVerticalScrollIndicator={false} nestedScrollEnabled>
+              {REACTION_EMOJI_SECTIONS.map((section) => (
+                <View key={section.title} style={styles.reactEmojiSection}>
+                  <ThemedText style={[styles.reactEmojiSectionTitle, { color: colors.textMuted }]}>{section.title}</ThemedText>
+                  <View style={styles.reactEmojiGrid}>
+                    {section.emojis.map((emoji) => (
+                      <Pressable
+                        key={emoji}
+                        onPress={() => setReactPendingEmoji(emoji)}
+                        style={[
+                          styles.reactEmojiGridItem,
+                          reactPendingEmoji === emoji && { backgroundColor: colors.tint + '25', borderColor: colors.tint, borderWidth: 2 },
+                        ]}
+                      >
+                        <ThemedText style={styles.reactEmojiOptionText}>{emoji}</ThemedText>
+                      </Pressable>
+                    ))}
+                  </View>
+                </View>
+              ))}
+            </ScrollView>
             <View style={styles.reactModalActions}>
               <Pressable
                 onPress={handlePostReaction}
@@ -990,7 +1020,7 @@ export default function HomeScreen() {
                 <ThemedText style={[styles.reactCancelText, { color: colors.textMuted }]}>Cancel</ThemedText>
               </Pressable>
             </View>
-          </Pressable>
+          </View>
         </Pressable>
       </Modal>
 
@@ -1400,6 +1430,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 20,
     padding: 24,
     paddingBottom: 40,
+    maxHeight: '85%',
   },
   reactModalTitle: { marginBottom: 4, textAlign: 'center', fontWeight: '800', letterSpacing: -0.3 },
   reactModalHint: { fontSize: 12, textAlign: 'center', marginBottom: 20, letterSpacing: 0.1 },
@@ -1421,7 +1452,34 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     justifyContent: 'center',
     gap: 10,
-    marginBottom: 24,
+    marginBottom: 12,
+  },
+  reactEmojiScroll: {
+    flexShrink: 1,
+    marginBottom: 20,
+  },
+  reactEmojiSection: {
+    marginBottom: 12,
+  },
+  reactEmojiSectionTitle: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginBottom: 6,
+    marginLeft: 2,
+  },
+  reactEmojiGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  reactEmojiGridItem: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'transparent',
   },
   reactEmojiOption: {
     width: 44,
@@ -1432,7 +1490,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'transparent',
   },
-  reactEmojiOptionText: { fontSize: 22 },
+  reactEmojiOptionText: { fontSize: 24, lineHeight: 32 },
   reactModalActions: { gap: 10 },
   reactSubmitButton: {
     paddingVertical: 14,

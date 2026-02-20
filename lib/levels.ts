@@ -6,11 +6,11 @@ import type { Profile } from '@/types/profile'
 // XP weights — tune these to balance progression
 // ──────────────────────────────────────────────
 const XP_WEIGHTS = {
-  workout: 10,
-  streak: 15,
-  group: 5,
-  friend: 3,
-  achievementUnlocked: 25,
+  workout: 2500,
+  streak: 3750,
+  group: 1250,
+  friend: 750,
+  achievementUnlocked: 6250,
 } as const
 
 // ──────────────────────────────────────────────
