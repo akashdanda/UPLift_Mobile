@@ -57,12 +57,13 @@ CREATE POLICY "Invitee can respond to invite"
   USING (invited_user_id = auth.uid())
   WITH CHECK (invited_user_id = auth.uid());
 
--- DELETE: inviter or group owner/admin can cancel invites
+-- DELETE: inviter, invitee, or group owner/admin can cancel invites
 DROP POLICY IF EXISTS "Inviter or staff can cancel invite" ON public.group_invites;
 CREATE POLICY "Inviter or staff can cancel invite"
   ON public.group_invites FOR DELETE
   USING (
     invited_by = auth.uid()
+    OR invited_user_id = auth.uid()
     OR EXISTS (
       SELECT 1 FROM public.group_members gm
       WHERE gm.group_id = group_invites.group_id

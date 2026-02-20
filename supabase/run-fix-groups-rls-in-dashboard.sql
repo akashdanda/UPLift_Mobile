@@ -61,7 +61,7 @@ CREATE POLICY "Authenticated can read group members"
   TO authenticated
   USING (true);
 
--- INSERT: users can join public groups or groups they created
+-- INSERT: users can join public groups, groups they created, or groups they were invited to
 DROP POLICY IF EXISTS "Users can join public or own groups" ON public.group_members;
 CREATE POLICY "Users can join public or own groups"
   ON public.group_members FOR INSERT
@@ -70,6 +70,12 @@ CREATE POLICY "Users can join public or own groups"
     AND (
       (SELECT is_public FROM public.groups WHERE id = group_id) = true
       OR (SELECT created_by FROM public.groups WHERE id = group_id) = auth.uid()
+      OR EXISTS (
+        SELECT 1 FROM public.group_invites gi
+        WHERE gi.group_id = group_id
+          AND gi.invited_user_id = auth.uid()
+          AND gi.status = 'pending'
+      )
     )
   );
 

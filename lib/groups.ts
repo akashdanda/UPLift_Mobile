@@ -175,7 +175,17 @@ export async function leaveGroup(userId: string, groupId: string): Promise<{ err
     .delete()
     .eq('group_id', groupId)
     .eq('user_id', userId)
-  return { error: error ?? null }
+
+  if (error) return { error }
+
+  // Remove any invite records so the user can be re-invited later
+  await supabase
+    .from('group_invites')
+    .delete()
+    .eq('group_id', groupId)
+    .eq('invited_user_id', userId)
+
+  return { error: null }
 }
 
 /** Search public groups by name */
