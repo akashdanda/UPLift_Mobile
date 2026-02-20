@@ -1307,8 +1307,9 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: -1,
     right: -1,
+    overflow: 'visible',
   },
-  reactionEmojiText: { fontSize: 15 },
+  reactionEmojiText: { fontSize: 15, lineHeight: 20 },
 
   // Reaction detail view modal — Instagram-style
   reactionViewOverlay: {
@@ -1489,6 +1490,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 1,
     borderColor: 'transparent',
+    overflow: 'visible',
   },
   reactEmojiOptionText: { fontSize: 24, lineHeight: 32 },
   reactModalActions: { gap: 10 },

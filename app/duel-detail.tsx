@@ -394,8 +394,9 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     gap: 12,
     marginBottom: 28,
+    overflow: 'visible',
   },
-  typeEmoji: { fontSize: 28 },
+  typeEmoji: { fontSize: 28, lineHeight: 36 },
   typeLabel: { fontSize: 15, fontWeight: '700', letterSpacing: 0.1 },
   typeMeta: { fontSize: 12, marginTop: 2, fontWeight: '600', letterSpacing: 0.1 },
   vsSection: {
@@ -419,9 +420,9 @@ const styles = StyleSheet.create({
   playerName: { fontSize: 14, fontWeight: '700', marginBottom: 4, letterSpacing: 0.1 },
   playerScore: { fontSize: 36, lineHeight: 44, fontWeight: '800', letterSpacing: -1 },
   playerScoreLabel: { fontSize: 10, marginTop: 3, fontWeight: '600', letterSpacing: 0.5, textTransform: 'uppercase' },
-  vsDivider: { alignItems: 'center', paddingHorizontal: 16 },
+  vsDivider: { alignItems: 'center', paddingHorizontal: 16, overflow: 'visible' },
   vsText: { fontSize: 20, fontWeight: '800', letterSpacing: 2 },
-  resultEmoji: { fontSize: 28, marginTop: 8 },
+  resultEmoji: { fontSize: 28, marginTop: 8, lineHeight: 36 },
   barSection: { marginBottom: 20 },
   barTrack: {
     flexDirection: 'row',
