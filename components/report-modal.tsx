@@ -124,7 +124,7 @@ export function ReportModal({
           <ThemedText type="title" style={[styles.title, { color: colors.text }]}>
             Report
           </ThemedText>
-          <View style={styles.closeButton} /> {/* Spacer */}
+          <View style={styles.closeButton} />
         </View>
 
         <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
