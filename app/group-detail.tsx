@@ -20,6 +20,7 @@ import {
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
+import { ReportModal } from '@/components/report-modal'
 import { ThemedText } from '@/components/themed-text'
 import { ThemedView } from '@/components/themed-view'
 import { Colors } from '@/constants/theme'
@@ -103,6 +104,7 @@ export default function GroupDetailScreen() {
   const [invitePendingIds, setInvitePendingIds] = useState<Set<string>>(new Set())
   const [inviteSendingId, setInviteSendingId] = useState<string | null>(null)
   const [inviteLoading, setInviteLoading] = useState(false)
+  const [reportModalVisible, setReportModalVisible] = useState(false)
 
   const chatScrollRef = useRef<ScrollView>(null)
   const userId = session?.user?.id ?? ''
@@ -418,6 +420,7 @@ export default function GroupDetailScreen() {
         ]
       : []),
     { key: 'share', icon: 'share-outline' as const, label: 'Share', color: colors.textMuted, onPress: handleShare },
+    { key: 'report', icon: 'flag-outline' as const, label: 'Report', color: '#ef4444', onPress: () => setReportModalVisible(true) },
     ...(isStaff
       ? [
           { key: 'settings', icon: 'settings-outline' as const, label: 'Settings', color: colors.textMuted, onPress: () => router.push(`/group-settings?id=${id}`) },
@@ -1082,6 +1085,17 @@ export default function GroupDetailScreen() {
           </Pressable>
         </Pressable>
       </Modal>
+
+      {/* Report Modal */}
+      {userId && id && group && (
+        <ReportModal
+          visible={reportModalVisible}
+          onClose={() => setReportModalVisible(false)}
+          reporterId={userId}
+          reportedGroupId={id}
+          reportedEntityName={group.name}
+        />
+      )}
     </SafeAreaView>
   )
 }

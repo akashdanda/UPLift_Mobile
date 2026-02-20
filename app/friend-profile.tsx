@@ -20,6 +20,7 @@ import Animated, {
 } from 'react-native-reanimated'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
+import { ReportModal } from '@/components/report-modal'
 import { ThemedText } from '@/components/themed-text'
 import { ThemedView } from '@/components/themed-view'
 import { getSpecialBadge } from '@/constants/special-badges'
@@ -58,6 +59,7 @@ export default function FriendProfileScreen() {
   const [achievements, setAchievements] = useState<UserAchievementWithDetails[]>([])
   const [selectedAchievement, setSelectedAchievement] = useState<UserAchievementWithDetails | null>(null)
   const [friendLevel, setFriendLevel] = useState<UserLevel | null>(null)
+  const [reportModalVisible, setReportModalVisible] = useState(false)
 
   // Calendar calculations
   const today = useMemo(() => new Date(), [])
@@ -270,13 +272,24 @@ export default function FriendProfileScreen() {
             <ThemedText style={[styles.bio, { color: colors.textMuted }]}>{profile.bio}</ThemedText>
           )}
 
-          {/* Challenge button */}
-          <Pressable
-            style={[styles.challengeButton, { backgroundColor: colors.tint }]}
-            onPress={() => router.push(`/create-duel?friendId=${id}` as Href)}
-          >
-            <ThemedText style={styles.challengeButtonText}>Challenge</ThemedText>
-          </Pressable>
+          {/* Action buttons */}
+          <View style={styles.actionButtonsRow}>
+            <Pressable
+              style={[styles.challengeButton, { backgroundColor: colors.tint }]}
+              onPress={() => router.push(`/create-duel?friendId=${id}` as Href)}
+            >
+              <ThemedText style={styles.challengeButtonText}>Challenge</ThemedText>
+            </Pressable>
+            {session && id !== session.user.id && (
+              <Pressable
+                style={[styles.reportButton, { borderColor: colors.textMuted }]}
+                onPress={() => setReportModalVisible(true)}
+              >
+                <Ionicons name="flag-outline" size={16} color={colors.textMuted} />
+                <ThemedText style={[styles.reportButtonText, { color: colors.textMuted }]}>Report</ThemedText>
+              </Pressable>
+            )}
+          </View>
         </ThemedView>
 
         {/* Highlights */}
@@ -601,6 +614,17 @@ export default function FriendProfileScreen() {
           </View>
         </Pressable>
       </Modal>
+
+      {/* Report Modal */}
+      {session && id && id !== session.user.id && (
+        <ReportModal
+          visible={reportModalVisible}
+          onClose={() => setReportModalVisible(false)}
+          reporterId={session.user.id}
+          reportedUserId={id}
+          reportedEntityName={profile?.display_name || 'User'}
+        />
+      )}
     </SafeAreaView>
   )
 }
@@ -686,8 +710,13 @@ const styles = StyleSheet.create({
     lineHeight: 21,
     letterSpacing: 0.1,
   },
-  challengeButton: {
+  actionButtonsRow: {
+    flexDirection: 'row',
+    gap: 12,
     marginTop: 14,
+  },
+  challengeButton: {
+    flex: 1,
     paddingVertical: 12,
     paddingHorizontal: 28,
     borderRadius: 14,
@@ -699,6 +728,21 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: 0.5,
     textTransform: 'uppercase',
+  },
+  reportButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  reportButtonText: {
+    fontSize: 14,
+    fontWeight: '700',
+    letterSpacing: 0.3,
   },
   section: {
     marginBottom: 24,
