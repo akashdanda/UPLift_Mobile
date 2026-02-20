@@ -33,6 +33,7 @@ import {
   queueForMatchmaking,
   type CompetitionWithGroups,
 } from '@/lib/competitions'
+import { getFriends, type FriendWithProfile } from '@/lib/friends'
 import {
   deleteGroup,
   demoteMember,
@@ -51,7 +52,6 @@ import {
   type GroupRole,
   type GroupWithMeta,
 } from '@/lib/groups'
-import { getFriends, type FriendWithProfile } from '@/lib/friends'
 import { supabase } from '@/lib/supabase'
 import type { GroupMessage } from '@/types/group'
 
@@ -215,7 +215,7 @@ export default function GroupDetailScreen() {
           if (error) Alert.alert('Error', error.message)
           else {
             await refreshProfile()
-            void loadGroup()
+            router.back()
           }
         },
       },

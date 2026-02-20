@@ -5,7 +5,7 @@
 -- 1) GROUPS TABLE POLICIES
 -- ============================================================
 
--- SELECT: anyone can see public groups, groups they created, or groups they're in
+-- SELECT: anyone can see public groups, groups they created, groups they're in, or groups they're invited to
 DROP POLICY IF EXISTS "Users can read public or joined groups" ON public.groups;
 CREATE POLICY "Users can read public or joined groups"
   ON public.groups FOR SELECT
@@ -13,6 +13,7 @@ CREATE POLICY "Users can read public or joined groups"
     is_public = true
     OR created_by = auth.uid()
     OR id IN (SELECT group_id FROM public.group_members WHERE user_id = auth.uid())
+    OR id IN (SELECT group_id FROM public.group_invites WHERE invited_user_id = auth.uid() AND status = 'pending')
   );
 
 -- INSERT: any authenticated user can create a group (must set created_by to themselves)
