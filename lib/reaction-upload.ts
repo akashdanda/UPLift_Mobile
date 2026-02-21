@@ -18,7 +18,8 @@ export async function uploadReactionImage(
 ): Promise<{ url: string } | { error: Error }> {
   try {
     const path = `${workoutId}/${userId}.jpg`
-    const base64 = await readAsStringAsync(uri, { encoding: 'base64' })
+    const fileUri = uri.replace(/\?.*$/, '')
+    const base64 = await readAsStringAsync(fileUri, { encoding: 'base64' })
     const bytes = base64ToUint8Array(base64)
 
     const { error } = await supabase.storage.from(BUCKET).upload(path, bytes, {

@@ -1,7 +1,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useFocusEffect } from '@react-navigation/native';
 import { Image } from 'expo-image';
-import * as ImagePicker from 'expo-image-picker';
+import { CameraCapture } from '@/components/camera-capture';
 import { router } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -140,9 +140,11 @@ export default function HomeScreen() {
 
   // React modal (BeReal-style: photo + emoji)
   const [reactModalItem, setReactModalItem] = useState<FeedItem | null>(null);
+  const [reactModalKey, setReactModalKey] = useState(0);
   const [reactPendingPhoto, setReactPendingPhoto] = useState<string | null>(null);
   const [reactPendingEmoji, setReactPendingEmoji] = useState<string | null>(null);
   const [reactSubmitting, setReactSubmitting] = useState(false);
+  const [reactCameraOpen, setReactCameraOpen] = useState(false);
 
   // Reaction detail view modal
   const [viewReaction, setViewReaction] = useState<WorkoutReactionWithProfile | null>(null);
@@ -234,8 +236,10 @@ export default function HomeScreen() {
 
   const openReactModal = (item: FeedItem) => {
     setReactModalItem(item);
+    setReactModalKey((k) => k + 1);
     setReactPendingPhoto(null);
     setReactPendingEmoji(null);
+    setReactCameraOpen(false);
   };
 
   const closeReactModal = () => {
@@ -244,19 +248,14 @@ export default function HomeScreen() {
     setReactPendingEmoji(null);
   };
 
-  const handleTakeReactionPhoto = async () => {
-    const { status } = await ImagePicker.requestCameraPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permission needed', 'Allow camera access to take a reaction photo.');
-      return;
-    }
-    const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ['images'],
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.7,
-    });
-    if (!result.canceled && result.assets[0]?.uri) setReactPendingPhoto(result.assets[0].uri);
+  const handleTakeReactionPhoto = () => {
+    setReactPendingPhoto(null);
+    setReactCameraOpen(true);
+  };
+
+  const handleReactCameraCapture = (uri: string) => {
+    setReactCameraOpen(false);
+    setReactPendingPhoto(uri);
   };
 
   const handlePostReaction = async () => {
@@ -968,13 +967,13 @@ export default function HomeScreen() {
       </ScrollView>
 
       <Modal
-        visible={!!reactModalItem}
+        visible={!!reactModalItem && !reactCameraOpen}
         transparent
         animationType="slide"
         onRequestClose={closeReactModal}
       >
         <Pressable style={styles.reactModalOverlay} onPress={closeReactModal}>
-          <View style={[styles.reactModalContent, { backgroundColor: colors.card }]}>
+          <View key={reactModalKey} style={[styles.reactModalContent, { backgroundColor: colors.card }]}>
             <ThemedText type="subtitle" style={[styles.reactModalTitle, { color: colors.text }]}>
               Add reaction
             </ThemedText>
@@ -1053,6 +1052,14 @@ export default function HomeScreen() {
         </Pressable>
       </Modal>
 
+
+      <Modal visible={reactCameraOpen} animationType="slide" presentationStyle="fullScreen">
+        <CameraCapture
+          onCapture={handleReactCameraCapture}
+          onClose={() => setReactCameraOpen(false)}
+          quality={0.7}
+        />
+      </Modal>
 
       {/* Reaction detail view modal */}
       <Modal

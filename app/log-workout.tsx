@@ -1,11 +1,11 @@
 import Ionicons from '@expo/vector-icons/Ionicons'
 import { Image } from 'expo-image'
-import * as ImagePicker from 'expo-image-picker'
 import { router } from 'expo-router'
 import { useEffect, useState } from 'react'
 import {
   ActivityIndicator,
   Alert,
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -14,6 +14,7 @@ import {
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
+import { CameraCapture } from '@/components/camera-capture'
 import { CelebrationModal } from '@/components/celebration-modal'
 import { ThemedText } from '@/components/themed-text'
 import { Colors } from '@/constants/theme'
@@ -61,6 +62,7 @@ export default function LogWorkoutScreen() {
   const [caption, setCaption] = useState('')
   // Photo taken but not yet posted (caption step)
   const [pendingPhotoUri, setPendingPhotoUri] = useState<string | null>(null)
+  const [cameraOpen, setCameraOpen] = useState(false)
   // Achievement celebration
   const [celebrationQueue, setCelebrationQueue] = useState<UserAchievementWithDetails[]>([])
   const [showCelebration, setShowCelebration] = useState(false)
@@ -111,24 +113,9 @@ export default function LogWorkoutScreen() {
     }
   }, [session, today])
 
-  const handleTakePhoto = async () => {
+  const handleTakePhoto = () => {
     if (!session) return
-    const { status } = await ImagePicker.requestCameraPermissionsAsync()
-    if (status !== 'granted') {
-      Alert.alert('Permission needed', 'Allow camera access to take a workout photo.')
-      return
-    }
-
-    const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ['images'],
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.8,
-      cameraType: ImagePicker.CameraType.front,
-    })
-    if (result.canceled || !result.assets[0]?.uri) return
-
-    setPendingPhotoUri(result.assets[0].uri)
+    setCameraOpen(true)
   }
 
   const handlePost = async () => {
@@ -411,6 +398,17 @@ export default function LogWorkoutScreen() {
           accentColor={levelUpCelebration.level.color}
         />
       )}
+
+      <Modal visible={cameraOpen} animationType="slide" presentationStyle="fullScreen">
+        <CameraCapture
+          onCapture={(uri) => {
+            setCameraOpen(false)
+            setPendingPhotoUri(uri)
+          }}
+          onClose={() => setCameraOpen(false)}
+          quality={0.8}
+        />
+      </Modal>
     </SafeAreaView>
   )
 }
