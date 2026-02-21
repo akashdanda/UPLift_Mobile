@@ -30,7 +30,9 @@ export async function uploadReactionImage(
     if (error) return { error }
 
     const { data } = supabase.storage.from(BUCKET).getPublicUrl(path)
-    return { url: data.publicUrl }
+    // Add cache busting query parameter to ensure fresh image is loaded
+    const timestamp = Date.now()
+    return { url: `${data.publicUrl}?t=${timestamp}` }
   } catch (e) {
     return { error: e instanceof Error ? e : new Error('Upload failed') }
   }

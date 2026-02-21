@@ -79,34 +79,21 @@ export function CameraCapture({
         return
       }
 
+      // Flip horizontally to match the preview (front camera preview is mirrored)
       const mirrored = await manipulateAsync(
         photo.uri,
         [{ flip: FlipType.Horizontal }],
         { compress: quality, format: SaveFormat.JPEG }
       )
 
-      // Crop to square if needed
-      let finalUri = mirrored.uri
-      if (aspect[0] === aspect[1] && mirrored.width !== mirrored.height) {
-        const size = Math.min(mirrored.width, mirrored.height)
-        const originX = (mirrored.width - size) / 2
-        const originY = (mirrored.height - size) / 2
-        const cropped = await manipulateAsync(
-          mirrored.uri,
-          [{ crop: { originX, originY, width: size, height: size } }],
-          { compress: quality, format: SaveFormat.JPEG }
-        )
-        finalUri = cropped.uri
-      }
-
       // Copy to a unique path so preview and upload always use this exact file (no cache/reuse mix-up)
       const cacheDir = FileSystem.cacheDirectory ?? FileSystem.documentDirectory
       if (cacheDir) {
         const uniquePath = `${cacheDir}capture-${Date.now()}-${Math.random().toString(36).slice(2, 9)}.jpg`
-        await FileSystem.copyAsync({ from: finalUri, to: uniquePath })
+        await FileSystem.copyAsync({ from: mirrored.uri, to: uniquePath })
         setCapturedUri(uniquePath)
       } else {
-        setCapturedUri(finalUri)
+        setCapturedUri(mirrored.uri)
       }
     } catch {
       // ignore capture errors

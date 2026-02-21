@@ -1,7 +1,7 @@
+import { CameraCapture } from '@/components/camera-capture';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useFocusEffect } from '@react-navigation/native';
 import { Image } from 'expo-image';
-import { CameraCapture } from '@/components/camera-capture';
 import { router } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -246,6 +246,7 @@ export default function HomeScreen() {
     setReactModalItem(null);
     setReactPendingPhoto(null);
     setReactPendingEmoji(null);
+    setReactCameraOpen(false);
   };
 
   const handleTakeReactionPhoto = () => {
@@ -261,17 +262,25 @@ export default function HomeScreen() {
   const handlePostReaction = async () => {
     if (!session || !reactModalItem || !reactPendingEmoji) return;
     setReactSubmitting(true);
+    
+    // Capture the photo URI before clearing state
+    const photoUriToUpload = reactPendingPhoto;
+    
     const result = await addReaction(
       reactModalItem.workout.id,
       session.user.id,
       reactPendingEmoji,
-      reactPendingPhoto
+      photoUriToUpload
     );
     setReactSubmitting(false);
     if ('error' in result) {
       Alert.alert('Reaction failed', result.error.message);
       return;
     }
+    
+    // Clear the photo state immediately after capturing the URI
+    setReactPendingPhoto(null);
+    
     setFeedItems((prev) =>
       prev.map((item) =>
         item.workout.id === reactModalItem.workout.id
