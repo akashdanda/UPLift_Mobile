@@ -25,6 +25,7 @@ import { ThemedText } from '@/components/themed-text'
 import { ThemedView } from '@/components/themed-view'
 import { getSpecialBadge } from '@/constants/special-badges'
 import { Colors } from '@/constants/theme'
+import { useAuthContext } from '@/hooks/use-auth-context'
 import { useColorScheme } from '@/hooks/use-color-scheme'
 import { getUserAchievements } from '@/lib/achievements'
 import { getHighlightsForProfile } from '@/lib/highlights'
@@ -47,6 +48,7 @@ function getInitials(displayName: string | null): string {
 
 export default function FriendProfileScreen() {
   const { id } = useLocalSearchParams<{ id: string }>()
+  const { session } = useAuthContext()
   const router = useRouter()
   const colorScheme = useColorScheme()
   const colors = Colors[colorScheme ?? 'light']

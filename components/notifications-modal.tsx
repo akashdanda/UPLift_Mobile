@@ -1,7 +1,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons'
 import { Image } from 'expo-image'
 import { router } from 'expo-router'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
@@ -9,7 +9,9 @@ import { ThemedText } from '@/components/themed-text'
 import { Colors } from '@/constants/theme'
 import { useAuthContext } from '@/hooks/use-auth-context'
 import { useColorScheme } from '@/hooks/use-color-scheme'
+import { getFriends } from '@/lib/friends'
 import { getNotifications, markNotificationsAsRead, type Notification } from '@/lib/notifications'
+import { supabase } from '@/lib/supabase'
 
 function getInitials(displayName: string | null): string {
   if (displayName?.trim()) {
@@ -157,17 +159,164 @@ export function NotificationsModal({
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [loading, setLoading] = useState(true)
 
+  const loadNotifications = useCallback(() => {
+    if (!session) return
+    setLoading(true)
+    getNotifications(session.user.id)
+      .then(setNotifications)
+      .catch(() => setNotifications([]))
+      .finally(() => setLoading(false))
+  }, [session])
+
   useEffect(() => {
     if (visible && session) {
-      setLoading(true)
       // Mark as read when modal opens
       markNotificationsAsRead()
-      getNotifications(session.user.id)
-        .then(setNotifications)
-        .catch(() => setNotifications([]))
-        .finally(() => setLoading(false))
+      loadNotifications()
     }
-  }, [visible, session])
+  }, [visible, session, loadNotifications])
+
+  // Real-time subscription for notifications when modal is visible
+  useEffect(() => {
+    if (!visible || !session) return
+
+    const channels: ReturnType<typeof supabase.channel>[] = []
+    let isMounted = true
+
+    // Subscribe to reactions on user's workouts
+    const reactionsChannel = supabase
+      .channel('modal-notifications-reactions')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'workout_reactions',
+        },
+        (payload) => {
+          supabase
+            .from('workouts')
+            .select('user_id')
+            .eq('id', payload.new.workout_id)
+            .single()
+            .then(({ data }) => {
+              if (data && data.user_id === session.user.id) {
+                loadNotifications()
+              }
+            })
+        }
+      )
+      .subscribe()
+    channels.push(reactionsChannel)
+
+    // Subscribe to comments on user's workouts
+    const commentsChannel = supabase
+      .channel('modal-notifications-comments')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'workout_comments',
+        },
+        (payload) => {
+          supabase
+            .from('workouts')
+            .select('user_id')
+            .eq('id', payload.new.workout_id)
+            .single()
+            .then(({ data }) => {
+              if (data && data.user_id === session.user.id) {
+                loadNotifications()
+              }
+            })
+        }
+      )
+      .subscribe()
+    channels.push(commentsChannel)
+
+    // Subscribe to user achievements
+    const achievementsChannel = supabase
+      .channel('modal-notifications-achievements')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'user_achievements',
+          filter: `user_id=eq.${session.user.id}`,
+        },
+        () => {
+          loadNotifications()
+        }
+      )
+      .subscribe()
+    channels.push(achievementsChannel)
+
+    // Subscribe to friend workouts
+    getFriends(session.user.id).then((friends) => {
+      if (!isMounted) return
+      const friendIds = friends.map((f) => f.id)
+      if (friendIds.length > 0) {
+        const friendWorkoutsChannel = supabase
+          .channel('modal-notifications-friend-workouts')
+          .on(
+            'postgres_changes',
+            {
+              event: 'INSERT',
+              schema: 'public',
+              table: 'workouts',
+            },
+            (payload) => {
+              if (friendIds.includes(payload.new.user_id)) {
+                loadNotifications()
+              }
+            }
+          )
+          .subscribe()
+        channels.push(friendWorkoutsChannel)
+      }
+    })
+
+    // Subscribe to group competitions
+    supabase
+      .from('group_members')
+      .select('group_id')
+      .eq('user_id', session.user.id)
+      .then(({ data }) => {
+        if (!isMounted) return
+        if (data && data.length > 0) {
+          const userGroupIds = data.map((g) => g.group_id)
+          const competitionsChannel = supabase
+            .channel('modal-notifications-competitions')
+            .on(
+              'postgres_changes',
+              {
+                event: 'INSERT',
+                schema: 'public',
+                table: 'group_competitions',
+              },
+              (payload) => {
+                if (
+                  userGroupIds.includes(payload.new.group1_id) ||
+                  userGroupIds.includes(payload.new.group2_id)
+                ) {
+                  loadNotifications()
+                }
+              }
+            )
+            .subscribe()
+          channels.push(competitionsChannel)
+        }
+      })
+
+    return () => {
+      isMounted = false
+      channels.forEach((channel) => {
+        supabase.removeChannel(channel)
+      })
+    }
+  }, [visible, session, loadNotifications])
 
   const handleNotificationPress = (notification: Notification) => {
     if (notification.workout_id) {

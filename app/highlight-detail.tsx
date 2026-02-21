@@ -23,7 +23,7 @@ import { ThemedText } from '@/components/themed-text'
 import { Colors } from '@/constants/theme'
 import { useAuthContext } from '@/hooks/use-auth-context'
 import { useColorScheme } from '@/hooks/use-color-scheme'
-import { getHighlightWithWorkouts, removeWorkoutFromHighlight } from '@/lib/highlights'
+import { deleteHighlight, getHighlightWithWorkouts, removeWorkoutFromHighlight } from '@/lib/highlights'
 import { supabase } from '@/lib/supabase'
 import type { Profile } from '@/types/profile'
 import type { HighlightWithWorkouts } from '@/types/highlight'
@@ -277,16 +277,53 @@ export default function HighlightDetailScreen() {
             <View style={styles.headerRight}>
               {isOwner && (
                 <Pressable
-                  onPress={() =>
-                    router.push({
-                      pathname: '/manage-highlights',
-                      params: { highlightId: highlight.id },
-                    })
-                  }
+                  onPress={() => {
+                    Alert.alert(
+                      'Highlight Options',
+                      '',
+                      [
+                        {
+                          text: 'Delete Highlight',
+                          style: 'destructive',
+                          onPress: () => {
+                            Alert.alert(
+                              'Delete highlight',
+                              `Delete "${highlight.name}"? This cannot be undone.`,
+                              [
+                                { text: 'Cancel', style: 'cancel' },
+                                {
+                                  text: 'Delete',
+                                  style: 'destructive',
+                                  onPress: async () => {
+                                    if (!session) return
+                                    const result = await deleteHighlight(highlight.id, session.user.id)
+                                    if ('error' in result) {
+                                      Alert.alert('Error', result.error.message)
+                                    } else {
+                                      router.back()
+                                    }
+                                  },
+                                },
+                              ]
+                            )
+                          },
+                        },
+                        {
+                          text: 'Edit Highlight',
+                          onPress: () =>
+                            router.push({
+                              pathname: '/manage-highlights',
+                              params: { highlightId: highlight.id },
+                            }),
+                        },
+                        { text: 'Cancel', style: 'cancel' },
+                      ]
+                    )
+                  }}
                   hitSlop={12}
                   style={styles.headerBtn}
                 >
-                  <ThemedText style={styles.editText}>Edit</ThemedText>
+                  <Ionicons name="ellipsis-horizontal" size={24} color="#fff" />
                 </Pressable>
               )}
               {isOwner && currentWorkout && (

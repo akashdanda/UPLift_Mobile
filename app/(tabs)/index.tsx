@@ -363,6 +363,153 @@ export default function HomeScreen() {
   };
 
 
+  // Real-time notification subscriptions
+  useEffect(() => {
+    if (!session) return
+
+    const refreshUnreadCount = () => {
+      getUnreadNotificationCount(session.user.id).then(setUnreadCount).catch(() => setUnreadCount(0))
+    }
+
+    const channels: ReturnType<typeof supabase.channel>[] = []
+    let isMounted = true
+
+    // Subscribe to reactions on user's workouts
+    const reactionsChannel = supabase
+      .channel('notifications-reactions')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'workout_reactions',
+        },
+        (payload) => {
+          // Check if this reaction is on one of the user's workouts
+          supabase
+            .from('workouts')
+            .select('user_id')
+            .eq('id', payload.new.workout_id)
+            .single()
+            .then(({ data }) => {
+              if (data && data.user_id === session.user.id) {
+                refreshUnreadCount()
+              }
+            })
+        }
+      )
+      .subscribe()
+    channels.push(reactionsChannel)
+
+    // Subscribe to comments on user's workouts
+    const commentsChannel = supabase
+      .channel('notifications-comments')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'workout_comments',
+        },
+        (payload) => {
+          supabase
+            .from('workouts')
+            .select('user_id')
+            .eq('id', payload.new.workout_id)
+            .single()
+            .then(({ data }) => {
+              if (data && data.user_id === session.user.id) {
+                refreshUnreadCount()
+              }
+            })
+        }
+      )
+      .subscribe()
+    channels.push(commentsChannel)
+
+    // Subscribe to user achievements
+    const achievementsChannel = supabase
+      .channel('notifications-achievements')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'user_achievements',
+          filter: `user_id=eq.${session.user.id}`,
+        },
+        () => {
+          refreshUnreadCount()
+        }
+      )
+      .subscribe()
+    channels.push(achievementsChannel)
+
+    // Subscribe to friend workouts (for friend_activity notifications)
+    getFriends(session.user.id).then((friends) => {
+      if (!isMounted) return
+      const friendIds = friends.map((f) => f.id)
+      if (friendIds.length > 0) {
+        const friendWorkoutsChannel = supabase
+          .channel('notifications-friend-workouts')
+          .on(
+            'postgres_changes',
+            {
+              event: 'INSERT',
+              schema: 'public',
+              table: 'workouts',
+            },
+            (payload) => {
+              if (friendIds.includes(payload.new.user_id)) {
+                refreshUnreadCount()
+              }
+            }
+          )
+          .subscribe()
+        channels.push(friendWorkoutsChannel)
+      }
+    })
+
+    // Subscribe to group competitions (user's groups)
+    supabase
+      .from('group_members')
+      .select('group_id')
+      .eq('user_id', session.user.id)
+      .then(({ data }) => {
+        if (!isMounted) return
+        if (data && data.length > 0) {
+          const userGroupIds = data.map((g) => g.group_id)
+          const competitionsChannel = supabase
+            .channel('notifications-competitions')
+            .on(
+              'postgres_changes',
+              {
+                event: 'INSERT',
+                schema: 'public',
+                table: 'group_competitions',
+              },
+              (payload) => {
+                if (
+                  userGroupIds.includes(payload.new.group1_id) ||
+                  userGroupIds.includes(payload.new.group2_id)
+                ) {
+                  refreshUnreadCount()
+                }
+              }
+            )
+            .subscribe()
+          channels.push(competitionsChannel)
+        }
+      })
+
+    return () => {
+      isMounted = false
+      channels.forEach((channel) => {
+        supabase.removeChannel(channel)
+      })
+    }
+  }, [session])
+
   useFocusEffect(
     useCallback(() => {
       if (!session) {
