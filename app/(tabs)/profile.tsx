@@ -17,6 +17,7 @@ import { CelebrationModal } from '@/components/celebration-modal'
 import SignOutButton from '@/components/social-auth-buttons/sign-out-button'
 import { ThemedText } from '@/components/themed-text'
 import { ThemedView } from '@/components/themed-view'
+import { getSpecialBadge } from '@/constants/special-badges'
 import { Colors } from '@/constants/theme'
 import { useAuthContext } from '@/hooks/use-auth-context'
 import { useColorScheme } from '@/hooks/use-color-scheme'
@@ -29,7 +30,6 @@ import {
 import { getHighlightsForProfile } from '@/lib/highlights'
 import { computeXP, getLevelFromXP } from '@/lib/levels'
 import { supabase } from '@/lib/supabase'
-import { getSpecialBadge } from '@/constants/special-badges'
 import { ACHIEVEMENT_CATEGORIES, type UserAchievementWithDetails } from '@/types/achievement'
 import type { HighlightForProfile } from '@/types/highlight'
 import type { UserLevel } from '@/types/level'
@@ -474,18 +474,22 @@ export default function ProfileScreen() {
                 const hasWorkout = monthWorkoutDates.has(iso)
                 const isOnOrAfterSignup = !signupDateString || iso >= signupDateString
 
+                // Check if there are any workouts before this day (indicating a streak was started)
+                const hasAnyPreviousWorkout = Array.from(monthWorkoutDates).some((date) => date < iso)
+
                 let statusStyle = styles.calendarDayNeutral
                 let isColored = false
 
                 if (hasWorkout) {
-                  // Always show green if a workout was logged that day
+                  // Green: posted that day
                   statusStyle = styles.calendarDayCompleted
                   isColored = true
-                } else if (isOnOrAfterSignup && (isToday || isPast)) {
-                  // Only show red for missed days on/after signup
+                } else if (isOnOrAfterSignup && (isToday || isPast) && hasAnyPreviousWorkout) {
+                  // Red: missed a day (had a streak going but didn't post)
                   statusStyle = styles.calendarDayMissed
                   isColored = true
                 }
+                // White: haven't posted yet (no streak, no post) - default neutral style
 
                 return (
                   <View key={iso} style={styles.calendarDayCell}>
@@ -759,7 +763,6 @@ export default function ProfileScreen() {
           title={currentCelebration.name}
           description={currentCelebration.description}
           onDismiss={handleDismissCelebration}
-          onShare={handleShareCelebration}
           accentColor={
             ACHIEVEMENT_CATEGORIES[currentCelebration.category as keyof typeof ACHIEVEMENT_CATEGORIES]?.color
           }

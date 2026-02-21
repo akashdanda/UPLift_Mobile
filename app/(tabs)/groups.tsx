@@ -1,7 +1,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons'
 import { useFocusEffect } from '@react-navigation/native'
 import { Image } from 'expo-image'
-import { type Href, router } from 'expo-router'
+import { router, type Href } from 'expo-router'
 import { useCallback, useState } from 'react'
 import {
   ActivityIndicator,
@@ -526,8 +526,9 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'visible',
   },
-  gridAvatarText: { fontSize: 20, fontWeight: '800' },
+  gridAvatarText: { fontSize: 20, fontWeight: '800', lineHeight: 24 },
   gridName: { fontSize: 14, fontWeight: '700', lineHeight: 19, marginBottom: 4, letterSpacing: 0.1 },
   gridTagsRow: { marginBottom: 2 },
   gridTag: { fontSize: 11, fontWeight: '600', letterSpacing: 0.2 },
@@ -574,8 +575,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 14,
+    overflow: 'visible',
   },
-  myGroupAvatarText: { fontSize: 18, fontWeight: '800' },
+  myGroupAvatarText: { fontSize: 18, fontWeight: '800', lineHeight: 22 },
   myGroupInfo: { flex: 1, minWidth: 0 },
   myGroupName: { fontSize: 15, fontWeight: '700', marginBottom: 2, letterSpacing: 0.1 },
   myGroupMeta: { fontSize: 12, fontWeight: '500', letterSpacing: 0.1 },

@@ -196,7 +196,9 @@ export function CelebrationModal({
 
             <ThemedText style={styles.celebTitle}>Achievement Unlocked!</ThemedText>
             <ThemedText style={styles.achievementName}>{title}</ThemedText>
-            <ThemedText style={styles.achievementDesc}>{description}</ThemedText>
+            <View style={styles.descriptionWrap}>
+              <ThemedText style={styles.achievementDesc}>{description}</ThemedText>
+            </View>
 
             <View style={styles.buttonRow}>
               {onShare && (
@@ -265,12 +267,18 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 8,
   },
+  descriptionWrap: {
+    width: '100%',
+    paddingHorizontal: 4,
+    marginBottom: 24,
+    alignItems: 'center',
+  },
   achievementDesc: {
     fontSize: 15,
     color: '#94A3B8',
     textAlign: 'center',
     lineHeight: 22,
-    marginBottom: 24,
+    flexShrink: 1,
   },
   buttonRow: {
     flexDirection: 'row',

@@ -350,18 +350,22 @@ export default function FriendProfileScreen() {
                 const hasWorkout = monthWorkoutDates.has(iso)
                 const isOnOrAfterSignup = !signupDateString || iso >= signupDateString
 
+                // Check if there are any workouts before this day (indicating a streak was started)
+                const hasAnyPreviousWorkout = Array.from(monthWorkoutDates).some((date) => date < iso)
+
                 let statusStyle = styles.calendarDayNeutral
                 let isColored = false
 
                 if (hasWorkout) {
-                  // Always show green if a workout was logged that day
+                  // Green: posted that day
                   statusStyle = styles.calendarDayCompleted
                   isColored = true
-                } else if (isOnOrAfterSignup && (isToday || isPast)) {
-                  // Only show red for missed days on/after signup
+                } else if (isOnOrAfterSignup && (isToday || isPast) && hasAnyPreviousWorkout) {
+                  // Red: missed a day (had a streak going but didn't post)
                   statusStyle = styles.calendarDayMissed
                   isColored = true
                 }
+                // White: haven't posted yet (no streak, no post) - default neutral style
 
                 return (
                   <View key={iso} style={styles.calendarDayCell}>

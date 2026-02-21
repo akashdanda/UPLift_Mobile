@@ -357,26 +357,58 @@ export default function ManageHighlightsScreen() {
         </Pressable>
         <View style={styles.list}>
           {list.map((h) => (
-            <Pressable
+            <View
               key={h.id}
-              onPress={() => router.push({ pathname: '/manage-highlights', params: { highlightId: h.id } })}
               style={[styles.highlightRow, { backgroundColor: colors.card, borderColor: colors.tabBarBorder }]}
             >
-              <View style={[styles.highlightThumb, { backgroundColor: colors.cardElevated }]}>
-                {h.cover_image_url ? (
-                  <Image source={{ uri: h.cover_image_url }} style={styles.highlightThumbImage} />
-                ) : (
-                  <Ionicons name="images-outline" size={28} color={colors.textMuted} />
-                )}
-              </View>
-              <View style={styles.highlightInfo}>
-                <ThemedText type="defaultSemiBold" style={{ color: colors.text }}>{h.name}</ThemedText>
-                <ThemedText style={{ color: colors.textMuted, fontSize: 13 }}>
-                  {h.workouts_count} workout{h.workouts_count !== 1 ? 's' : ''}
-                </ThemedText>
-              </View>
-              <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
-            </Pressable>
+              <Pressable
+                onPress={() => router.push({ pathname: '/manage-highlights', params: { highlightId: h.id } })}
+                style={styles.highlightRowContent}
+              >
+                <View style={[styles.highlightThumb, { backgroundColor: colors.cardElevated }]}>
+                  {h.cover_image_url ? (
+                    <Image source={{ uri: h.cover_image_url }} style={styles.highlightThumbImage} />
+                  ) : (
+                    <Ionicons name="images-outline" size={28} color={colors.textMuted} />
+                  )}
+                </View>
+                <View style={styles.highlightInfo}>
+                  <ThemedText type="defaultSemiBold" style={{ color: colors.text }}>{h.name}</ThemedText>
+                  <ThemedText style={{ color: colors.textMuted, fontSize: 13 }}>
+                    {h.workouts_count} workout{h.workouts_count !== 1 ? 's' : ''}
+                  </ThemedText>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+              </Pressable>
+              <Pressable
+                onPress={() => {
+                  Alert.alert(
+                    'Delete highlight',
+                    `Delete "${h.name}"? This cannot be undone.`,
+                    [
+                      { text: 'Cancel', style: 'cancel' },
+                      {
+                        text: 'Delete',
+                        style: 'destructive',
+                        onPress: async () => {
+                          if (!session) return
+                          const result = await deleteHighlight(h.id, session.user.id)
+                          if ('error' in result) {
+                            Alert.alert('Error', result.error.message)
+                          } else {
+                            loadList()
+                          }
+                        },
+                      },
+                    ]
+                  )
+                }}
+                style={styles.deleteIconButton}
+                hitSlop={8}
+              >
+                <Ionicons name="trash-outline" size={20} color={colors.textMuted} />
+              </Pressable>
+            </View>
           ))}
         </View>
       </ScrollView>
@@ -518,6 +550,12 @@ const styles = StyleSheet.create({
     padding: 12,
     borderRadius: 12,
     borderWidth: 1,
+    gap: 8,
+  },
+  highlightRowContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
   },
   highlightThumb: {
     width: 56,
@@ -530,4 +568,7 @@ const styles = StyleSheet.create({
   },
   highlightThumbImage: { width: 56, height: 56 },
   highlightInfo: { flex: 1 },
+  deleteIconButton: {
+    padding: 4,
+  },
 })

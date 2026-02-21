@@ -1148,8 +1148,9 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'visible',
   },
-  groupAvatarText: { fontSize: 28, fontWeight: '700' },
+  groupAvatarText: { fontSize: 28, fontWeight: '700', lineHeight: 34 },
 
   // Info
   infoSection: { paddingHorizontal: 20, marginBottom: 16 },

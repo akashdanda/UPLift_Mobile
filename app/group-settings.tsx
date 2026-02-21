@@ -344,10 +344,10 @@ const styles = StyleSheet.create({
     borderRadius: 50,
     alignItems: 'center',
     justifyContent: 'center',
-    overflow: 'hidden',
+    overflow: 'visible',
   },
   avatarImage: { width: 100, height: 100 },
-  avatarInitials: { fontSize: 36, fontWeight: '600' },
+  avatarInitials: { fontSize: 36, fontWeight: '600', lineHeight: 44 },
   changePhotoButton: {
     paddingHorizontal: 20,
     paddingVertical: 10,
