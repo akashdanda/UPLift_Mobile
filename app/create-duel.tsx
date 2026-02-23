@@ -8,6 +8,7 @@ import {
     Pressable,
     ScrollView,
     StyleSheet,
+    Text,
     View,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
@@ -184,7 +185,7 @@ export default function CreateDuelScreen() {
               ]}
               onPress={() => setDuelType('workout_count')}
             >
-              <ThemedText style={styles.typeEmoji}>💪</ThemedText>
+              <Text style={styles.typeEmoji}>💪</Text>
               <ThemedText type="defaultSemiBold" style={[styles.typeLabel, { color: colors.text }]}>
                 Workout Count
               </ThemedText>
@@ -203,7 +204,7 @@ export default function CreateDuelScreen() {
               ]}
               onPress={() => setDuelType('streak')}
             >
-              <ThemedText style={styles.typeEmoji}>🔥</ThemedText>
+              <Text style={styles.typeEmoji}>🔥</Text>
               <ThemedText type="defaultSemiBold" style={[styles.typeLabel, { color: colors.text }]}>
                 Streak Battle
               </ThemedText>
@@ -248,7 +249,7 @@ export default function CreateDuelScreen() {
         {/* Preview */}
         {selectedProfile && (
           <View style={[styles.previewCard, { backgroundColor: colors.card, borderColor: colors.tint + '30' }]}>
-            <ThemedText style={styles.previewEmoji}>🏆</ThemedText>
+            <Text style={styles.previewEmoji}>🏆</Text>
             <ThemedText type="defaultSemiBold" style={[styles.previewTitle, { color: colors.text }]}>
               You vs {selectedProfile.display_name || 'Friend'}
             </ThemedText>
@@ -329,7 +330,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     alignItems: 'center',
   },
-  typeEmoji: { fontSize: 28, marginBottom: 8 },
+  typeEmoji: { fontSize: 28, lineHeight: 36, marginBottom: 8 },
   typeLabel: { fontSize: 13, fontWeight: '700', marginBottom: 4, letterSpacing: 0.2 },
   typeDesc: { fontSize: 11, textAlign: 'center', lineHeight: 16, letterSpacing: 0.1 },
   durationRow: { flexDirection: 'row', gap: 10, flexWrap: 'wrap' },
@@ -347,7 +348,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 24,
   },
-  previewEmoji: { fontSize: 36, marginBottom: 8 },
+  previewEmoji: { fontSize: 36, lineHeight: 44, marginBottom: 8 },
   previewTitle: { fontSize: 17, fontWeight: '700', marginBottom: 4, letterSpacing: -0.2 },
   previewMeta: { fontSize: 13, fontWeight: '600', letterSpacing: 0.1 },
   submitButton: {

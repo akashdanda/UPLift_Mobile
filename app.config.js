@@ -30,6 +30,12 @@ module.exports = {
   ...appJson,
   expo: {
     ...appJson.expo,
+    updates: {
+      url: 'https://u.expo.dev/366563bc-3d64-4420-8890-a2f21fc33b3c',
+    },
+    runtimeVersion: {
+      policy: 'appVersion',
+    },
     plugins,
     extra: {
       ...appJson.expo.extra,

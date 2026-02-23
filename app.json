@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Uplift",
-    "slug": "Uplift",
+    "slug": "UPLift",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -9,7 +9,9 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.akashdanda.uplift",
+      "buildNumber": "1"
     },
     "android": {
       "adaptiveIcon": {
@@ -32,6 +34,12 @@
         {
           "photosPermission": "Allow Uplift to access your photos for profile and workout images.",
           "cameraPermission": "Allow Uplift to use the camera to take workout photos."
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow Uplift to use the camera for workout and reaction photos."
         }
       ],
       [
