@@ -1,18 +1,19 @@
 import { router } from 'expo-router'
 import { useState } from 'react'
 import {
-    ActivityIndicator,
-    Alert,
-    KeyboardAvoidingView,
-    Platform,
-    Pressable,
-    ScrollView,
-    StyleSheet,
-    TextInput,
-    View,
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  TextInput,
+  View,
 } from 'react-native'
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 
+import AppleSignInButton from '@/components/social-auth-buttons/apple-sign-in-button'
 import GoogleSignInButton from '@/components/social-auth-buttons/google-sign-in-button'
 import { ThemedText } from '@/components/themed-text'
 import { ThemedView } from '@/components/themed-view'
@@ -140,10 +141,11 @@ export default function LoginScreen() {
 
         <View style={styles.orRow}>
           <View style={[styles.orLine, { backgroundColor: colors.tabBarBorder }]} />
-          <ThemedText style={[styles.orText, { color: colors.textMuted }]}>or</ThemedText>
+          <ThemedText style={[styles.orText, { color: colors.textMuted }]}>or continue with</ThemedText>
           <View style={[styles.orLine, { backgroundColor: colors.tabBarBorder }]} />
         </View>
 
+        <AppleSignInButton />
         <GoogleSignInButton />
 
         <View style={styles.footer}>

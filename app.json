@@ -33,13 +33,13 @@
         "expo-image-picker",
         {
           "photosPermission": "Allow Uplift to access your photos for profile and workout images.",
-          "cameraPermission": "Allow Uplift to use the camera to take workout photos."
+          "cameraPermission": "Allow Uplift to use the camera to capture workout progress photos and reaction selfies that you choose to share with friends and groups."
         }
       ],
       [
         "expo-camera",
         {
-          "cameraPermission": "Allow Uplift to use the camera for workout and reaction photos."
+          "cameraPermission": "Allow Uplift to use the camera to capture workout progress photos and reaction selfies shared in the app."
         }
       ],
       [

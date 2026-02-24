@@ -796,7 +796,12 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   avatarImage: { width: 100, height: 100 },
-  avatarInitials: { fontSize: 36, fontWeight: '800' },
+  avatarInitials: {
+    fontSize: 36,
+    fontWeight: '800',
+    lineHeight: 40,
+    textAlign: 'center',
+  },
   levelBadge: {
     flexDirection: 'row',
     alignItems: 'center',

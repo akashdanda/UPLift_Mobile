@@ -1,5 +1,5 @@
 import { AuthContext } from '@/hooks/use-auth-context'
-import { signInWithGoogle as doSignInWithGoogle } from '@/lib/auth-oauth'
+import { signInWithApple as doSignInWithApple, signInWithGoogle as doSignInWithGoogle } from '@/lib/auth-oauth'
 import {
   registerForPushNotificationsAsync,
   savePushTokenToProfile,
@@ -27,6 +27,10 @@ export default function AuthProvider({ children }: PropsWithChildren) {
 
   const signInWithGoogle = useCallback(async () => {
     return doSignInWithGoogle()
+  }, [])
+
+  const signInWithApple = useCallback(async () => {
+    return doSignInWithApple()
   }, [])
 
   const signOut = useCallback(async () => {
@@ -186,6 +190,7 @@ export default function AuthProvider({ children }: PropsWithChildren) {
         signIn,
         signUp,
         signInWithGoogle,
+        signInWithApple,
         signOut,
         resetPassword,
         updateProfile,

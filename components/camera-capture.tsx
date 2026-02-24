@@ -50,16 +50,13 @@ export function CameraCapture({
         <View style={styles.permissionContainer}>
           <Ionicons name="camera-outline" size={64} color="#fff" />
           <ThemedText style={styles.permissionText}>
-            Camera access is needed to take photos
+            Camera access is needed to capture workout photos and reaction selfies.
           </ThemedText>
           <Pressable
             onPress={requestPermission}
             style={[styles.permissionButton, { backgroundColor: colors.tint }]}
           >
             <ThemedText style={styles.permissionButtonText}>Grant Access</ThemedText>
-          </Pressable>
-          <Pressable onPress={onClose} style={styles.permissionCancel}>
-            <ThemedText style={styles.permissionCancelText}>Cancel</ThemedText>
           </Pressable>
         </View>
       </SafeAreaView>
@@ -274,13 +271,5 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '800',
-  },
-  permissionCancel: {
-    paddingVertical: 10,
-  },
-  permissionCancelText: {
-    color: 'rgba(255,255,255,0.6)',
-    fontSize: 14,
-    fontWeight: '600',
   },
 })

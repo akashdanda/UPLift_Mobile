@@ -1,7 +1,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons'
 import { router } from 'expo-router'
 import { useEffect, useState } from 'react'
-import { Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native'
+import { Alert, Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
 import { ThemedText } from '@/components/themed-text'
@@ -11,7 +11,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme'
 import { clearPushTokenFromProfile } from '@/lib/push-notifications'
 
 export default function SettingsScreen() {
-  const { profile, updateProfile } = useAuthContext()
+  const { profile, updateProfile, session } = useAuthContext()
   const colorScheme = useColorScheme()
   const colors = Colors[colorScheme ?? 'light']
 
@@ -73,6 +73,32 @@ export default function SettingsScreen() {
               thumbColor={notifications ? colors.tint : colors.textMuted}
             />
           </View>
+          <Pressable
+            style={[styles.row, styles.rowBorder, { borderBottomColor: colors.tabBarBorder }]}
+            onPress={() => {
+              if (!session) return
+              Alert.alert(
+                'Delete account',
+                'This will permanently delete your Uplift account and all associated data. This action cannot be undone.',
+                [
+                  { text: 'Cancel', style: 'cancel' },
+                  {
+                    text: 'Delete account',
+                    style: 'destructive',
+                    onPress: () => router.push('/delete-account'),
+                  },
+                ],
+              )
+            }}
+          >
+            <View style={styles.rowLeft}>
+              <Ionicons name="trash-outline" size={20} color="#EF4444" />
+              <ThemedText style={[styles.rowLabel, { color: '#EF4444', marginLeft: 12 }]}>
+                Delete account
+              </ThemedText>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+          </Pressable>
         </View>
       </ScrollView>
     </SafeAreaView>
