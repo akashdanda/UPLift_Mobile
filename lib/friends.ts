@@ -148,14 +148,12 @@ export async function getMutualFriendSuggestions(
     mutualCount.get(otherId)!.add(friendId)
   }
 
-  if (mutualCount.size === 0) return []
-
   // 4. Sort by mutual count descending, take top candidates
   const sorted = [...mutualCount.entries()]
     .sort((a, b) => b[1].size - a[1].size)
     .slice(0, limit)
 
-  const candidateIds = sorted.map(([id]) => id)
+  let candidateIds = sorted.map(([id]) => id)
 
   // 5. Check we don't already have pending requests with these people
   const { data: existingRows } = await supabase
@@ -174,9 +172,21 @@ export async function getMutualFriendSuggestions(
     alreadyConnected.add(row.requester_id === userId ? row.addressee_id : row.requester_id)
   }
 
-  // 6. Fetch profiles for remaining candidates
-  const finalIds = candidateIds.filter((id) => !alreadyConnected.has(id))
-  if (finalIds.length === 0) return []
+  // 6. Fetch profiles for remaining candidates. If there are none (small graph), fall back
+  //    to a generic suggestion list of active users you're not connected to yet.
+  let finalIds = candidateIds.filter((id) => !alreadyConnected.has(id))
+
+  if (finalIds.length === 0) {
+    const excludeIds = [userId, ...myFriendIds]
+    const { data: fallbackProfiles } = await supabase
+      .from('profiles')
+      .select('id, display_name, avatar_url, workouts_count')
+      .not('id', 'in', `(${excludeIds.join(',')})`)
+      .order('workouts_count', { ascending: false })
+      .limit(limit)
+    if (!fallbackProfiles?.length) return []
+    finalIds = (fallbackProfiles as ProfilePublic[]).map((p) => p.id)
+  }
 
   const { data: profiles } = await supabase
     .from('profiles')
@@ -192,7 +202,7 @@ export async function getMutualFriendSuggestions(
     .map((id) => {
       const profile = profileMap.get(id)
       if (!profile) return null
-      const mutuals = mutualCount.get(id)!
+      const mutuals = mutualCount.get(id) ?? new Set<string>()
       const mutualNames = [...mutuals].map((mid) => friendNameMap.get(mid) ?? 'Someone').slice(0, 3)
       return {
         ...profile,

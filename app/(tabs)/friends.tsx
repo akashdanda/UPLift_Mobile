@@ -352,12 +352,15 @@ export default function FriendsScreen() {
             <View style={[styles.listCard, { backgroundColor: colors.card, borderColor: colors.tabBarBorder }]}>
               {mutualSuggestions.map((suggestion) => {
                 const status = searchStatus[suggestion.id] ?? 'none'
+                const hasMutuals = suggestion.mutual_count >= 1 && suggestion.mutual_names?.length
                 const mutualText =
-                  suggestion.mutual_count === 1
-                    ? `${suggestion.mutual_names[0]} is a mutual`
-                    : suggestion.mutual_count === 2
-                      ? `${suggestion.mutual_names[0]} and ${suggestion.mutual_names[1]} are mutuals`
-                      : `${suggestion.mutual_names[0]} and ${suggestion.mutual_count - 1} other mutual${suggestion.mutual_count - 1 > 1 ? 's' : ''}`
+                  !hasMutuals
+                    ? null
+                    : suggestion.mutual_count === 1
+                      ? `${suggestion.mutual_names![0]} is a mutual`
+                      : suggestion.mutual_count === 2
+                        ? `${suggestion.mutual_names![0]} and ${suggestion.mutual_names![1]} are mutuals`
+                        : `${suggestion.mutual_names![0]} and ${suggestion.mutual_count - 1} other mutual${suggestion.mutual_count - 1 > 1 ? 's' : ''}`
                 return (
                   <View key={suggestion.id} style={[styles.friendRow, { borderBottomColor: colors.tabBarBorder }]}>
                     <Pressable
@@ -376,9 +379,11 @@ export default function FriendsScreen() {
                       <ThemedText style={[styles.resultName, { color: colors.text }]}>
                         {suggestion.display_name || 'Athlete'}
                       </ThemedText>
-                      <ThemedText style={[styles.resultMeta, { color: colors.textMuted }]}>
-                        {mutualText}
-                      </ThemedText>
+                      {mutualText != null && (
+                        <ThemedText style={[styles.resultMeta, { color: colors.textMuted }]}>
+                          {mutualText}
+                        </ThemedText>
+                      )}
                     </View>
                     {status === 'none' ? (
                       <Pressable
@@ -435,8 +440,7 @@ export default function FriendsScreen() {
                         {buddy.display_name || 'Athlete'}
                       </ThemedText>
                       <ThemedText style={[styles.resultMeta, { color: colors.textMuted }]}>
-                        {buddy.reason} • {buddy.workouts_count} workouts
-                        {buddy.streak > 0 ? ` • 🔥 ${buddy.streak}` : ''}
+                        {[buddy.reason && buddy.reason, typeof buddy.workouts_count === 'number' && buddy.workouts_count >= 0 && `${buddy.workouts_count} workouts`, buddy.streak > 0 && `🔥 ${buddy.streak}`].filter(Boolean).join(' • ')}
                       </ThemedText>
                     </View>
                     {status === 'none' ? (
