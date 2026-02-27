@@ -1,5 +1,6 @@
 // Supabase Edge Function: send daily reminder push notifications to users who haven't posted today.
 // Schedule via Supabase cron (e.g. 9:00 and 18:00 UTC) or call via HTTP.
+/// <reference path="./edge-runtime.d.ts" />
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send'
@@ -90,8 +91,9 @@ Deno.serve(async (req: Request) => {
     const userIdsWhoPosted = new Set((allWorkoutsToday ?? []).map((r: { user_id: string }) => r.user_id))
 
     const messages: { to: string; title: string; body: string }[] = []
-    for (const p of profiles) {
-      const token = (p as { expo_push_token: string }).expo_push_token
+    type ProfileRow = { id: string; expo_push_token: string | null }
+    for (const p of profiles as ProfileRow[]) {
+      const token = p.expo_push_token
       if (!token) continue
       if (postedTodayIds.has(p.id)) continue
       const friendIds = friendIdsByUser.get(p.id)
