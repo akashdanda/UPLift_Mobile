@@ -243,7 +243,9 @@ export default function FriendProfileScreen() {
                 {showAvatarImage ? (
                   <Image source={{ uri: profile.avatar_url! }} style={styles.avatarImage} />
                 ) : (
-                  <ThemedText style={[styles.avatarInitials, { color: colors.tint }]}>{initials}</ThemedText>
+                  <View style={styles.avatarInitialsWrap}>
+                    <ThemedText style={[styles.avatarInitials, { color: colors.tint }]}>{initials}</ThemedText>
+                  </View>
                 )}
               </View>
             </View>
@@ -663,6 +665,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 8,
+    overflow: 'hidden',
+    flexShrink: 0,
   },
   avatarWrap: {
     width: 86,
@@ -671,14 +675,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
+    flexShrink: 0,
   },
   avatarImage: {
     width: 86,
     height: 86,
   },
+  avatarInitialsWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 6,
+  },
   avatarInitials: {
     fontSize: 32,
     fontWeight: '800',
+    lineHeight: 38,
   },
   levelBadge: {
     flexDirection: 'row',

@@ -25,11 +25,10 @@ const BADGE_DEFS: Record<string, SpecialBadge> = {
 /**
  * Map of display_name (lowercased) → badge.
  * Add new users here as needed.
+ *
+ * Currently no users have the Developer badge; only Beta Tester mappings remain.
  */
 const USER_BADGES: Record<string, SpecialBadge> = {
-  'jonah chiss': BADGE_DEFS.developer,
-  'ash kash': BADGE_DEFS.developer,
-  'peter koppany': BADGE_DEFS.developer,
   'gabriel april': BADGE_DEFS.betaTester,
 }
 

@@ -210,7 +210,7 @@ export default function FriendsScreen() {
                     )}
                   </View>
                   <View style={styles.resultInfo}>
-                    <ThemedText style={[styles.resultName, { color: colors.text }]}>
+                    <ThemedText style={[styles.resultName, { color: colors.text }]} numberOfLines={1} ellipsizeMode="tail">
                       {p.display_name || 'No name'}
                     </ThemedText>
                     <ThemedText style={[styles.resultMeta, { color: colors.textMuted }]}>
@@ -261,7 +261,7 @@ export default function FriendsScreen() {
                     )}
                   </View>
                   <View style={styles.resultInfo}>
-                    <ThemedText style={[styles.resultName, { color: colors.text }]}>
+                    <ThemedText style={[styles.resultName, { color: colors.text }]} numberOfLines={1} ellipsizeMode="tail">
                       {requester.display_name || 'No name'}
                     </ThemedText>
                     <ThemedText style={[styles.resultMeta, { color: colors.textMuted }]}>Wants to be friends</ThemedText>
@@ -322,7 +322,7 @@ export default function FriendsScreen() {
                   )}
                 </View>
                 <View style={styles.resultInfo}>
-                  <ThemedText style={[styles.resultName, { color: colors.text }]}>
+                  <ThemedText style={[styles.resultName, { color: colors.text }]} numberOfLines={1} ellipsizeMode="tail">
                     {friend.display_name || 'No name'}
                   </ThemedText>
                   <ThemedText style={[styles.resultMeta, { color: colors.textMuted }]}>
@@ -376,7 +376,7 @@ export default function FriendsScreen() {
                       )}
                     </Pressable>
                     <View style={styles.resultInfo}>
-                      <ThemedText style={[styles.resultName, { color: colors.text }]}>
+                      <ThemedText style={[styles.resultName, { color: colors.text }]} numberOfLines={1} ellipsizeMode="tail">
                         {suggestion.display_name || 'Athlete'}
                       </ThemedText>
                       {mutualText != null && (
@@ -436,7 +436,7 @@ export default function FriendsScreen() {
                       )}
                     </Pressable>
                     <View style={styles.resultInfo}>
-                      <ThemedText style={[styles.resultName, { color: colors.text }]}>
+                      <ThemedText style={[styles.resultName, { color: colors.text }]} numberOfLines={1} ellipsizeMode="tail">
                         {buddy.display_name || 'Athlete'}
                       </ThemedText>
                       <ThemedText style={[styles.resultMeta, { color: colors.textMuted }]}>
@@ -507,7 +507,7 @@ export default function FriendsScreen() {
                     )}
                   </View>
                   <View style={styles.resultInfo}>
-                    <ThemedText style={[styles.resultName, { color: colors.text }]}>
+                    <ThemedText style={[styles.resultName, { color: colors.text }]} numberOfLines={1} ellipsizeMode="tail">
                       vs {opName || 'Opponent'}
                     </ThemedText>
                     <ThemedText style={[styles.resultMeta, { color: colors.textMuted }]}>
@@ -585,10 +585,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     overflow: 'hidden',
     marginRight: 12,
+    flexShrink: 0,
   },
   avatarSmallImage: { width: 44, height: 44 },
   avatarInitials: { fontSize: 15, fontWeight: '700' },
-  resultInfo: { flex: 1 },
+  resultInfo: { flex: 1, minWidth: 0 },
   resultName: { fontSize: 15, fontWeight: '700', letterSpacing: 0.1 },
   resultMeta: { fontSize: 12, marginTop: 2, fontWeight: '500', letterSpacing: 0.1 },
   addButton: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 10 },
