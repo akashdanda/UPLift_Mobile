@@ -1,0 +1,16 @@
+Copy this into App Store Connect → Your App Version → "App Review Information" → "Notes" (or Resolution Center reply):
+
+---
+
+Sign in with Apple has been added in this build. On the Login screen, you will see:
+- Email and Password fields
+- "SIGN IN" button
+- "or continue with" divider
+- "Sign in with Apple" button (black button)
+- "Continue with Google" button
+
+Please review the latest build (Build [X]) — the previous rejection screenshot showed an older version without Sign in with Apple. Thank you.
+
+---
+
+Replace [X] with your actual new build number (e.g. 10 or 11).
