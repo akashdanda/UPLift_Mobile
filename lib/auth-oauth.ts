@@ -1,16 +1,28 @@
+import { supabase } from '@/lib/supabase'
 import * as Linking from 'expo-linking'
 import * as WebBrowser from 'expo-web-browser'
-import { supabase } from '@/lib/supabase'
 
 /**
- * Get the redirect URL for OAuth. Add this exact URL to Supabase Dashboard:
- * Authentication → URL Configuration → Redirect URLs
+ * Get the redirect URL for OAuth.
+ *
+ * - In development (Expo Go / local), we use Linking.createURL so you can copy
+ *   the printed exp:// URL into Supabase → Auth → URL Configuration → Redirect URLs.
+ * - In production (TestFlight / App Store), we always use the native app scheme
+ *   so the OAuth flow returns to the standalone app, not Expo Go.
+ *
+ * Make sure BOTH of these are in Supabase Redirect URLs:
+ * - The exp://... URL you see in dev logs
+ * - uplift://auth/callback
  */
 export function getRedirectUrl(): string {
-  const url = Linking.createURL('auth/callback')
-  // When testing: check Metro/terminal for this log, then add this URL to Supabase → Auth → URL Configuration → Redirect URLs
-  if (__DEV__) console.log('[OAuth] Add this Redirect URL in Supabase:', url)
-  return url
+  if (__DEV__) {
+    const devUrl = Linking.createURL('auth/callback')
+    console.log('[OAuth] Dev redirect URL – add to Supabase Redirect URLs:', devUrl)
+    return devUrl
+  }
+
+  // Standalone / production builds use the app scheme defined in app.json ("uplift")
+  return 'uplift://auth/callback'
 }
 
 /**
