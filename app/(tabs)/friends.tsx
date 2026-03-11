@@ -46,7 +46,7 @@ function getInitials(displayName: string | null): string {
 }
 
 export default function FriendsScreen() {
-  const { session } = useAuthContext()
+  const { session, refreshProfile } = useAuthContext()
   const colorScheme = useColorScheme()
   const colors = Colors[colorScheme ?? 'light']
 
@@ -108,10 +108,12 @@ export default function FriendsScreen() {
     setActingId(addresseeId)
     const { error } = await sendFriendRequest(userId, addresseeId)
     setActingId(null)
-    if (error) Alert.alert('Error', error.message)
-    else {
+    if (error) {
+      Alert.alert('Error', error.message)
+    } else {
       setSearchStatus((prev) => ({ ...prev, [addresseeId]: 'pending_sent' }))
       load()
+      void refreshProfile()
     }
   }
 
@@ -120,8 +122,12 @@ export default function FriendsScreen() {
     setActingId(friendshipId)
     const { error } = await acceptFriendRequest(friendshipId, userId)
     setActingId(null)
-    if (error) Alert.alert('Error', error.message)
-    else load()
+    if (error) {
+      Alert.alert('Error', error.message)
+    } else {
+      load()
+      void refreshProfile()
+    }
   }
 
   const handleDecline = async (friendshipId: string) => {
@@ -129,8 +135,12 @@ export default function FriendsScreen() {
     setActingId(friendshipId)
     const { error } = await removeFriendship(friendshipId, userId)
     setActingId(null)
-    if (error) Alert.alert('Error', error.message)
-    else load()
+    if (error) {
+      Alert.alert('Error', error.message)
+    } else {
+      load()
+      void refreshProfile()
+    }
   }
 
   const handleUnfriend = (friend: FriendWithProfile) => {
@@ -143,8 +153,12 @@ export default function FriendsScreen() {
           setActingId(friend.id)
           const { error } = await removeFriendship(friend.friendship_id, userId)
           setActingId(null)
-          if (error) Alert.alert('Error', error.message)
-          else load()
+          if (error) {
+            Alert.alert('Error', error.message)
+          } else {
+            load()
+            void refreshProfile()
+          }
         },
       },
     ])
