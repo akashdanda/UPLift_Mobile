@@ -86,3 +86,26 @@ export async function clearPushTokenFromProfile(userId: string): Promise<{ error
     .eq('id', userId)
   return { error: error ? new Error(error.message) : null }
 }
+
+/**
+ * Fire-and-forget helper to send an out-of-app push for an in-app event
+ * (reaction, comment, group invite, duel update, etc).
+ *
+ * The Edge Function will respect notifications_enabled and missing tokens.
+ */
+export async function sendEventPush(
+  targetUserId: string,
+  body: string
+): Promise<void> {
+  try {
+    await supabase.functions.invoke('send-event-push', {
+      body: {
+        target_user_id: targetUserId,
+        title: 'Uplift',
+        body,
+      },
+    })
+  } catch {
+    // Best-effort only; ignore failures so UI isn't blocked
+  }
+}

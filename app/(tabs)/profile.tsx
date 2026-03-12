@@ -484,8 +484,8 @@ export default function ProfileScreen() {
                   // Green: posted that day
                   statusStyle = styles.calendarDayCompleted
                   isColored = true
-                } else if (isOnOrAfterSignup && (isToday || isPast) && hasAnyPreviousWorkout) {
-                  // Red: missed a day (had a streak going but didn't post)
+                } else if (isOnOrAfterSignup && isPast && hasAnyPreviousWorkout) {
+                  // Red: missed a previous day (had a streak going but didn't post)
                   statusStyle = styles.calendarDayMissed
                   isColored = true
                 }

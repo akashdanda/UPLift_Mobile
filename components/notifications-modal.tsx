@@ -84,6 +84,22 @@ function NotificationItem({
           title: `${notification.friend_display_name || 'A friend'} ${notification.activity_description || 'was active'}`,
           subtitle: 'Stay motivated!',
         }
+      case 'group_invite':
+        return {
+          icon: '👥',
+          title: `${notification.invited_by_name || 'Someone'} invited you to join ${
+            notification.group_name || 'a group'
+          }`,
+          subtitle: 'Tap to view your group invites',
+        }
+      case 'duel_update':
+        return {
+          icon: '⚔️',
+          title: notification.duel_status === 'pending'
+            ? `${notification.duel_opponent_name || 'A friend'} challenged you to a 1v1`
+            : `Your ${notification.duel_type === 'streak' ? 'streak' : 'workout'} challenge was updated`,
+          subtitle: 'Open your challenges to see the latest score',
+        }
       default:
         return { icon: '🔔', title: 'New notification', subtitle: '' }
     }

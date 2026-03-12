@@ -31,6 +31,7 @@ import { getUserAchievements } from '@/lib/achievements'
 import { getHighlightsForProfile } from '@/lib/highlights'
 import { getUserLevel } from '@/lib/levels'
 import { supabase } from '@/lib/supabase'
+import { getFriendshipStatus } from '@/lib/friends'
 import { ACHIEVEMENT_CATEGORIES, type UserAchievementWithDetails } from '@/types/achievement'
 import type { HighlightForProfile } from '@/types/highlight'
 import type { UserLevel } from '@/types/level'
@@ -62,6 +63,7 @@ export default function FriendProfileScreen() {
   const [selectedAchievement, setSelectedAchievement] = useState<UserAchievementWithDetails | null>(null)
   const [friendLevel, setFriendLevel] = useState<UserLevel | null>(null)
   const [reportModalVisible, setReportModalVisible] = useState(false)
+  const [isFriend, setIsFriend] = useState(false)
 
   // Calendar calculations
   const today = useMemo(() => new Date(), [])
@@ -148,6 +150,18 @@ export default function FriendProfileScreen() {
     getUserAchievements(id).then(setAchievements).catch(() => {})
     getUserLevel(id).then(setFriendLevel).catch(() => {})
   }, [id])
+
+  // Check friendship status so we only show the challenge button for friends
+  useEffect(() => {
+    if (!session || !id) return
+    getFriendshipStatus(session.user.id, id as string)
+      .then((status) => {
+        setIsFriend(status === 'friends')
+      })
+      .catch(() => {
+        setIsFriend(false)
+      })
+  }, [session, id])
 
   useEffect(() => {
     if (!id) return
@@ -277,14 +291,16 @@ export default function FriendProfileScreen() {
           )}
 
           {/* Action buttons */}
-          <View style={styles.actionButtonsRow}>
-            <Pressable
-              style={[styles.challengeButton, { backgroundColor: colors.tint }]}
-              onPress={() => router.push(`/create-duel?friendId=${id}` as Href)}
-            >
-              <ThemedText style={styles.challengeButtonText}>Challenge</ThemedText>
-            </Pressable>
-            {session && id !== session.user.id && (
+          {session && id !== session.user.id && (
+            <View style={styles.actionButtonsRow}>
+              {isFriend && (
+                <Pressable
+                  style={[styles.challengeButton, { backgroundColor: colors.tint }]}
+                  onPress={() => router.push(`/create-duel?friendId=${id}` as Href)}
+                >
+                  <ThemedText style={styles.challengeButtonText}>Challenge</ThemedText>
+                </Pressable>
+              )}
               <Pressable
                 style={[styles.reportButton, { borderColor: colors.textMuted }]}
                 onPress={() => setReportModalVisible(true)}
@@ -292,8 +308,8 @@ export default function FriendProfileScreen() {
                 <Ionicons name="flag-outline" size={16} color={colors.textMuted} />
                 <ThemedText style={[styles.reportButtonText, { color: colors.textMuted }]}>Report</ThemedText>
               </Pressable>
-            )}
-          </View>
+            </View>
+          )}
         </ThemedView>
 
         {/* Highlights */}
@@ -364,8 +380,8 @@ export default function FriendProfileScreen() {
                   // Green: posted that day
                   statusStyle = styles.calendarDayCompleted
                   isColored = true
-                } else if (isOnOrAfterSignup && (isToday || isPast) && hasAnyPreviousWorkout) {
-                  // Red: missed a day (had a streak going but didn't post)
+                } else if (isOnOrAfterSignup && isPast && hasAnyPreviousWorkout) {
+                  // Red: missed a previous day (had a streak going but didn't post)
                   statusStyle = styles.calendarDayMissed
                   isColored = true
                 }
