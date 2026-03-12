@@ -41,7 +41,7 @@ import { getFlashbacks, type FlashbackItem } from '@/lib/flashbacks';
 import { getFriends } from '@/lib/friends';
 import { computeXP, getLevelFromXP } from '@/lib/levels';
 import { getUnreadNotificationCount, markNotificationsAsRead } from '@/lib/notifications';
-import { addReaction, removeReaction } from '@/lib/reactions';
+import { addReaction, removeReaction, getReactionsForWorkouts } from '@/lib/reactions';
 import { getSocialNudges, type SocialNudge } from '@/lib/social-hooks';
 import { supabase } from '@/lib/supabase';
 import type { AchievementFeedPost } from '@/types/achievement';
@@ -129,6 +129,7 @@ export default function HomeScreen() {
   const colors = Colors[colorScheme ?? 'light'];
   const { session, profile } = useAuthContext();
   const [todayWorkout, setTodayWorkout] = useState<Workout | null>(null);
+  const [todayReactions, setTodayReactions] = useState<WorkoutReactionWithProfile[]>([]);
   const [feedItems, setFeedItems] = useState<FeedItem[]>([]);
   const [achievementPosts, setAchievementPosts] = useState<AchievementFeedPost[]>([]);
   const [flashbacks, setFlashbacks] = useState<FlashbackItem[]>([]);
@@ -526,7 +527,16 @@ export default function HomeScreen() {
         .eq('user_id', session.user.id)
         .eq('workout_date', today)
         .maybeSingle()
-        .then(({ data }) => setTodayWorkout((data as Workout) ?? null));
+        .then(async ({ data }) => {
+          const workout = (data as Workout) ?? null;
+          setTodayWorkout(workout);
+          if (workout) {
+            const reactionsMap = await getReactionsForWorkouts([workout.id]);
+            setTodayReactions(reactionsMap.get(workout.id) ?? []);
+          } else {
+            setTodayReactions([]);
+          }
+        });
       getFriendsWorkouts(session.user.id).then(setFeedItems);
       // Load flashbacks
       getFlashbacks(session.user.id).then(setFlashbacks);
@@ -782,6 +792,40 @@ export default function HomeScreen() {
                   </ThemedText>
                 </View>
               ) : null}
+              {todayReactions.length > 0 && (
+                <View style={[styles.reactionRow, { borderTopColor: colors.tint + '10', marginTop: 12 }]}>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.reactionBubbles}
+                  >
+                    {todayReactions.map((r) => (
+                      <View key={r.id} style={styles.reactionBubbleWrap}>
+                        <View style={styles.reactionBubble}>
+                          <View style={styles.reactionBubblePhotoWrap}>
+                            {r.reaction_image_url ? (
+                              <Image source={{ uri: r.reaction_image_url }} style={styles.reactionBubbleImage} />
+                            ) : (
+                              <View style={[styles.reactionBubblePlaceholder, { backgroundColor: colors.tint + '25' }]}>
+                                {r.avatar_url ? (
+                                  <Image source={{ uri: r.avatar_url }} style={styles.reactionBubbleImage} />
+                                ) : (
+                                  <ThemedText style={[styles.reactionBubbleInitials, { color: colors.tint }]}>
+                                    {getInitials(r.display_name)}
+                                  </ThemedText>
+                                )}
+                              </View>
+                            )}
+                          </View>
+                          <View style={styles.reactionEmojiBadge}>
+                            <ThemedText style={styles.reactionEmojiText}>{r.emoji}</ThemedText>
+                          </View>
+                        </View>
+                      </View>
+                    ))}
+                  </ScrollView>
+                </View>
+              )}
             </View>
           </View>
         )}
