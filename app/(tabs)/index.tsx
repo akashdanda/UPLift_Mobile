@@ -149,7 +149,7 @@ export default function HomeScreen() {
   // Reaction detail view modal
   const [viewReaction, setViewReaction] = useState<WorkoutReactionWithProfile | null>(null);
 
-  // Inline comments (Instagram-style: all comments visible + add comment on same card)
+  // Inline comments (Instagram-style: all comments visible + add comment / reply on same card)
   const [inlineCommentWorkoutId, setInlineCommentWorkoutId] = useState<string | null>(null);
   const [inlineCommentMessage, setInlineCommentMessage] = useState('');
   const [commentSubmittingWorkoutId, setCommentSubmittingWorkoutId] = useState<string | null>(null);
@@ -1025,27 +1025,47 @@ export default function HomeScreen() {
                   </View>
                   {/* Comments — Instagram-style: all comments visible + inline add */}
                   <View style={[styles.commentsSection, { borderTopColor: colors.tint + '10' }]}>
-                    {(item.comments ?? []).map((c) => (
-                      <View key={c.id} style={styles.commentRow}>
-                        <View style={[styles.commentAvatar, { backgroundColor: colors.tint + '20' }]}>
-                          {c.avatar_url ? (
-                            <Image source={{ uri: c.avatar_url }} style={styles.commentAvatarImage} />
-                          ) : (
-                            <ThemedText style={[styles.commentAvatarInitials, { color: colors.tint }]}>
-                              {getInitials(c.display_name)}
+                    {(item.comments ?? []).map((c) => {
+                      const isOwner = session?.user?.id === item.workout.user_id;
+                      return (
+                        <View key={c.id} style={styles.commentRow}>
+                          <View style={[styles.commentAvatar, { backgroundColor: colors.tint + '20' }]}>
+                            {c.avatar_url ? (
+                              <Image source={{ uri: c.avatar_url }} style={styles.commentAvatarImage} />
+                            ) : (
+                              <ThemedText style={[styles.commentAvatarInitials, { color: colors.tint }]}>
+                                {getInitials(c.display_name)}
+                              </ThemedText>
+                            )}
+                          </View>
+                          <View style={styles.commentBody}>
+                            <ThemedText type="defaultSemiBold" style={[styles.commentAuthor, { color: colors.text }]}>
+                              {c.display_name || 'Anonymous'}
                             </ThemedText>
-                          )}
+                            {c.message ? (
+                              <ThemedText style={[styles.commentText, { color: colors.text }]}>{c.message}</ThemedText>
+                            ) : null}
+                            {isOwner && (
+                              <Pressable
+                                style={styles.commentReplyBtn}
+                                onPress={() => {
+                                  const firstName =
+                                    (c.display_name || '')
+                                      .trim()
+                                      .split(/\s+/)[0] || 'friend';
+                                  setInlineCommentWorkoutId(item.workout.id);
+                                  setInlineCommentMessage(`@${firstName} `);
+                                }}
+                              >
+                                <ThemedText style={[styles.commentReplyText, { color: colors.textMuted }]}>
+                                  Reply
+                                </ThemedText>
+                              </Pressable>
+                            )}
+                          </View>
                         </View>
-                        <View style={styles.commentBody}>
-                          <ThemedText type="defaultSemiBold" style={[styles.commentAuthor, { color: colors.text }]}>
-                            {c.display_name || 'Anonymous'}
-                          </ThemedText>
-                          {c.message ? (
-                            <ThemedText style={[styles.commentText, { color: colors.text }]}>{c.message}</ThemedText>
-                          ) : null}
-                        </View>
-                      </View>
-                    ))}
+                      );
+                    })}
                     {session && (
                       <View style={styles.commentInlineRow}>
                         <TextInput
@@ -1617,6 +1637,8 @@ const styles = StyleSheet.create({
   commentBody: { flex: 1, minWidth: 0 },
   commentAuthor: { fontSize: 13, fontWeight: '800', marginBottom: 2, letterSpacing: 0.1 },
   commentText: { fontSize: 13, lineHeight: 19, letterSpacing: 0.15 },
+  commentReplyBtn: { marginTop: 4 },
+  commentReplyText: { fontSize: 12, fontWeight: '600' },
   commentGif: { width: 120, height: 90, borderRadius: 10, marginTop: 6 },
   commentInlineRow: {
     flexDirection: 'row',

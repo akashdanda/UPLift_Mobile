@@ -353,8 +353,16 @@ export default function GroupsScreen() {
                 return (
                   <View key={invite.id} style={[styles.inviteCard, { backgroundColor: colors.card, borderColor: colors.tint + '20' }]}>
                     <View style={styles.inviteCardTop}>
-                      <View style={[styles.inviteCardIcon, { backgroundColor: colors.tint + '15' }]}>
-                        <Ionicons name="mail-outline" size={20} color={colors.tint} />
+                      <View style={styles.inviteCardIcon}>
+                        {invite.group_avatar_url ? (
+                          <Image source={{ uri: invite.group_avatar_url }} style={styles.inviteCardAvatar} />
+                        ) : (
+                          <View style={[styles.inviteCardAvatar, { backgroundColor: colors.tint + '20' }]}>
+                            <ThemedText style={[styles.inviteCardAvatarInitials, { color: colors.tint }]}>
+                              {getGroupInitials(invite.group_name || 'Group')}
+                            </ThemedText>
+                          </View>
+                        )}
                       </View>
                       <View style={styles.inviteCardInfo}>
                         <ThemedText type="defaultSemiBold" style={[styles.inviteCardGroup, { color: colors.text }]} numberOfLines={1}>
@@ -626,7 +634,10 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
   },
+  inviteCardAvatar: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  inviteCardAvatarInitials: { fontSize: 16, fontWeight: '800' },
   inviteCardInfo: { flex: 1, minWidth: 0 },
   inviteCardGroup: { fontSize: 15, fontWeight: '800', letterSpacing: 0.1, marginBottom: 2 },
   inviteCardFrom: { fontSize: 12, fontWeight: '600', letterSpacing: 0.1 },

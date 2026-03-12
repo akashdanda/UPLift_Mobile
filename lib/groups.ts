@@ -415,6 +415,7 @@ export type GroupInvite = {
 
 export type GroupInviteWithDetails = GroupInvite & {
   group_name?: string
+  group_avatar_url?: string | null
   inviter_name?: string
 }
 
@@ -480,18 +481,24 @@ export async function getPendingGroupInvitesForUser(
   const inviterIds = [...new Set(invites.map((i) => i.invited_by))]
 
   const [{ data: groups }, { data: profiles }] = await Promise.all([
-    supabase.from('groups').select('id, name').in('id', groupIds),
+    supabase.from('groups').select('id, name, avatar_url').in('id', groupIds),
     supabase.from('profiles').select('id, display_name').in('id', inviterIds),
   ])
 
-  const groupMap = new Map((groups ?? []).map((g) => [g.id, g.name]))
+  const groupMap = new Map(
+    (groups ?? []).map((g: { id: string; name: string; avatar_url: string | null }) => [g.id, g])
+  )
   const profileMap = new Map((profiles ?? []).map((p) => [p.id, p.display_name]))
 
-  return (invites as GroupInvite[]).map((inv) => ({
-    ...inv,
-    group_name: groupMap.get(inv.group_id) ?? 'Unknown Group',
+  return (invites as GroupInvite[]).map((inv) => {
+    const g = groupMap.get(inv.group_id) as { name: string; avatar_url: string | null } | undefined
+    return {
+      ...inv,
+      group_name: g?.name ?? 'Unknown Group',
+      group_avatar_url: g?.avatar_url ?? null,
     inviter_name: profileMap.get(inv.invited_by) ?? 'Someone',
-  }))
+    }
+  })
 }
 
 /** Accept a group invite (adds user as member and updates invite status) */
