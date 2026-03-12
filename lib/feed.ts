@@ -20,12 +20,13 @@ export type FeedItem = {
 export async function getFriendsWorkouts(userId: string, limit = 30): Promise<FeedItem[]> {
   const friends = await getFriends(userId)
   const friendIds = friends.map((f) => f.id)
-  if (friendIds.length === 0) return []
+  const userAndFriendIds = [userId, ...friendIds]
+  if (userAndFriendIds.length === 0) return []
 
   const { data: workouts } = await supabase
     .from('workouts')
     .select('*')
-    .in('user_id', friendIds)
+    .in('user_id', userAndFriendIds)
     .order('workout_date', { ascending: false })
     .order('created_at', { ascending: false })
     .limit(limit)
