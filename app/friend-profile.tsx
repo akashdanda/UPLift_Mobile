@@ -57,6 +57,7 @@ export default function FriendProfileScreen() {
   const [profile, setProfile] = useState<Profile | null>(null)
   const [loading, setLoading] = useState(true)
   const [monthWorkoutDates, setMonthWorkoutDates] = useState<Set<string>>(new Set())
+  const [monthRestDates, setMonthRestDates] = useState<Set<string>>(new Set())
   const [highlights, setHighlights] = useState<HighlightForProfile[]>([])
   const [isImageModalVisible, setIsImageModalVisible] = useState(false)
   const [achievements, setAchievements] = useState<UserAchievementWithDetails[]>([])
@@ -101,7 +102,7 @@ export default function FriendProfileScreen() {
 
     const { data, error } = await supabase
       .from('workouts')
-      .select('workout_date')
+      .select('workout_date, workout_type')
       .eq('user_id', id)
       .gte('workout_date', start)
       .lte('workout_date', end)
@@ -109,13 +110,17 @@ export default function FriendProfileScreen() {
     if (error) return
 
     const dates = new Set<string>()
+    const restDates = new Set<string>()
     for (const row of data ?? []) {
-      const value = (row as { workout_date?: string | null }).workout_date
-      if (typeof value === 'string' && value.length >= 10) {
-        dates.add(value.slice(0, 10))
+      const r = row as { workout_date?: string | null; workout_type?: string | null }
+      if (typeof r.workout_date === 'string' && r.workout_date.length >= 10) {
+        const dateStr = r.workout_date.slice(0, 10)
+        dates.add(dateStr)
+        if (r.workout_type === 'rest') restDates.add(dateStr)
       }
     }
     setMonthWorkoutDates(dates)
+    setMonthRestDates(restDates)
   }, [id, year, month, daysInMonth])
 
   // Fetch profile
@@ -377,15 +382,16 @@ export default function FriendProfileScreen() {
                 let isColored = false
 
                 if (hasWorkout) {
-                  // Green: posted that day
-                  statusStyle = styles.calendarDayCompleted
+                  if (monthRestDates.has(iso)) {
+                    statusStyle = styles.calendarDayRest
+                  } else {
+                    statusStyle = styles.calendarDayCompleted
+                  }
                   isColored = true
                 } else if (isOnOrAfterSignup && isPast && hasAnyPreviousWorkout) {
-                  // Red: missed a previous day (had a streak going but didn't post)
                   statusStyle = styles.calendarDayMissed
                   isColored = true
                 }
-                // White: haven't posted yet (no streak, no post) - default neutral style
 
                 return (
                   <View key={iso} style={styles.calendarDayCell}>
@@ -411,6 +417,12 @@ export default function FriendProfileScreen() {
                 </ThemedText>
               </View>
               <View style={styles.calendarLegendItem}>
+                <View style={[styles.calendarLegendDot, styles.calendarDayRest]} />
+                <ThemedText style={[styles.calendarLegendLabel, { color: colors.textMuted }]}>
+                  Rest day
+                </ThemedText>
+              </View>
+              <View style={styles.calendarLegendItem}>
                 <View style={[styles.calendarLegendDot, styles.calendarDayMissed]} />
                 <ThemedText style={[styles.calendarLegendLabel, { color: colors.textMuted }]}>
                   Missed day
@@ -426,19 +438,37 @@ export default function FriendProfileScreen() {
             <ThemedText type="defaultSemiBold" style={[styles.statValue, { color: colors.tint }]}>
               {profile.workouts_count ?? 0}
             </ThemedText>
-            <ThemedText style={[styles.statLabel, { color: colors.textMuted }]}>Workouts</ThemedText>
+            <ThemedText style={[styles.statLabel, { color: colors.textMuted }]} numberOfLines={2}>
+              Workouts
+            </ThemedText>
+          </View>
+          <View style={[styles.statBox, { backgroundColor: colors.card }]}>
+            <ThemedText type="defaultSemiBold" style={[styles.statValue, { color: colors.tint }]}>
+              {profile.longest_streak ?? 0}
+            </ThemedText>
+            <ThemedText
+              style={[styles.statLabel, { color: colors.textMuted }]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+            >
+              Best streak
+            </ThemedText>
           </View>
           <View style={[styles.statBox, { backgroundColor: colors.card }]}>
             <ThemedText type="defaultSemiBold" style={[styles.statValue, { color: colors.tint }]}>
               {profile.streak ?? 0}
             </ThemedText>
-            <ThemedText style={[styles.statLabel, { color: colors.textMuted }]}>Streak</ThemedText>
+            <ThemedText style={[styles.statLabel, { color: colors.textMuted }]} numberOfLines={2}>
+              Streak
+            </ThemedText>
           </View>
           <View style={[styles.statBox, { backgroundColor: colors.card }]}>
             <ThemedText type="defaultSemiBold" style={[styles.statValue, { color: colors.tint }]}>
               {profile.groups_count ?? 0}
             </ThemedText>
-            <ThemedText style={[styles.statLabel, { color: colors.textMuted }]}>Groups</ThemedText>
+            <ThemedText style={[styles.statLabel, { color: colors.textMuted }]} numberOfLines={2}>
+              Groups
+            </ThemedText>
           </View>
         </View>
 
@@ -785,27 +815,32 @@ const styles = StyleSheet.create({
   },
   statsRow: {
     flexDirection: 'row',
-    gap: 12,
+    flexWrap: 'wrap',
+    gap: 10,
     marginBottom: 28,
   },
   statBox: {
     flex: 1,
-    padding: 16,
+    minWidth: 64,
+    paddingVertical: 14,
+    paddingHorizontal: 6,
     borderRadius: 14,
     alignItems: 'center',
+    justifyContent: 'center',
     borderWidth: 1,
   },
   statValue: {
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: '800',
     letterSpacing: -0.5,
   },
   statLabel: {
-    marginTop: 4,
-    fontSize: 10,
+    marginTop: 2,
+    fontSize: 9,
     fontWeight: '600',
-    letterSpacing: 0.5,
+    letterSpacing: 0.3,
     textTransform: 'uppercase',
+    textAlign: 'center',
   },
   highlightsSection: { marginBottom: 20 },
   highlightsScroll: { paddingHorizontal: 4, gap: 16, paddingRight: 20 },
@@ -868,6 +903,9 @@ const styles = StyleSheet.create({
   calendarDayCompleted: {
     backgroundColor: '#22c55e',
   },
+  calendarDayRest: {
+    backgroundColor: '#eab308',
+  },
   calendarDayMissed: {
     backgroundColor: '#ef4444',
   },
@@ -908,8 +946,8 @@ const styles = StyleSheet.create({
   },
   achievementsScroll: { paddingRight: 24, gap: 12 },
   achievementCard: {
-    width: 130,
-    padding: 14,
+    width: 118,
+    padding: 12,
     borderRadius: 16,
     alignItems: 'center',
     borderWidth: 1,
@@ -924,7 +962,7 @@ const styles = StyleSheet.create({
     overflow: 'visible',
   },
   achievementIcon: { fontSize: 26, lineHeight: 34 },
-  achievementName: { fontSize: 12, fontWeight: '700', textAlign: 'center', marginBottom: 8, lineHeight: 16 },
+  achievementName: { fontSize: 11, fontWeight: '700', textAlign: 'center', marginBottom: 8, lineHeight: 15, paddingHorizontal: 4 },
   progressBarOuter: { width: '100%', height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.08)', overflow: 'hidden' },
   progressBarInner: { height: '100%', borderRadius: 2 },
   unlockedBadge: { paddingVertical: 3, paddingHorizontal: 10, borderRadius: 8 },

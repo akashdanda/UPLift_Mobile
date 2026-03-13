@@ -4,12 +4,19 @@ import { supabase } from '@/lib/supabase'
 
 export type LeaderboardScope = 'global' | 'friends' | 'groups'
 
-/** Weights for unified points (adjust to tune leaderboard) */
+/** Point system: each friend +2, each group +1, each workout +5, competition win +20, workout missed -2, every 10 streak +50 */
 const POINTS = {
-  workout: 10,
-  streakMultiplier: 2, // Each streak day multiplies points by 2
-  competitionWin: 20,
+  perFriend: 2,
+  perGroup: 1,
+  perWorkout: 5,
+  perCompetitionWin: 20,
+  perWorkoutMissed: -2,
+  perStreakTier: 50,
 } as const
+
+function streakBonus(streak: number): number {
+  return Math.floor((streak ?? 0) / 10) * POINTS.perStreakTier
+}
 
 export type LeaderboardRow = {
   id: string
@@ -18,6 +25,8 @@ export type LeaderboardRow = {
   workouts_count: number
   streak: number
   competition_wins: number
+  friends_count: number
+  groups_count: number
   points: number
   rank: number
 }
@@ -26,17 +35,24 @@ function computePoints(row: {
   workouts_count: number
   streak: number
   competition_wins: number
+  friends_count: number
+  groups_count: number
+  workouts_missed?: number
 }): number {
-  // Base points from workouts and competition wins
-  const basePoints =
-    (row.workouts_count ?? 0) * POINTS.workout +
-    (row.competition_wins ?? 0) * POINTS.competitionWin
-
-  // Apply streak multiplier: each streak day = 2x multiplier (exponential)
-  // 0 streak = 1x, 1 streak = 2x, 2 streak = 4x, 3 streak = 8x, etc.
-  const streakMultiplier = row.streak > 0 ? Math.pow(POINTS.streakMultiplier, row.streak) : 1
-
-  return Math.round(basePoints * streakMultiplier)
+  const friends = row.friends_count ?? 0
+  const groups = row.groups_count ?? 0
+  const workouts = row.workouts_count ?? 0
+  const wins = row.competition_wins ?? 0
+  const missed = row.workouts_missed ?? 0
+  const streak = row.streak ?? 0
+  return (
+    friends * POINTS.perFriend +
+    groups * POINTS.perGroup +
+    workouts * POINTS.perWorkout +
+    wins * POINTS.perCompetitionWin +
+    missed * POINTS.perWorkoutMissed +
+    streakBonus(streak)
+  )
 }
 
 /** Current month bounds in UTC (YYYY-MM-DD and ISO timestamps) */
@@ -50,41 +66,6 @@ function getMonthBounds() {
     tsStart: start.toISOString(),
     tsEnd: end.toISOString(),
   }
-}
-
-/** Consecutive days with workouts counting back from today (capped to the month). */
-function computeStreak(workoutDates: string[], _dateEnd: string): number {
-  const set = new Set(workoutDates)
-  if (set.size === 0) return 0
-
-  // Start from today (UTC) — not from end-of-month which may be in the future
-  const now = new Date()
-  const todayStr = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-${String(now.getUTCDate()).padStart(2, '0')}`
-  const startFrom = todayStr < _dateEnd ? todayStr : _dateEnd
-
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(startFrom)
-  if (!match) return 0
-  let y = parseInt(match[1], 10)
-  let m = parseInt(match[2], 10) - 1
-  let day = parseInt(match[3], 10)
-  const endMonth = m
-  let streak = 0
-  while (true) {
-    const key = `${y}-${String(m + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-    if (!set.has(key)) break
-    streak++
-    day--
-    if (day < 1) {
-      m--
-      if (m < 0) {
-        m = 11
-        y--
-      }
-      day = new Date(Date.UTC(y, m + 1, 0)).getUTCDate()
-    }
-    if (m !== endMonth) break
-  }
-  return streak
 }
 
 /** Fetch leaderboard for the current month (resets every month). Returns top 50 + current user's row if not in top. */
@@ -177,17 +158,28 @@ export async function getLeaderboard(
 
   const { data: profiles } = await supabase
     .from('profiles')
-    .select('id, display_name, avatar_url')
+    .select('id, display_name, avatar_url, friends_count, groups_count, streak')
     .in('id', userIds)
 
-  const profileMap = new Map((profiles ?? []).map((p: { id: string }) => [p.id, p]))
+  const profileMap = new Map(
+    (profiles ?? []).map((p: { id: string; display_name: string | null; avatar_url: string | null; friends_count?: number; groups_count?: number; streak?: number }) => [p.id, p])
+  )
 
   const rows: Omit<LeaderboardRow, 'rank'>[] = userIds.map((id) => {
     const a = agg.get(id)!
-    const profile = profileMap.get(id) as { id: string; display_name: string | null; avatar_url: string | null } | undefined
+    const profile = profileMap.get(id) as {
+      id: string
+      display_name: string | null
+      avatar_url: string | null
+      friends_count?: number
+      groups_count?: number
+      streak?: number
+    } | undefined
     const workouts_count = a.workouts.length
-    const streak = computeStreak(a.workouts, dateEnd)
+    const streak = profile?.streak ?? 0
     const competition_wins = a.competition_wins
+    const friends_count = profile?.friends_count ?? 0
+    const groups_count = profile?.groups_count ?? 0
     return {
       id,
       display_name: profile?.display_name ?? null,
@@ -195,7 +187,15 @@ export async function getLeaderboard(
       workouts_count,
       streak,
       competition_wins,
-      points: computePoints({ workouts_count, streak, competition_wins }),
+      friends_count,
+      groups_count,
+      points: computePoints({
+        workouts_count,
+        streak,
+        competition_wins,
+        friends_count,
+        groups_count,
+      }),
     }
   })
 

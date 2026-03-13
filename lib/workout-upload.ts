@@ -12,10 +12,12 @@ function base64ToUint8Array(base64: string): Uint8Array {
 
 export async function uploadWorkoutImage(
   userId: string,
-  uri: string
+  uri: string,
+  suffix?: 'primary' | 'secondary'
 ): Promise<{ url: string } | { error: Error }> {
   try {
-    const filename = `workout-${Date.now()}.jpg`
+    const base = `workout-${Date.now()}`
+    const filename = suffix ? `${base}-${suffix}.jpg` : `${base}.jpg`
     const path = `${userId}/${filename}`
 
     const base64 = await readAsStringAsync(uri, { encoding: 'base64' })

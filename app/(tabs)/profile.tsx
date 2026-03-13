@@ -28,7 +28,7 @@ import {
   markAchievementNotified,
 } from '@/lib/achievements'
 import { getHighlightsForProfile } from '@/lib/highlights'
-import { computeXP, getLevelFromXP } from '@/lib/levels'
+import { getUserLevel } from '@/lib/levels'
 import { supabase } from '@/lib/supabase'
 import { ACHIEVEMENT_CATEGORIES, type UserAchievementWithDetails } from '@/types/achievement'
 import type { HighlightForProfile } from '@/types/highlight'
@@ -81,6 +81,7 @@ export default function ProfileScreen() {
   const showAvatarImage = avatarUrl && !avatarLoadError
 
   const [monthWorkoutDates, setMonthWorkoutDates] = useState<Set<string>>(new Set())
+  const [monthRestDates, setMonthRestDates] = useState<Set<string>>(new Set())
 
   // Highlights (Instagram-style)
   const [highlights, setHighlights] = useState<HighlightForProfile[]>([])
@@ -102,11 +103,10 @@ export default function ProfileScreen() {
     try {
       const data = await getUserAchievements(session.user.id)
       setAchievements(data)
-      // Compute level from profile stats + unlocked achievement count
-      if (profile) {
-        const unlockedCount = data.filter((a) => a.unlocked).length
-        const xp = computeXP(profile, unlockedCount)
-        setUserLevel(getLevelFromXP(xp))
+      // Level uses new point system (friends, groups, workouts, competition wins, streak)
+      if (session) {
+        const level = await getUserLevel(session.user.id)
+        setUserLevel(level)
       }
     } catch {
       // ignore
@@ -215,7 +215,7 @@ export default function ProfileScreen() {
 
     const { data, error } = await supabase
       .from('workouts')
-      .select('workout_date')
+      .select('workout_date, workout_type')
       .eq('user_id', session.user.id)
       .gte('workout_date', start)
       .lte('workout_date', end)
@@ -223,13 +223,17 @@ export default function ProfileScreen() {
     if (error) return
 
     const dates = new Set<string>()
+    const restDates = new Set<string>()
     for (const row of data ?? []) {
-      const value = (row as { workout_date?: string | null }).workout_date
-      if (typeof value === 'string' && value.length >= 10) {
-        dates.add(value.slice(0, 10))
+      const r = row as { workout_date?: string | null; workout_type?: string | null }
+      if (typeof r.workout_date === 'string' && r.workout_date.length >= 10) {
+        const dateStr = r.workout_date.slice(0, 10)
+        dates.add(dateStr)
+        if (r.workout_type === 'rest') restDates.add(dateStr)
       }
     }
     setMonthWorkoutDates(dates)
+    setMonthRestDates(restDates)
   }, [session, calendarYear, calendarMonth, daysInMonth])
 
   useEffect(() => {
@@ -256,6 +260,7 @@ export default function ProfileScreen() {
 
   const stats = [
     { value: profile?.workouts_count ?? 0, label: 'Workouts', color: colors.tint },
+    { value: profile?.longest_streak ?? 0, label: 'Best streak', color: colors.warm },
     { value: profile?.streak ?? 0, label: 'Streak', color: colors.warm },
     { value: profile?.groups_count ?? 0, label: 'Groups', color: colors.tint },
     { value: profile?.friends_count ?? 0, label: 'Friends', color: colors.tint },
@@ -357,16 +362,16 @@ export default function ProfileScreen() {
             <ThemedText style={[styles.bio, { color: colors.textMuted }]}>{profile.bio}</ThemedText>
           ) : null}
 
-          {/* XP progress bar */}
+          {/* Points progress bar */}
           {userLevel && (
             <View style={styles.xpSection}>
               <View style={styles.xpLabelRow}>
                 <ThemedText style={[styles.xpLabel, { color: colors.textMuted }]}>
-                  {userLevel.xp} XP
+                  {userLevel.xp} pts
                 </ThemedText>
                 {userLevel.nextLevel ? (
                   <ThemedText style={[styles.xpLabel, { color: colors.textMuted }]}>
-                    {userLevel.xpToNext} XP to {userLevel.nextLevel.emoji} {userLevel.nextLevel.title}
+                    {userLevel.xpToNext} pts to {userLevel.nextLevel.emoji} {userLevel.nextLevel.title}
                   </ThemedText>
                 ) : (
                   <ThemedText style={[styles.xpLabel, { color: userLevel.level.color }]}>
@@ -481,8 +486,11 @@ export default function ProfileScreen() {
                 let isColored = false
 
                 if (hasWorkout) {
-                  // Green: posted that day
-                  statusStyle = styles.calendarDayCompleted
+                  if (monthRestDates.has(iso)) {
+                    statusStyle = styles.calendarDayRest
+                  } else {
+                    statusStyle = styles.calendarDayCompleted
+                  }
                   isColored = true
                 } else if (isOnOrAfterSignup && isPast && hasAnyPreviousWorkout) {
                   // Red: missed a previous day (had a streak going but didn't post)
@@ -515,6 +523,12 @@ export default function ProfileScreen() {
                 </ThemedText>
               </View>
               <View style={styles.calendarLegendItem}>
+                <View style={[styles.calendarLegendDot, styles.calendarDayRest]} />
+                <ThemedText style={[styles.calendarLegendLabel, { color: colors.textMuted }]}>
+                  Rest day
+                </ThemedText>
+              </View>
+              <View style={styles.calendarLegendItem}>
                 <View style={[styles.calendarLegendDot, styles.calendarDayMissed]} />
                 <ThemedText style={[styles.calendarLegendLabel, { color: colors.textMuted }]}>
                   Missed day
@@ -528,7 +542,13 @@ export default function ProfileScreen() {
           {stats.map((s) => (
             <View key={s.label} style={[styles.statBox, { backgroundColor: colors.card }]}>
               <ThemedText style={[styles.statValue, { color: s.color }]}>{s.value}</ThemedText>
-              <ThemedText style={[styles.statLabel, { color: colors.textMuted }]}>{s.label}</ThemedText>
+              <ThemedText
+                style={[styles.statLabel, { color: colors.textMuted }]}
+                numberOfLines={s.label === 'Best streak' ? 1 : 2}
+                adjustsFontSizeToFit={s.label === 'Best streak'}
+              >
+                {s.label}
+              </ThemedText>
             </View>
           ))}
         </View>
@@ -843,12 +863,15 @@ const styles = StyleSheet.create({
   statsRow: { flexDirection: 'row', gap: 8, marginBottom: 28 },
   statBox: {
     flex: 1,
-    paddingVertical: 18,
+    paddingVertical: 14,
+    paddingHorizontal: 4,
     borderRadius: 14,
     alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'visible',
   },
-  statValue: { fontSize: 24, lineHeight: 32, fontWeight: '800', letterSpacing: -0.5 },
-  statLabel: { marginTop: 3, fontSize: 10, fontWeight: '600', letterSpacing: 0.5, textTransform: 'uppercase', opacity: 0.6 },
+  statValue: { fontSize: 22, lineHeight: 28, fontWeight: '800', letterSpacing: -0.5 },
+  statLabel: { marginTop: 2, fontSize: 9, fontWeight: '600', letterSpacing: 0, textTransform: 'uppercase', opacity: 0.6, textAlign: 'center' },
 
   highlightsSection: { marginBottom: 24 },
   highlightsScroll: { paddingHorizontal: 4, gap: 14, paddingRight: 20 },
@@ -879,8 +902,8 @@ const styles = StyleSheet.create({
   achievementsLoading: { paddingVertical: 24, alignItems: 'center' },
   achievementsScroll: { paddingRight: 24, gap: 12 },
   achievementCard: {
-    width: 130,
-    padding: 14,
+    width: 120,
+    padding: 12,
     borderRadius: 14,
     alignItems: 'center',
     borderWidth: 1,
@@ -895,7 +918,7 @@ const styles = StyleSheet.create({
     overflow: 'visible',
   },
   achievementIcon: { fontSize: 26, lineHeight: 34 },
-  achievementName: { fontSize: 11, fontWeight: '700', textAlign: 'center', marginBottom: 8, lineHeight: 15, letterSpacing: 0.2 },
+  achievementName: { fontSize: 11, fontWeight: '700', textAlign: 'center', marginBottom: 8, lineHeight: 15, letterSpacing: 0.2, paddingHorizontal: 4 },
   progressBarOuter: {
     width: '100%',
     height: 4,
@@ -1009,6 +1032,9 @@ const styles = StyleSheet.create({
   },
   calendarDayCompleted: {
     backgroundColor: '#22c55e',
+  },
+  calendarDayRest: {
+    backgroundColor: '#eab308',
   },
   calendarDayMissed: {
     backgroundColor: '#ef4444',

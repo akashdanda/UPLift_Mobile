@@ -17,7 +17,7 @@ export type LevelDefinition = {
   glowColor: string
 }
 
-/** Ordered from lowest → highest. The last entry has no upper bound. */
+/** Ordered from lowest → highest. Points: friend +2, group +1, workout +5, win +20, missed -2, every 10 streak +50. */
 export const LEVEL_TIERS: LevelDefinition[] = [
   {
     tier: 'bronze',
@@ -31,7 +31,7 @@ export const LEVEL_TIERS: LevelDefinition[] = [
     tier: 'silver',
     title: 'Silver',
     emoji: '🥈',
-    minXP: 50_000,       // ~1 week
+    minXP: 100,
     color: '#94A3B8',
     glowColor: '#94A3B830',
   },
@@ -39,7 +39,7 @@ export const LEVEL_TIERS: LevelDefinition[] = [
     tier: 'gold',
     title: 'Gold',
     emoji: '🥇',
-    minXP: 100_000,      // ~2 weeks
+    minXP: 250,
     color: '#EAB308',
     glowColor: '#EAB30830',
   },
@@ -47,7 +47,7 @@ export const LEVEL_TIERS: LevelDefinition[] = [
     tier: 'platinum',
     title: 'Platinum',
     emoji: '💎',
-    minXP: 200_000,      // ~1 month
+    minXP: 500,
     color: '#6366F1',
     glowColor: '#6366F130',
   },
@@ -55,7 +55,7 @@ export const LEVEL_TIERS: LevelDefinition[] = [
     tier: 'diamond',
     title: 'Diamond',
     emoji: '💠',
-    minXP: 375_000,      // ~3 months
+    minXP: 1_000,
     color: '#22D3EE',
     glowColor: '#22D3EE30',
   },
@@ -63,7 +63,7 @@ export const LEVEL_TIERS: LevelDefinition[] = [
     tier: 'master',
     title: 'Master',
     emoji: '⚜️',
-    minXP: 625_000,      // ~6 months
+    minXP: 2_000,
     color: '#EC4899',
     glowColor: '#EC489930',
   },
@@ -71,7 +71,7 @@ export const LEVEL_TIERS: LevelDefinition[] = [
     tier: 'legend',
     title: 'Legend',
     emoji: '👑',
-    minXP: 1_000_000,    // ~1 year
+    minXP: 4_000,
     color: '#F59E0B',
     glowColor: '#F59E0B30',
   },

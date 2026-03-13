@@ -6,6 +6,8 @@ export type Profile = {
   bio: string | null
   workouts_count: number
   streak: number
+  /** Longest consecutive workout streak ever (all time). */
+  longest_streak?: number
   groups_count: number
   friends_count?: number // added for leaderboard; run run-leaderboard-friends-count-in-dashboard.sql
   notifications_enabled: boolean
