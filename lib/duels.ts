@@ -14,6 +14,24 @@ export async function createDuel(
     return { duel: null, error: new Error("You can't challenge yourself") }
   }
 
+  // Only allow duels between users who are friends
+  const { data: friendship } = await supabase
+    .from('friendships')
+    .select('id, status')
+    .eq('status', 'accepted')
+    .or(
+      `and(requester_id.eq.${challengerId},addressee_id.eq.${opponentId}),and(requester_id.eq.${opponentId},addressee_id.eq.${challengerId})`
+    )
+    .limit(1)
+    .maybeSingle()
+
+  if (!friendship) {
+    return {
+      duel: null,
+      error: new Error('You can only start a challenge with someone on your friends list'),
+    }
+  }
+
   // Check no active/pending duel already exists between these two
   // Check both directions: A challenging B, or B challenging A
   const { data: existing } = await supabase

@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase'
+import { pushComment } from '@/lib/push-notifications'
 import type { WorkoutCommentWithProfile } from '@/types/comment'
 
 /** Fetch all comments for the given workout IDs, with commenter profile, ordered by created_at asc */
@@ -67,6 +68,21 @@ export async function addComment(
     .single()
 
   if (error) return { error }
+
+  try {
+    const { data: workout } = await supabase
+      .from('workouts')
+      .select('user_id')
+      .eq('id', workoutId)
+      .maybeSingle()
+    const ownerId = (workout as { user_id: string } | null)?.user_id
+    if (ownerId && ownerId !== userId) {
+      await pushComment(ownerId, userId)
+    }
+  } catch {
+    // best-effort
+  }
+
   return { ok: true, id: data.id }
 }
 

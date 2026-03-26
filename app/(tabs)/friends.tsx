@@ -61,6 +61,7 @@ export default function FriendsScreen() {
   const [buddySuggestions, setBuddySuggestions] = useState<BuddySuggestion[]>([])
   const [mutualSuggestions, setMutualSuggestions] = useState<MutualFriendSuggestion[]>([])
   const [activeDuels, setActiveDuels] = useState<DuelWithProfiles[]>([])
+  const [activeTab, setActiveTab] = useState<'friends' | 'challenges'>('friends')
 
   const userId = session?.user?.id ?? ''
 
@@ -73,9 +74,40 @@ export default function FriendsScreen() {
         setPending(p)
       })
       .finally(() => setLoading(false))
-    // Load suggestions & active duels
-    getMutualFriendSuggestions(userId, 10).then(setMutualSuggestions).catch(() => {})
-    getBuddySuggestions(userId, 5).then(setBuddySuggestions).catch(() => {})
+    getMutualFriendSuggestions(userId, 30)
+      .then(async (suggestions) => {
+        setMutualSuggestions(suggestions)
+        if (suggestions.length > 0) {
+          const statuses = await Promise.all(
+            suggestions.map((s) => getFriendshipStatus(userId, s.id))
+          )
+          setSearchStatus((prev) => {
+            const next = { ...prev }
+            suggestions.forEach((s, i) => {
+              next[s.id] = statuses[i]
+            })
+            return next
+          })
+        }
+      })
+      .catch(() => {})
+    getBuddySuggestions(userId, 5)
+      .then(async (buddies) => {
+        setBuddySuggestions(buddies)
+        if (buddies.length > 0) {
+          const statuses = await Promise.all(
+            buddies.map((b) => getFriendshipStatus(userId, b.id))
+          )
+          setSearchStatus((prev) => {
+            const next = { ...prev }
+            buddies.forEach((b, i) => {
+              next[b.id] = statuses[i]
+            })
+            return next
+          })
+        }
+      })
+      .catch(() => {})
     getUserDuels(userId, ['active', 'pending']).then(setActiveDuels).catch(() => {})
   }, [userId])
 
@@ -176,373 +208,471 @@ export default function FriendsScreen() {
         </ThemedText>
         <View style={{ width: 28 }} />
       </View>
+      {/* Internal tabs: Friends / Challenges */}
+      <View style={[styles.tabRow, { borderBottomColor: colors.tabBarBorder }]}>
+        <Pressable
+          style={[
+            styles.tabButton,
+            activeTab === 'friends' && { borderBottomColor: colors.tint, borderBottomWidth: 2 },
+          ]}
+          onPress={() => setActiveTab('friends')}
+        >
+          <ThemedText
+            style={[
+              styles.tabLabel,
+              { color: activeTab === 'friends' ? colors.tint : colors.textMuted },
+            ]}
+          >
+            Friends
+          </ThemedText>
+        </Pressable>
+        <Pressable
+          style={[
+            styles.tabButton,
+            activeTab === 'challenges' && { borderBottomColor: colors.tint, borderBottomWidth: 2 },
+          ]}
+          onPress={() => setActiveTab('challenges')}
+        >
+          <ThemedText
+            style={[
+              styles.tabLabel,
+              { color: activeTab === 'challenges' ? colors.tint : colors.textMuted },
+            ]}
+          >
+            Challenges
+          </ThemedText>
+        </Pressable>
+      </View>
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
-        {/* Add friend - FIRST PRIORITY */}
-        <ThemedText type="subtitle" style={[styles.sectionTitle, { color: colors.text }]}>
-          Add friend
-        </ThemedText>
-        <View style={styles.searchRow}>
-          <TextInput
-            style={[
-              styles.searchInput,
-              { backgroundColor: colors.card, color: colors.text, borderColor: colors.tabBarBorder },
-            ]}
-            placeholder="Search by display name"
-            placeholderTextColor={colors.textMuted}
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            onSubmitEditing={handleSearch}
-            returnKeyType="search"
-          />
-          <Pressable style={[styles.searchButton, { backgroundColor: colors.tint }]} onPress={handleSearch}>
-            <ThemedText style={styles.searchButtonText}>Search</ThemedText>
-          </Pressable>
-        </View>
-        {searching && (
-          <View style={styles.centeredRow}>
-            <ActivityIndicator size="small" color={colors.tint} />
-          </View>
-        )}
-        {searchResults.length > 0 && (
-          <View style={[styles.resultsCard, { backgroundColor: colors.card, borderColor: colors.tabBarBorder }]}>
-            {searchResults.map((p) => {
-              const status = searchStatus[p.id] ?? 'none'
-              return (
-                <View key={p.id} style={[styles.resultRow, { borderBottomColor: colors.tabBarBorder }]}>
-                  <View style={[styles.avatarSmall, { backgroundColor: colors.tint + '25' }]}>
-                    {p.avatar_url ? (
-                      <Image source={{ uri: p.avatar_url }} style={styles.avatarSmallImage} />
-                    ) : (
-                      <ThemedText style={[styles.avatarInitials, { color: colors.tint }]}>
-                        {getInitials(p.display_name)}
-                      </ThemedText>
-                    )}
-                  </View>
-                  <View style={styles.resultInfo}>
-                    <ThemedText style={[styles.resultName, { color: colors.text }]} numberOfLines={1} ellipsizeMode="tail">
-                      {p.display_name || 'No name'}
-                    </ThemedText>
-                    <ThemedText style={[styles.resultMeta, { color: colors.textMuted }]}>
-                      {p.workouts_count} workouts
-                    </ThemedText>
-                  </View>
-                  {status === 'none' && (
-                    <Pressable
-                      style={[styles.addButton, { backgroundColor: colors.tint }]}
-                      onPress={() => handleAddFriend(p.id)}
-                      disabled={actingId === p.id}
-                    >
-                      {actingId === p.id ? (
-                        <ActivityIndicator color="#fff" size="small" />
-                      ) : (
-                        <ThemedText style={styles.addButtonText}>Add</ThemedText>
-                      )}
-                    </Pressable>
-                  )}
-                  {status === 'pending_sent' && (
-                    <ThemedText style={[styles.statusLabel, { color: colors.textMuted }]}>Pending</ThemedText>
-                  )}
-                  {status === 'friends' && (
-                    <ThemedText style={[styles.statusLabel, { color: colors.tint }]}>Friends</ThemedText>
-                  )}
-                </View>
-              )
-            })}
-          </View>
-        )}
-
-        {/* Pending requests - SECOND PRIORITY */}
-        {pending.length > 0 && (
+        {activeTab === 'friends' ? (
           <>
+            {/* Add friend - FIRST PRIORITY */}
             <ThemedText type="subtitle" style={[styles.sectionTitle, { color: colors.text }]}>
-              Pending requests
+              Add friend
             </ThemedText>
-            <View style={[styles.listCard, { backgroundColor: colors.card, borderColor: colors.tabBarBorder }]}>
-              {pending.map(({ friendship, requester }) => (
-                <View key={friendship.id} style={[styles.friendRow, { borderBottomColor: colors.tabBarBorder }]}>
-                  <View style={[styles.avatarSmall, { backgroundColor: colors.tint + '25' }]}>
-                    {requester.avatar_url ? (
-                      <Image source={{ uri: requester.avatar_url }} style={styles.avatarSmallImage} />
-                    ) : (
-                      <ThemedText style={[styles.avatarInitials, { color: colors.tint }]}>
-                        {getInitials(requester.display_name)}
-                      </ThemedText>
-                    )}
-                  </View>
-                  <View style={styles.resultInfo}>
-                    <ThemedText style={[styles.resultName, { color: colors.text }]} numberOfLines={1} ellipsizeMode="tail">
-                      {requester.display_name || 'No name'}
-                    </ThemedText>
-                    <ThemedText style={[styles.resultMeta, { color: colors.textMuted }]}>Wants to be friends</ThemedText>
-                  </View>
-                  <View style={styles.pendingActions}>
-                    <Pressable
-                      style={[styles.acceptButton, { backgroundColor: colors.tint }]}
-                      onPress={() => handleAccept(friendship.id)}
-                      disabled={actingId === friendship.id}
-                    >
-                      {actingId === friendship.id ? (
-                        <ActivityIndicator color="#fff" size="small" />
-                      ) : (
-                        <ThemedText style={styles.addButtonText}>Accept</ThemedText>
-                      )}
-                    </Pressable>
-                    <Pressable
-                      style={[styles.declineButton, { borderColor: colors.tabBarBorder }]}
-                      onPress={() => handleDecline(friendship.id)}
-                      disabled={actingId === friendship.id}
-                    >
-                      <ThemedText style={[styles.declineButtonText, { color: colors.textMuted }]}>Decline</ThemedText>
-                    </Pressable>
-                  </View>
-                </View>
-              ))}
-            </View>
-          </>
-        )}
-
-        {/* Friends list - MAIN CONTENT */}
-        <ThemedText type="subtitle" style={[styles.sectionTitle, { color: colors.text }]}>
-          Friends
-        </ThemedText>
-        {loading && friends.length === 0 ? (
-          <View style={styles.centeredRow}>
-            <ActivityIndicator size="small" color={colors.tint} />
-          </View>
-        ) : friends.length === 0 ? (
-          <ThemedText style={[styles.emptyHint, { color: colors.textMuted }]}>
-            No friends yet. Search by display name to add someone.
-          </ThemedText>
-        ) : (
-          <View style={[styles.listCard, { backgroundColor: colors.card, borderColor: colors.tabBarBorder }]}>
-            {friends.map((friend) => (
-              <Pressable
-                key={friend.id}
-                style={[styles.friendRow, { borderBottomColor: colors.tabBarBorder }]}
-                onPress={() => router.push(`/friend-profile?id=${friend.id}`)}
-              >
-                <View style={[styles.avatarSmall, { backgroundColor: colors.tint + '25' }]}>
-                  {friend.avatar_url ? (
-                    <Image source={{ uri: friend.avatar_url }} style={styles.avatarSmallImage} />
-                  ) : (
-                    <ThemedText style={[styles.avatarInitials, { color: colors.tint }]}>
-                      {getInitials(friend.display_name)}
-                    </ThemedText>
-                  )}
-                </View>
-                <View style={styles.resultInfo}>
-                  <ThemedText style={[styles.resultName, { color: colors.text }]} numberOfLines={1} ellipsizeMode="tail">
-                    {friend.display_name || 'No name'}
-                  </ThemedText>
-                  <ThemedText style={[styles.resultMeta, { color: colors.textMuted }]}>
-                    {friend.workouts_count} workouts
-                  </ThemedText>
-                </View>
-                <Pressable
-                  style={[styles.removeButton, { borderColor: colors.tabBarBorder }]}
-                  onPress={(e) => {
-                    e.stopPropagation()
-                    handleUnfriend(friend)
-                  }}
-                  disabled={actingId === friend.id}
-                >
-                  <ThemedText style={[styles.removeButtonText, { color: colors.textMuted }]}>Remove</ThemedText>
-                </Pressable>
+            <View style={styles.searchRow}>
+              <TextInput
+                style={[
+                  styles.searchInput,
+                  { backgroundColor: colors.card, color: colors.text, borderColor: colors.tabBarBorder },
+                ]}
+                placeholder="Search by display name"
+                placeholderTextColor={colors.textMuted}
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                onSubmitEditing={handleSearch}
+                returnKeyType="search"
+              />
+              <Pressable style={[styles.searchButton, { backgroundColor: colors.tint }]} onPress={handleSearch}>
+                <ThemedText style={styles.searchButtonText}>Search</ThemedText>
               </Pressable>
-            ))}
-          </View>
-        )}
-        {/* Suggested Friends (Mutuals) - DISCOVERY */}
-        {mutualSuggestions.length > 0 && (
-          <>
+            </View>
+            {searching && (
+              <View style={styles.centeredRow}>
+                <ActivityIndicator size="small" color={colors.tint} />
+              </View>
+            )}
+            {searchResults.length > 0 && (
+              <View style={[styles.resultsCard, { backgroundColor: colors.card, borderColor: colors.tabBarBorder }]}>
+                {searchResults.map((p) => {
+                  const status = searchStatus[p.id] ?? 'none'
+                  return (
+                    <View key={p.id} style={[styles.resultRow, { borderBottomColor: colors.tabBarBorder }]}>
+                      <View style={[styles.avatarSmall, { backgroundColor: colors.tint + '25' }]}>
+                        {p.avatar_url ? (
+                          <Image source={{ uri: p.avatar_url }} style={styles.avatarSmallImage} />
+                        ) : (
+                          <ThemedText style={[styles.avatarInitials, { color: colors.tint }]}>
+                            {getInitials(p.display_name)}
+                          </ThemedText>
+                        )}
+                      </View>
+                      <View style={styles.resultInfo}>
+                        <ThemedText style={[styles.resultName, { color: colors.text }]} numberOfLines={1} ellipsizeMode="tail">
+                          {p.display_name || 'No name'}
+                        </ThemedText>
+                        <ThemedText style={[styles.resultMeta, { color: colors.textMuted }]}>
+                          {p.workouts_count} workouts
+                        </ThemedText>
+                      </View>
+                      {status === 'none' && (
+                        <Pressable
+                          style={[styles.addButton, { backgroundColor: colors.tint }]}
+                          onPress={() => handleAddFriend(p.id)}
+                          disabled={actingId === p.id}
+                        >
+                          {actingId === p.id ? (
+                            <ActivityIndicator color="#fff" size="small" />
+                          ) : (
+                            <ThemedText style={styles.addButtonText}>Add</ThemedText>
+                          )}
+                        </Pressable>
+                      )}
+                      {status === 'pending_sent' && (
+                        <ThemedText style={[styles.statusLabel, { color: colors.textMuted }]}>Pending</ThemedText>
+                      )}
+                      {status === 'friends' && (
+                        <ThemedText style={[styles.statusLabel, { color: colors.tint }]}>Friends</ThemedText>
+                      )}
+                    </View>
+                  )
+                })}
+              </View>
+            )}
+
+            {/* Pending requests - SECOND PRIORITY */}
+            {pending.length > 0 && (
+              <>
+                <ThemedText type="subtitle" style={[styles.sectionTitle, { color: colors.text }]}>
+                  Pending requests
+                </ThemedText>
+                <View style={[styles.listCard, { backgroundColor: colors.card, borderColor: colors.tabBarBorder }]}>
+                  {pending.map(({ friendship, requester }) => (
+                    <View key={friendship.id} style={[styles.friendRow, { borderBottomColor: colors.tabBarBorder }]}>
+                      <View style={[styles.avatarSmall, { backgroundColor: colors.tint + '25' }]}>
+                        {requester.avatar_url ? (
+                          <Image source={{ uri: requester.avatar_url }} style={styles.avatarSmallImage} />
+                        ) : (
+                          <ThemedText style={[styles.avatarInitials, { color: colors.tint }]}>
+                            {getInitials(requester.display_name)}
+                          </ThemedText>
+                        )}
+                      </View>
+                      <View style={styles.resultInfo}>
+                        <ThemedText style={[styles.resultName, { color: colors.text }]} numberOfLines={1} ellipsizeMode="tail">
+                          {requester.display_name || 'No name'}
+                        </ThemedText>
+                        <ThemedText style={[styles.resultMeta, { color: colors.textMuted }]}>
+                          Wants to be friends
+                        </ThemedText>
+                      </View>
+                      <View style={styles.pendingActions}>
+                        <Pressable
+                          style={[styles.acceptButton, { backgroundColor: colors.tint }]}
+                          onPress={() => handleAccept(friendship.id)}
+                          disabled={actingId === friendship.id}
+                        >
+                          {actingId === friendship.id ? (
+                            <ActivityIndicator color="#fff" size="small" />
+                          ) : (
+                            <ThemedText style={styles.addButtonText}>Accept</ThemedText>
+                          )}
+                        </Pressable>
+                        <Pressable
+                          style={[styles.declineButton, { borderColor: colors.tabBarBorder }]}
+                          onPress={() => handleDecline(friendship.id)}
+                          disabled={actingId === friendship.id}
+                        >
+                          <ThemedText style={[styles.declineButtonText, { color: colors.textMuted }]}>
+                            Decline
+                          </ThemedText>
+                        </Pressable>
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              </>
+            )}
+
+            {/* Friends list - MAIN CONTENT */}
             <ThemedText type="subtitle" style={[styles.sectionTitle, { color: colors.text }]}>
-              People you may know
+              Friends
             </ThemedText>
-            <View style={[styles.listCard, { backgroundColor: colors.card, borderColor: colors.tabBarBorder }]}>
-              {mutualSuggestions.map((suggestion) => {
-                const status = searchStatus[suggestion.id] ?? 'none'
-                const hasMutuals = suggestion.mutual_count >= 1 && suggestion.mutual_names?.length
-                const mutualText =
-                  !hasMutuals
-                    ? null
-                    : suggestion.mutual_count === 1
-                      ? `${suggestion.mutual_names![0]} is a mutual`
-                      : suggestion.mutual_count === 2
-                        ? `${suggestion.mutual_names![0]} and ${suggestion.mutual_names![1]} are mutuals`
-                        : `${suggestion.mutual_names![0]} and ${suggestion.mutual_count - 1} other mutual${suggestion.mutual_count - 1 > 1 ? 's' : ''}`
-                return (
-                  <View key={suggestion.id} style={[styles.friendRow, { borderBottomColor: colors.tabBarBorder }]}>
-                    <Pressable
-                      style={[styles.avatarSmall, { backgroundColor: colors.tint + '25' }]}
-                      onPress={() => router.push(`/friend-profile?id=${suggestion.id}`)}
-                    >
-                      {suggestion.avatar_url ? (
-                        <Image source={{ uri: suggestion.avatar_url }} style={styles.avatarSmallImage} />
+            {loading && friends.length === 0 ? (
+              <View style={styles.centeredRow}>
+                <ActivityIndicator size="small" color={colors.tint} />
+              </View>
+            ) : friends.length === 0 ? (
+              <ThemedText style={[styles.emptyHint, { color: colors.textMuted }]}>
+                No friends yet. Search by display name to add someone.
+              </ThemedText>
+            ) : (
+              <View style={[styles.listCard, { backgroundColor: colors.card, borderColor: colors.tabBarBorder }]}>
+                {friends.map((friend) => (
+                  <Pressable
+                    key={friend.id}
+                    style={[styles.friendRow, { borderBottomColor: colors.tabBarBorder }]}
+                    onPress={() => router.push(`/friend-profile?id=${friend.id}`)}
+                  >
+                    <View style={[styles.avatarSmall, { backgroundColor: colors.tint + '25' }]}>
+                      {friend.avatar_url ? (
+                        <Image source={{ uri: friend.avatar_url }} style={styles.avatarSmallImage} />
                       ) : (
                         <ThemedText style={[styles.avatarInitials, { color: colors.tint }]}>
-                          {getInitials(suggestion.display_name)}
-                        </ThemedText>
-                      )}
-                    </Pressable>
-                    <View style={styles.resultInfo}>
-                      <ThemedText style={[styles.resultName, { color: colors.text }]} numberOfLines={1} ellipsizeMode="tail">
-                        {suggestion.display_name || 'Athlete'}
-                      </ThemedText>
-                      {mutualText != null && (
-                        <ThemedText style={[styles.resultMeta, { color: colors.textMuted }]}>
-                          {mutualText}
+                          {getInitials(friend.display_name)}
                         </ThemedText>
                       )}
                     </View>
-                    {status === 'none' ? (
-                      <Pressable
-                        style={[styles.addButton, { backgroundColor: colors.tint }]}
-                        onPress={() => handleAddFriend(suggestion.id)}
-                        disabled={actingId === suggestion.id}
-                      >
-                        {actingId === suggestion.id ? (
-                          <ActivityIndicator color="#fff" size="small" />
-                        ) : (
-                          <ThemedText style={styles.addButtonText}>Add</ThemedText>
-                        )}
-                      </Pressable>
-                    ) : status === 'pending_sent' ? (
-                      <ThemedText style={[styles.statusLabel, { color: colors.textMuted }]}>Pending</ThemedText>
-                    ) : status === 'friends' ? (
-                      <ThemedText style={[styles.statusLabel, { color: colors.tint }]}>Friends</ThemedText>
-                    ) : null}
-                  </View>
-                )
-              })}
-            </View>
-          </>
-        )}
-
-        {/* Workout Buddy Suggestions - DISCOVERY */}
-        {buddySuggestions.length > 0 && (
-          <>
-            <ThemedText type="subtitle" style={[styles.sectionTitle, { color: colors.text }]}>
-              Workout Buddies
-            </ThemedText>
-            <ThemedText style={[styles.buddyHint, { color: colors.textMuted }]}>
-              Users with similar goals and schedules
-            </ThemedText>
-            <View style={[styles.listCard, { backgroundColor: colors.card, borderColor: colors.tabBarBorder }]}>
-              {buddySuggestions.map((buddy) => {
-                const status = searchStatus[buddy.id] ?? 'none'
-                return (
-                  <View key={buddy.id} style={[styles.friendRow, { borderBottomColor: colors.tabBarBorder }]}>
-                    <Pressable
-                      style={[styles.avatarSmall, { backgroundColor: colors.tint + '25' }]}
-                      onPress={() => router.push(`/friend-profile?id=${buddy.id}`)}
-                    >
-                      {buddy.avatar_url ? (
-                        <Image source={{ uri: buddy.avatar_url }} style={styles.avatarSmallImage} />
-                      ) : (
-                        <ThemedText style={[styles.avatarInitials, { color: colors.tint }]}>
-                          {getInitials(buddy.display_name)}
-                        </ThemedText>
-                      )}
-                    </Pressable>
                     <View style={styles.resultInfo}>
                       <ThemedText style={[styles.resultName, { color: colors.text }]} numberOfLines={1} ellipsizeMode="tail">
-                        {buddy.display_name || 'Athlete'}
+                        {friend.display_name || 'No name'}
                       </ThemedText>
                       <ThemedText style={[styles.resultMeta, { color: colors.textMuted }]}>
-                        {[buddy.reason && buddy.reason, typeof buddy.workouts_count === 'number' && buddy.workouts_count >= 0 && `${buddy.workouts_count} workouts`, buddy.streak > 0 && `🔥 ${buddy.streak}`].filter(Boolean).join(' • ')}
+                        {friend.workouts_count} workouts
                       </ThemedText>
                     </View>
-                    {status === 'none' ? (
-                      <Pressable
-                        style={[styles.addButton, { backgroundColor: colors.tint }]}
-                        onPress={() => handleAddFriend(buddy.id)}
-                        disabled={actingId === buddy.id}
-                      >
-                        {actingId === buddy.id ? (
-                          <ActivityIndicator color="#fff" size="small" />
-                        ) : (
-                          <ThemedText style={styles.addButtonText}>Add</ThemedText>
-                        )}
-                      </Pressable>
-                    ) : status === 'pending_sent' ? (
-                      <ThemedText style={[styles.statusLabel, { color: colors.textMuted }]}>Pending</ThemedText>
-                    ) : status === 'friends' ? (
-                      <ThemedText style={[styles.statusLabel, { color: colors.tint }]}>Friends</ThemedText>
-                    ) : null}
-                  </View>
-                )
-              })}
-            </View>
-          </>
-        )}
-
-        {/* Challenges Section - SECONDARY PRIORITY */}
-        <View style={[styles.challengesDivider, { backgroundColor: colors.tabBarBorder }]} />
-        <ThemedText type="subtitle" style={[styles.sectionTitle, { color: colors.text }]}>
-          Challenges
-        </ThemedText>
-
-        {/* Challenge button */}
-        <Pressable
-          style={[styles.challengeMainBtn, { backgroundColor: colors.tint }]}
-          onPress={() => router.push('/create-duel')}
-        >
-          <Ionicons name="flash" size={18} color="#fff" />
-          <ThemedText style={styles.challengeMainBtnText}>Start a 1v1 Challenge</ThemedText>
-        </Pressable>
-
-        {/* Active Duels */}
-        {activeDuels.length > 0 ? (
-          <View style={[styles.listCard, { backgroundColor: colors.card, borderColor: colors.tabBarBorder }]}>
-            {activeDuels.map((duel) => {
-              const iAmChallenger = duel.challenger_id === userId
-              const opName = iAmChallenger ? duel.opponent_display_name : duel.challenger_display_name
-              const opAvatar = iAmChallenger ? duel.opponent_avatar_url : duel.challenger_avatar_url
-              const myScore = iAmChallenger ? duel.challenger_score : duel.opponent_score
-              const theirScore = iAmChallenger ? duel.opponent_score : duel.challenger_score
-              return (
-                <Pressable
-                  key={duel.id}
-                  style={[styles.friendRow, { borderBottomColor: colors.tabBarBorder }]}
-                  onPress={() => router.push(`/duel-detail?id=${duel.id}`)}
-                >
-                  <View style={[styles.avatarSmall, { backgroundColor: colors.tint + '25' }]}>
-                    {opAvatar ? (
-                      <Image source={{ uri: opAvatar }} style={styles.avatarSmallImage} />
-                    ) : (
-                      <ThemedText style={[styles.avatarInitials, { color: colors.tint }]}>
-                        {getInitials(opName)}
+                    <Pressable
+                      style={[styles.removeButton, { borderColor: colors.tabBarBorder }]}
+                      onPress={(e) => {
+                        e.stopPropagation()
+                        handleUnfriend(friend)
+                      }}
+                      disabled={actingId === friend.id}
+                    >
+                      <ThemedText style={[styles.removeButtonText, { color: colors.textMuted }]}>
+                        Remove
                       </ThemedText>
-                    )}
-                  </View>
-                  <View style={styles.resultInfo}>
-                    <ThemedText style={[styles.resultName, { color: colors.text }]} numberOfLines={1} ellipsizeMode="tail">
-                      vs {opName || 'Opponent'}
-                    </ThemedText>
-                    <ThemedText style={[styles.resultMeta, { color: colors.textMuted }]}>
-                      {duel.status === 'pending'
-                        ? (duel.opponent_id === userId ? 'Waiting for your response' : 'Waiting for response…')
-                        : `${myScore} - ${theirScore} • ${duel.type === 'workout_count' ? 'Workouts' : 'Streak'}`}
-                    </ThemedText>
-                  </View>
-                  <View style={[styles.duelStatusBadge, { backgroundColor: duel.status === 'pending' ? '#EAB308' + '20' : colors.tint + '20' }]}>
-                    <ThemedText style={[styles.duelStatusText, { color: duel.status === 'pending' ? '#EAB308' : colors.tint }]}>
-                      {duel.status === 'pending' ? 'Pending' : 'Active'}
-                    </ThemedText>
-                  </View>
-                </Pressable>
-              )
-            })}
-          </View>
+                    </Pressable>
+                  </Pressable>
+                ))}
+              </View>
+            )}
+
+            {/* Suggested Friends (Mutuals) - DISCOVERY */}
+            {mutualSuggestions.some((s) => (searchStatus[s.id] ?? 'none') === 'none') && (
+              <>
+                <ThemedText type="subtitle" style={[styles.sectionTitle, { color: colors.text }]}>
+                  People you may know
+                </ThemedText>
+                <View
+                  style={[styles.listCard, { backgroundColor: colors.card, borderColor: colors.tabBarBorder }]}
+                >
+                  {mutualSuggestions.filter((s) => (searchStatus[s.id] ?? 'none') === 'none').slice(0, 10).map((suggestion) => {
+                    const status = searchStatus[suggestion.id] ?? 'none'
+                    const hasMutuals = suggestion.mutual_count >= 1 && suggestion.mutual_names?.length
+                    const mutualText =
+                      !hasMutuals
+                        ? null
+                        : suggestion.mutual_count === 1
+                          ? `${suggestion.mutual_names![0]} is a mutual`
+                          : suggestion.mutual_count === 2
+                            ? `${suggestion.mutual_names![0]} and ${suggestion.mutual_names![1]} are mutuals`
+                            : `${suggestion.mutual_names![0]} and ${
+                                suggestion.mutual_count - 1
+                              } other mutual${suggestion.mutual_count - 1 > 1 ? 's' : ''}`
+                    return (
+                      <View
+                        key={suggestion.id}
+                        style={[styles.friendRow, { borderBottomColor: colors.tabBarBorder }]}
+                      >
+                        <Pressable
+                          style={[styles.avatarSmall, { backgroundColor: colors.tint + '25' }]}
+                          onPress={() => router.push(`/friend-profile?id=${suggestion.id}`)}
+                        >
+                          {suggestion.avatar_url ? (
+                            <Image source={{ uri: suggestion.avatar_url }} style={styles.avatarSmallImage} />
+                          ) : (
+                            <ThemedText style={[styles.avatarInitials, { color: colors.tint }]}>
+                              {getInitials(suggestion.display_name)}
+                            </ThemedText>
+                          )}
+                        </Pressable>
+                        <View style={styles.resultInfo}>
+                          <ThemedText
+                            style={[styles.resultName, { color: colors.text }]}
+                            numberOfLines={1}
+                            ellipsizeMode="tail"
+                          >
+                            {suggestion.display_name || 'Athlete'}
+                          </ThemedText>
+                          {mutualText != null && (
+                            <ThemedText style={[styles.resultMeta, { color: colors.textMuted }]}>
+                              {mutualText}
+                            </ThemedText>
+                          )}
+                        </View>
+                        {status === 'none' ? (
+                          <Pressable
+                            style={[styles.addButton, { backgroundColor: colors.tint }]}
+                            onPress={() => handleAddFriend(suggestion.id)}
+                            disabled={actingId === suggestion.id}
+                          >
+                            {actingId === suggestion.id ? (
+                              <ActivityIndicator color="#fff" size="small" />
+                            ) : (
+                              <ThemedText style={styles.addButtonText}>Add</ThemedText>
+                            )}
+                          </Pressable>
+                        ) : status === 'pending_sent' ? (
+                          <ThemedText style={[styles.statusLabel, { color: colors.textMuted }]}>
+                            Pending
+                          </ThemedText>
+                        ) : status === 'friends' ? (
+                          <ThemedText style={[styles.statusLabel, { color: colors.tint }]}>
+                            Friends
+                          </ThemedText>
+                        ) : null}
+                      </View>
+                    )
+                  })}
+                </View>
+              </>
+            )}
+
+            {/* Workout Buddy Suggestions - DISCOVERY */}
+            {buddySuggestions.some((b) => (searchStatus[b.id] ?? 'none') === 'none') && (
+              <>
+                <ThemedText type="subtitle" style={[styles.sectionTitle, { color: colors.text }]}>
+                  Workout Buddies
+                </ThemedText>
+                <ThemedText style={[styles.buddyHint, { color: colors.textMuted }]}>
+                  Users with similar goals and schedules
+                </ThemedText>
+                <View
+                  style={[styles.listCard, { backgroundColor: colors.card, borderColor: colors.tabBarBorder }]}
+                >
+                  {buddySuggestions.filter((b) => (searchStatus[b.id] ?? 'none') === 'none').map((buddy) => {
+                    const status = searchStatus[buddy.id] ?? 'none'
+                    return (
+                      <View key={buddy.id} style={[styles.friendRow, { borderBottomColor: colors.tabBarBorder }]}>
+                        <Pressable
+                          style={[styles.avatarSmall, { backgroundColor: colors.tint + '25' }]}
+                          onPress={() => router.push(`/friend-profile?id=${buddy.id}`)}
+                        >
+                          {buddy.avatar_url ? (
+                            <Image source={{ uri: buddy.avatar_url }} style={styles.avatarSmallImage} />
+                          ) : (
+                            <ThemedText style={[styles.avatarInitials, { color: colors.tint }]}>
+                              {getInitials(buddy.display_name)}
+                            </ThemedText>
+                          )}
+                        </Pressable>
+                        <View style={styles.resultInfo}>
+                          <ThemedText
+                            style={[styles.resultName, { color: colors.text }]}
+                            numberOfLines={1}
+                            ellipsizeMode="tail"
+                          >
+                            {buddy.display_name || 'Athlete'}
+                          </ThemedText>
+                          <ThemedText style={[styles.resultMeta, { color: colors.textMuted }]}>
+                            {[
+                              buddy.reason && buddy.reason,
+                              typeof buddy.workouts_count === 'number' &&
+                                buddy.workouts_count >= 0 &&
+                                `${buddy.workouts_count} workouts`,
+                              buddy.streak > 0 && `🔥 ${buddy.streak}`,
+                            ]
+                              .filter(Boolean)
+                              .join(' • ')}
+                          </ThemedText>
+                        </View>
+                        {status === 'none' ? (
+                          <Pressable
+                            style={[styles.addButton, { backgroundColor: colors.tint }]}
+                            onPress={() => handleAddFriend(buddy.id)}
+                            disabled={actingId === buddy.id}
+                          >
+                            {actingId === buddy.id ? (
+                              <ActivityIndicator color="#fff" size="small" />
+                            ) : (
+                              <ThemedText style={styles.addButtonText}>Add</ThemedText>
+                            )}
+                          </Pressable>
+                        ) : status === 'pending_sent' ? (
+                          <ThemedText style={[styles.statusLabel, { color: colors.textMuted }]}>
+                            Pending
+                          </ThemedText>
+                        ) : status === 'friends' ? (
+                          <ThemedText style={[styles.statusLabel, { color: colors.tint }]}>
+                            Friends
+                          </ThemedText>
+                        ) : null}
+                      </View>
+                    )
+                  })}
+                </View>
+              </>
+            )}
+          </>
         ) : (
-          <ThemedText style={[styles.emptyHint, { color: colors.textMuted }]}>
-            No active challenges. Start one above!
-          </ThemedText>
+          <>
+            {/* Challenges Tab */}
+            <ThemedText type="subtitle" style={[styles.sectionTitle, { color: colors.text }]}>
+              Challenges
+            </ThemedText>
+
+            {/* Challenge button */}
+            <Pressable
+              style={[styles.challengeMainBtn, { backgroundColor: colors.tint }]}
+              onPress={() => router.push('/create-duel')}
+            >
+              <Ionicons name="flash" size={18} color="#fff" />
+              <ThemedText style={styles.challengeMainBtnText}>Start a 1v1 Challenge</ThemedText>
+            </Pressable>
+
+            {/* Active Duels */}
+            {activeDuels.length > 0 ? (
+              <View style={[styles.listCard, { backgroundColor: colors.card, borderColor: colors.tabBarBorder }]}>
+                {activeDuels.map((duel) => {
+                  const iAmChallenger = duel.challenger_id === userId
+                  const opName = iAmChallenger ? duel.opponent_display_name : duel.challenger_display_name
+                  const opAvatar = iAmChallenger ? duel.opponent_avatar_url : duel.challenger_avatar_url
+                  const myScore = iAmChallenger ? duel.challenger_score : duel.opponent_score
+                  const theirScore = iAmChallenger ? duel.opponent_score : duel.challenger_score
+                  return (
+                    <Pressable
+                      key={duel.id}
+                      style={[styles.friendRow, { borderBottomColor: colors.tabBarBorder }]}
+                      onPress={() => router.push(`/duel-detail?id=${duel.id}`)}
+                    >
+                      <View style={[styles.avatarSmall, { backgroundColor: colors.tint + '25' }]}>
+                        {opAvatar ? (
+                          <Image source={{ uri: opAvatar }} style={styles.avatarSmallImage} />
+                        ) : (
+                          <ThemedText style={[styles.avatarInitials, { color: colors.tint }]}>
+                            {getInitials(opName)}
+                          </ThemedText>
+                        )}
+                      </View>
+                      <View style={styles.resultInfo}>
+                        <ThemedText
+                          style={[styles.resultName, { color: colors.text }]}
+                          numberOfLines={1}
+                          ellipsizeMode="tail"
+                        >
+                          vs {opName || 'Opponent'}
+                        </ThemedText>
+                        <ThemedText style={[styles.resultMeta, { color: colors.textMuted }]}>
+                          {duel.status === 'pending'
+                            ? duel.opponent_id === userId
+                              ? 'Waiting for your response'
+                              : 'Waiting for response…'
+                            : `${myScore} - ${theirScore} • ${
+                                duel.type === 'workout_count' ? 'Workouts' : 'Streak'
+                              }`}
+                        </ThemedText>
+                      </View>
+                      <View
+                        style={[
+                          styles.duelStatusBadge,
+                          { backgroundColor: (duel.status === 'pending' ? '#EAB308' : colors.tint) + '20' },
+                        ]}
+                      >
+                        <ThemedText
+                          style={[
+                            styles.duelStatusText,
+                            { color: duel.status === 'pending' ? '#EAB308' : colors.tint },
+                          ]}
+                        >
+                          {duel.status === 'pending' ? 'Pending' : 'Active'}
+                        </ThemedText>
+                      </View>
+                    </Pressable>
+                  )
+                })}
+              </View>
+            ) : (
+              <ThemedText style={[styles.emptyHint, { color: colors.textMuted }]}>
+                No active challenges. Start one above!
+              </ThemedText>
+            )}
+          </>
         )}
       </ScrollView>
     </SafeAreaView>
@@ -561,6 +691,24 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   topBarTitle: { fontSize: 24, fontWeight: '800', letterSpacing: -0.3 },
+  tabRow: {
+    flexDirection: 'row',
+    paddingHorizontal: 24,
+    paddingTop: 8,
+    paddingBottom: 4,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  tabButton: {
+    flex: 1,
+    alignItems: 'center',
+    paddingBottom: 8,
+  },
+  tabLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
+  },
   scrollView: { flex: 1 },
   scrollContent: { padding: 24, paddingBottom: 40 },
   sectionTitle: { marginBottom: 14 },

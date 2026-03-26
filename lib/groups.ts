@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase'
+import { pushGroupInvite } from '@/lib/push-notifications'
 import type { Group, GroupMemberWithProfile, GroupMessage, GroupRole } from '@/types/group'
 
 export type { GroupMemberWithProfile, GroupMessage, GroupRole }
@@ -341,33 +342,96 @@ export async function getGroupMembers(groupId: string): Promise<GroupMemberWithP
     .from('group_members')
     .select('*')
     .eq('group_id', groupId)
-    .order('points', { ascending: false })
     .order('joined_at', { ascending: true })
 
   if (!members?.length) return []
 
   const userIds = members.map((m) => m.user_id)
-  const { data: profiles } = await supabase
-    .from('profiles')
-    .select('id, display_name, avatar_url, workouts_count')
-    .in('id', userIds)
+
+  const now = new Date()
+  const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))
+  const monthEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0, 23, 59, 59, 999))
+  const dateStart = monthStart.toISOString().slice(0, 10)
+  const dateEnd = monthEnd.toISOString().slice(0, 10)
+  const tsStart = monthStart.toISOString()
+  const tsEnd = monthEnd.toISOString()
+
+  const [{ data: profiles }, { data: workouts }, { data: friendships }, { data: groupJoins }] = await Promise.all([
+    supabase
+      .from('profiles')
+      .select('id, display_name, avatar_url')
+      .in('id', userIds),
+    supabase
+      .from('workouts')
+      .select('user_id, workout_date')
+      .in('user_id', userIds)
+      .gte('workout_date', dateStart)
+      .lte('workout_date', dateEnd),
+    supabase
+      .from('friendships')
+      .select('requester_id, addressee_id')
+      .eq('status', 'accepted')
+      .gte('created_at', tsStart)
+      .lte('created_at', tsEnd),
+    supabase
+      .from('group_members')
+      .select('user_id')
+      .in('user_id', userIds)
+      .gte('joined_at', tsStart)
+      .lte('joined_at', tsEnd),
+  ])
 
   const profileMap = new Map(
-    (profiles ?? []).map((p: { id: string; display_name: string | null; avatar_url: string | null; workouts_count: number }) => [
-      p.id,
-      p,
-    ])
+    (profiles ?? []).map((p: { id: string; display_name: string | null; avatar_url: string | null }) => [p.id, p])
   )
 
-  return members.map((m) => {
+  const userIdSet = new Set(userIds)
+
+  const workoutCounts = new Map<string, number>()
+  const seenDates = new Map<string, Set<string>>()
+  for (const w of (workouts ?? []) as { user_id: string; workout_date: string }[]) {
+    const seen = seenDates.get(w.user_id) ?? new Set()
+    if (!seen.has(w.workout_date)) {
+      seen.add(w.workout_date)
+      seenDates.set(w.user_id, seen)
+      workoutCounts.set(w.user_id, (workoutCounts.get(w.user_id) ?? 0) + 1)
+    }
+  }
+
+  const friendsAdded = new Map<string, number>()
+  for (const f of (friendships ?? []) as { requester_id: string; addressee_id: string }[]) {
+    if (userIdSet.has(f.requester_id))
+      friendsAdded.set(f.requester_id, (friendsAdded.get(f.requester_id) ?? 0) + 1)
+    if (userIdSet.has(f.addressee_id))
+      friendsAdded.set(f.addressee_id, (friendsAdded.get(f.addressee_id) ?? 0) + 1)
+  }
+
+  const groupsJoined = new Map<string, number>()
+  for (const g of (groupJoins ?? []) as { user_id: string }[]) {
+    groupsJoined.set(g.user_id, (groupsJoined.get(g.user_id) ?? 0) + 1)
+  }
+
+  const POINTS_PER_WORKOUT = 5
+  const POINTS_PER_FRIEND = 2
+  const POINTS_PER_GROUP = 1
+
+  const result = members.map((m) => {
     const profile = profileMap.get(m.user_id)
+    const wc = workoutCounts.get(m.user_id) ?? 0
+    const fa = friendsAdded.get(m.user_id) ?? 0
+    const gj = groupsJoined.get(m.user_id) ?? 0
+    const pts = wc * POINTS_PER_WORKOUT + fa * POINTS_PER_FRIEND + gj * POINTS_PER_GROUP
     return {
       ...m,
+      points: pts,
       display_name: profile?.display_name ?? null,
       avatar_url: profile?.avatar_url ?? null,
-      workouts_count: profile?.workouts_count ?? 0,
+      workouts_count: wc,
     }
   }) as GroupMemberWithProfile[]
+
+  result.sort((a, b) => b.points - a.points)
+  return result
 }
 
 /** Get group messages */
@@ -415,6 +479,7 @@ export type GroupInvite = {
 
 export type GroupInviteWithDetails = GroupInvite & {
   group_name?: string
+  group_avatar_url?: string | null
   inviter_name?: string
 }
 
@@ -450,6 +515,13 @@ export async function inviteToGroup(
   })
 
   if (error) return { error }
+
+  try {
+    const { data: grp } = await supabase.from('groups').select('name').eq('id', groupId).maybeSingle()
+    const groupName = (grp as { name: string } | null)?.name ?? 'a group'
+    await pushGroupInvite(inviteeId, inviterId, groupName)
+  } catch { /* best-effort */ }
+
   return { error: null }
 }
 
@@ -480,18 +552,24 @@ export async function getPendingGroupInvitesForUser(
   const inviterIds = [...new Set(invites.map((i) => i.invited_by))]
 
   const [{ data: groups }, { data: profiles }] = await Promise.all([
-    supabase.from('groups').select('id, name').in('id', groupIds),
+    supabase.from('groups').select('id, name, avatar_url').in('id', groupIds),
     supabase.from('profiles').select('id, display_name').in('id', inviterIds),
   ])
 
-  const groupMap = new Map((groups ?? []).map((g) => [g.id, g.name]))
+  const groupMap = new Map(
+    (groups ?? []).map((g: { id: string; name: string; avatar_url: string | null }) => [g.id, g])
+  )
   const profileMap = new Map((profiles ?? []).map((p) => [p.id, p.display_name]))
 
-  return (invites as GroupInvite[]).map((inv) => ({
-    ...inv,
-    group_name: groupMap.get(inv.group_id) ?? 'Unknown Group',
+  return (invites as GroupInvite[]).map((inv) => {
+    const g = groupMap.get(inv.group_id) as { name: string; avatar_url: string | null } | undefined
+    return {
+      ...inv,
+      group_name: g?.name ?? 'Unknown Group',
+      group_avatar_url: g?.avatar_url ?? null,
     inviter_name: profileMap.get(inv.invited_by) ?? 'Someone',
-  }))
+    }
+  })
 }
 
 /** Accept a group invite (adds user as member and updates invite status) */

@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase'
 import { uploadReactionImage } from '@/lib/reaction-upload'
+import { pushReaction } from '@/lib/push-notifications'
 import type { WorkoutReactionWithProfile } from '@/types/reaction'
 
 /** Fetch all reactions for the given workout IDs, with reactor profile info */
@@ -77,6 +78,19 @@ export async function addReaction(
     )
 
     if (error) return { error }
+    try {
+      const { data: workout } = await supabase
+        .from('workouts')
+        .select('user_id')
+        .eq('id', workoutId)
+        .maybeSingle()
+      const ownerId = (workout as { user_id: string } | null)?.user_id
+      if (ownerId && ownerId !== userId) {
+        await pushReaction(ownerId, userId, emoji)
+      }
+    } catch {
+      // ignore
+    }
     return { ok: true }
   } catch (e) {
     return { error: e instanceof Error ? e : new Error('Failed to add reaction') }

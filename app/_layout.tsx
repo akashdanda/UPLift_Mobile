@@ -6,6 +6,7 @@ import 'react-native-reanimated'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 
 import { SplashScreenController } from '@/components/splash-screen-controller'
+import { RequiredUpdateGate } from '@/components/required-update-gate'
 
 import { useAuthContext } from '@/hooks/use-auth-context'
 import { useColorScheme } from '@/hooks/use-color-scheme'
@@ -112,6 +113,7 @@ export default function RootLayout() {
         <ThemeProvider value={colorScheme === 'dark' ? UpliftDark : UpliftLight}>
           <AuthProvider>
             <SplashScreenController />
+            <RequiredUpdateGate />
             <RootNavigator />
             <StatusBar style="auto" />
           </AuthProvider>

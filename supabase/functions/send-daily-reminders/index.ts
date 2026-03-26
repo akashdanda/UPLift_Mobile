@@ -10,32 +10,14 @@ function getTodayUTC(): string {
   return d.toISOString().slice(0, 10)
 }
 
-function getHoursLeftUntil4AMUTC(): number {
-  const now = new Date()
-  const tomorrow = new Date(Date.UTC(
-    now.getUTCFullYear(),
-    now.getUTCMonth(),
-    now.getUTCDate() + 1,
-    4, 0, 0, 0
-  ))
-  const ms = tomorrow.getTime() - now.getTime()
-  return ms > 0 ? Math.floor(ms / (60 * 60 * 1000)) : 0
-}
 
-function getMessage(hasPostedToday: boolean, friendsPostedCount: number, hoursLeft: number): string {
-  if (hasPostedToday) return ''
-  if (hoursLeft > 0 && hoursLeft <= 3) {
-    return hoursLeft <= 1
-      ? "1 hour left to post today. Don't fall behind."
-      : `${hoursLeft} hours left to post today. Don't fall behind.`
+function getMessage(): string {
+  const now = new Date()
+  const hour = now.getUTCHours()
+  if (hour < 22) {
+    return "Don't forget to log your workout today!"
   }
-  if (friendsPostedCount >= 1) {
-    const n = friendsPostedCount
-    const verb = n === 1 ? 'has' : 'have'
-    const word = n === 1 ? 'workout' : 'workouts'
-    return `${n} of your friends ${verb} already logged their ${word} today. Don't fall behind.`
-  }
-  return 'Post daily — log a workout to keep your streak.'
+  return "You still haven't worked out today. Don't break your streak!"
 }
 
 Deno.serve(async (req: Request) => {
@@ -45,7 +27,6 @@ Deno.serve(async (req: Request) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
     const today = getTodayUTC()
-    const hoursLeft = getHoursLeftUntil4AMUTC()
 
     const { data: profiles } = await supabase
       .from('profiles')
@@ -69,26 +50,7 @@ Deno.serve(async (req: Request) => {
 
     const postedTodayIds = new Set((workoutsToday ?? []).map((r: { user_id: string }) => r.user_id))
 
-    const { data: friendships } = await supabase
-      .from('friendships')
-      .select('requester_id, addressee_id')
-      .eq('status', 'accepted')
-
-    const friendIdsByUser = new Map<string, Set<string>>()
-    for (const f of friendships ?? []) {
-      const a = (f as { requester_id: string; addressee_id: string }).requester_id
-      const b = (f as { requester_id: string; addressee_id: string }).addressee_id
-      if (!friendIdsByUser.has(a)) friendIdsByUser.set(a, new Set())
-      if (!friendIdsByUser.has(b)) friendIdsByUser.set(b, new Set())
-      friendIdsByUser.get(a)!.add(b)
-      friendIdsByUser.get(b)!.add(a)
-    }
-
-    const { data: allWorkoutsToday } = await supabase
-      .from('workouts')
-      .select('user_id')
-      .eq('workout_date', today)
-    const userIdsWhoPosted = new Set((allWorkoutsToday ?? []).map((r: { user_id: string }) => r.user_id))
+    const body = getMessage()
 
     const messages: { to: string; title: string; body: string }[] = []
     type ProfileRow = { id: string; expo_push_token: string | null }
@@ -96,15 +58,6 @@ Deno.serve(async (req: Request) => {
       const token = p.expo_push_token
       if (!token) continue
       if (postedTodayIds.has(p.id)) continue
-      const friendIds = friendIdsByUser.get(p.id)
-      let friendsPostedCount = 0
-      if (friendIds) {
-        for (const fid of friendIds) {
-          if (userIdsWhoPosted.has(fid)) friendsPostedCount++
-        }
-      }
-      const body = getMessage(false, friendsPostedCount, hoursLeft)
-      if (!body) continue
       messages.push({ to: token, title: 'Uplift', body })
     }
 

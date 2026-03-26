@@ -4,11 +4,12 @@ import { supabase } from '@/lib/supabase'
 
 export type LeaderboardScope = 'global' | 'friends' | 'groups'
 
-/** Weights for unified points (adjust to tune leaderboard) */
+/** Point system (monthly): each workout +5, competition win +20, friend added this month +2, group joined this month +1 */
 const POINTS = {
-  workout: 10,
-  streakMultiplier: 2, // Each streak day multiplies points by 2
-  competitionWin: 20,
+  perFriend: 2,
+  perGroup: 1,
+  perWorkout: 5,
+  perCompetitionWin: 20,
 } as const
 
 export type LeaderboardRow = {
@@ -18,25 +19,24 @@ export type LeaderboardRow = {
   workouts_count: number
   streak: number
   competition_wins: number
+  friends_count: number
+  groups_count: number
   points: number
   rank: number
 }
 
 function computePoints(row: {
   workouts_count: number
-  streak: number
   competition_wins: number
+  friends_count: number
+  groups_count: number
 }): number {
-  // Base points from workouts and competition wins
-  const basePoints =
-    (row.workouts_count ?? 0) * POINTS.workout +
-    (row.competition_wins ?? 0) * POINTS.competitionWin
-
-  // Apply streak multiplier: each streak day = 2x multiplier (exponential)
-  // 0 streak = 1x, 1 streak = 2x, 2 streak = 4x, 3 streak = 8x, etc.
-  const streakMultiplier = row.streak > 0 ? Math.pow(POINTS.streakMultiplier, row.streak) : 1
-
-  return Math.round(basePoints * streakMultiplier)
+  return (
+    (row.friends_count ?? 0) * POINTS.perFriend +
+    (row.groups_count ?? 0) * POINTS.perGroup +
+    (row.workouts_count ?? 0) * POINTS.perWorkout +
+    (row.competition_wins ?? 0) * POINTS.perCompetitionWin
+  )
 }
 
 /** Current month bounds in UTC (YYYY-MM-DD and ISO timestamps) */
@@ -50,41 +50,6 @@ function getMonthBounds() {
     tsStart: start.toISOString(),
     tsEnd: end.toISOString(),
   }
-}
-
-/** Consecutive days with workouts counting back from today (capped to the month). */
-function computeStreak(workoutDates: string[], _dateEnd: string): number {
-  const set = new Set(workoutDates)
-  if (set.size === 0) return 0
-
-  // Start from today (UTC) — not from end-of-month which may be in the future
-  const now = new Date()
-  const todayStr = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-${String(now.getUTCDate()).padStart(2, '0')}`
-  const startFrom = todayStr < _dateEnd ? todayStr : _dateEnd
-
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(startFrom)
-  if (!match) return 0
-  let y = parseInt(match[1], 10)
-  let m = parseInt(match[2], 10) - 1
-  let day = parseInt(match[3], 10)
-  const endMonth = m
-  let streak = 0
-  while (true) {
-    const key = `${y}-${String(m + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-    if (!set.has(key)) break
-    streak++
-    day--
-    if (day < 1) {
-      m--
-      if (m < 0) {
-        m = 11
-        y--
-      }
-      day = new Date(Date.UTC(y, m + 1, 0)).getUTCDate()
-    }
-    if (m !== endMonth) break
-  }
-  return streak
 }
 
 /** Fetch leaderboard for the current month (resets every month). Returns top 50 + current user's row if not in top. */
@@ -110,8 +75,8 @@ export async function getLeaderboard(
     }
   }
 
-  // Fetch workouts this month + completed competitions with winners
-  const [workoutsRes, competitionsRes] = await Promise.all([
+  // Fetch this month's activity: workouts, competitions completed, friendships created, group memberships created
+  const [workoutsRes, competitionsRes, friendshipsRes, groupMembershipsRes] = await Promise.all([
     supabase
       .from('workouts')
       .select('user_id, workout_date')
@@ -119,9 +84,22 @@ export async function getLeaderboard(
       .lte('workout_date', dateEnd),
     supabase
       .from('group_competitions')
-      .select('group1_id, group2_id, winner_group_id')
+      .select('group1_id, group2_id, winner_group_id, end_date')
       .eq('status', 'completed')
-      .not('winner_group_id', 'is', null),
+      .not('winner_group_id', 'is', null)
+      .gte('end_date', dateStart)
+      .lte('end_date', dateEnd),
+    supabase
+      .from('friendships')
+      .select('requester_id, addressee_id')
+      .eq('status', 'accepted')
+      .gte('created_at', tsStart)
+      .lte('created_at', tsEnd),
+    supabase
+      .from('group_members')
+      .select('user_id')
+      .gte('joined_at', tsStart)
+      .lte('joined_at', tsEnd),
   ])
 
   // For competition wins, we need to map winning group → member user_ids
@@ -154,11 +132,11 @@ export async function getLeaderboard(
     })
   }
 
-  type Agg = { workouts: string[]; competition_wins: number }
+  type Agg = { workouts: string[]; competition_wins: number; friends_added: number; groups_joined: number }
   const agg = new Map<string, Agg>()
 
   const ensure = (userId: string) => {
-    if (!agg.has(userId)) agg.set(userId, { workouts: [], competition_wins: 0 })
+    if (!agg.has(userId)) agg.set(userId, { workouts: [], competition_wins: 0, friends_added: 0, groups_joined: 0 })
     return agg.get(userId)!
   }
 
@@ -167,9 +145,20 @@ export async function getLeaderboard(
     if (!a.workouts.includes(r.workout_date)) a.workouts.push(r.workout_date)
   })
 
-  // Add competition wins
+  // Competition wins (scoped to this month)
   winsByUser.forEach((wins, userId) => {
     ensure(userId).competition_wins = wins
+  })
+
+  // Friends added this month (both sides get credit)
+  ;(friendshipsRes.data ?? []).forEach((r: { requester_id: string; addressee_id: string }) => {
+    ensure(r.requester_id).friends_added += 1
+    ensure(r.addressee_id).friends_added += 1
+  })
+
+  // Groups joined this month
+  ;(groupMembershipsRes.data ?? []).forEach((r: { user_id: string }) => {
+    ensure(r.user_id).groups_joined += 1
   })
 
   const userIds = [...agg.keys()]
@@ -177,17 +166,26 @@ export async function getLeaderboard(
 
   const { data: profiles } = await supabase
     .from('profiles')
-    .select('id, display_name, avatar_url')
+    .select('id, display_name, avatar_url, streak')
     .in('id', userIds)
 
-  const profileMap = new Map((profiles ?? []).map((p: { id: string }) => [p.id, p]))
+  const profileMap = new Map(
+    (profiles ?? []).map((p: { id: string; display_name: string | null; avatar_url: string | null; streak?: number }) => [p.id, p])
+  )
 
   const rows: Omit<LeaderboardRow, 'rank'>[] = userIds.map((id) => {
     const a = agg.get(id)!
-    const profile = profileMap.get(id) as { id: string; display_name: string | null; avatar_url: string | null } | undefined
+    const profile = profileMap.get(id) as {
+      id: string
+      display_name: string | null
+      avatar_url: string | null
+      streak?: number
+    } | undefined
     const workouts_count = a.workouts.length
-    const streak = computeStreak(a.workouts, dateEnd)
+    const streak = profile?.streak ?? 0
     const competition_wins = a.competition_wins
+    const friends_count = a.friends_added
+    const groups_count = a.groups_joined
     return {
       id,
       display_name: profile?.display_name ?? null,
@@ -195,7 +193,14 @@ export async function getLeaderboard(
       workouts_count,
       streak,
       competition_wins,
-      points: computePoints({ workouts_count, streak, competition_wins }),
+      friends_count,
+      groups_count,
+      points: computePoints({
+        workouts_count,
+        competition_wins,
+        friends_count,
+        groups_count,
+      }),
     }
   })
 

@@ -19,6 +19,7 @@ import Animated, {
 } from 'react-native-reanimated'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
+import { useBeRealFlip, WorkoutDualFlipInset } from '@/components/workout-dual-image'
 import { ThemedText } from '@/components/themed-text'
 import { Colors } from '@/constants/theme'
 import { useAuthContext } from '@/hooks/use-auth-context'
@@ -175,6 +176,13 @@ export default function HighlightDetailScreen() {
     [highlight, session]
   )
 
+  const currentWorkout = highlight?.workouts[currentIndex]
+  const flip = useBeRealFlip(
+    currentWorkout?.image_url ?? '',
+    currentWorkout?.secondary_image_url ?? null,
+    currentWorkout?.id ?? ''
+  )
+
   // Loading state
   if (loading) {
     return (
@@ -200,7 +208,6 @@ export default function HighlightDetailScreen() {
     )
   }
 
-  const currentWorkout = highlight.workouts[currentIndex]
   const dateStr = currentWorkout
     ? new Date(currentWorkout.workout_date).toLocaleDateString('en-US', {
         month: 'short',
@@ -211,9 +218,9 @@ export default function HighlightDetailScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: '#000' }]}>
-      {/* Full-screen workout image */}
+      {/* Full-screen workout image (BeReal: primary + optional secondary) */}
       <Image
-        source={{ uri: currentWorkout?.image_url }}
+        source={{ uri: flip.mainUri }}
         style={styles.fullImage}
         contentFit="contain"
         transition={150}
@@ -240,6 +247,14 @@ export default function HighlightDetailScreen() {
           delayLongPress={200}
         />
       </View>
+
+      {flip.hasDual && (
+        <WorkoutDualFlipInset
+          overlayUri={flip.overlayUri}
+          onPress={flip.toggle}
+          style={{ top: insets.top + 100 }}
+        />
+      )}
 
       {/* Overlay: progress bars + header + caption */}
       <View style={styles.overlay} pointerEvents="box-none">

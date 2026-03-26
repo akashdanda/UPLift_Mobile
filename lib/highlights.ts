@@ -183,12 +183,12 @@ export async function addWorkoutToHighlight(
   return { ok: true }
 }
 
-/** Remove a workout from a highlight. */
+/** Remove a workout from a highlight. If no workouts remain, the highlight row is deleted. */
 export async function removeWorkoutFromHighlight(
   highlightId: string,
   workoutId: string,
   userId: string
-): Promise<{ ok: true } | { error: Error }> {
+): Promise<{ ok: true; highlightDeleted?: true } | { error: Error }> {
   const { error } = await supabase
     .from('workout_highlight_items')
     .delete()
@@ -210,6 +210,18 @@ export async function removeWorkoutFromHighlight(
       .update({ cover_workout_id: null, cover_image_url: null })
       .eq('id', highlightId)
       .eq('user_id', userId)
+  }
+
+  const { data: anyLeft } = await supabase
+    .from('workout_highlight_items')
+    .select('id')
+    .eq('highlight_id', highlightId)
+    .limit(1)
+
+  if (!anyLeft?.length) {
+    const del = await deleteHighlight(highlightId, userId)
+    if ('error' in del) return del
+    return { ok: true, highlightDeleted: true }
   }
 
   return { ok: true }

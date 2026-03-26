@@ -3,32 +3,113 @@ import { LEVEL_TIERS, type LevelDefinition, type UserLevel } from '@/types/level
 import type { Profile } from '@/types/profile'
 
 // ──────────────────────────────────────────────
-// XP weights — tune these to balance progression
+// Point system (unified for levels and leaderboard)
 // ──────────────────────────────────────────────
-const XP_WEIGHTS = {
-  workout: 2500,
-  streak: 3750,
-  group: 1250,
-  friend: 750,
-  achievementUnlocked: 6250,
+export const POINTS = {
+  perFriend: 2,
+  perGroup: 1,
+  perWorkout: 5,
+  perCompetitionWin: 20,
+  perWorkoutMissed: -2,
+  perStreakTier: 50, // every 10 streak: +50 (10→50, 20→100, 30→150, …)
 } as const
 
+/** Streak bonus: +50 for every full 10 streak (10→50, 20→100, 30→150, …) */
+function streakBonus(streak: number): number {
+  return Math.floor((streak ?? 0) / 10) * POINTS.perStreakTier
+}
+
 // ──────────────────────────────────────────────
-// Compute XP from a profile + achievement count
+// Compute total points from profile + competition wins + optional missed count
 // ──────────────────────────────────────────────
+export function computePoints(
+  profile: Pick<Profile, 'workouts_count' | 'streak' | 'groups_count'> & {
+    friends_count?: number
+  },
+  competitionWins: number,
+  workoutsMissed = 0
+): number {
+  const friends = profile.friends_count ?? 0
+  const groups = profile.groups_count ?? 0
+  const workouts = profile.workouts_count ?? 0
+  const streak = profile.streak ?? 0
+  return (
+    friends * POINTS.perFriend +
+    groups * POINTS.perGroup +
+    workouts * POINTS.perWorkout +
+    competitionWins * POINTS.perCompetitionWin +
+    workoutsMissed * POINTS.perWorkoutMissed +
+    streakBonus(streak)
+  )
+}
+
+/** @deprecated Use computePoints for the new system. Kept for compatibility; maps to same scale. */
 export function computeXP(
   profile: Pick<Profile, 'workouts_count' | 'streak' | 'groups_count'> & {
     friends_count?: number
   },
-  unlockedAchievements: number
+  _unusedAchievements: number,
+  competitionWins = 0,
+  workoutsMissed = 0
 ): number {
-  return (
-    (profile.workouts_count ?? 0) * XP_WEIGHTS.workout +
-    (profile.streak ?? 0) * XP_WEIGHTS.streak +
-    (profile.groups_count ?? 0) * XP_WEIGHTS.group +
-    (profile.friends_count ?? 0) * XP_WEIGHTS.friend +
-    unlockedAchievements * XP_WEIGHTS.achievementUnlocked
-  )
+  return computePoints(profile, competitionWins, workoutsMissed)
+}
+
+/** Fetch total competition wins (completed, user in winning group) for one user */
+export async function getCompetitionWinsCount(userId: string): Promise<number> {
+  const { data: members } = await supabase
+    .from('group_members')
+    .select('group_id')
+    .eq('user_id', userId)
+  const groupIds = (members ?? []).map((m: { group_id: string }) => m.group_id)
+  if (groupIds.length === 0) return 0
+  const { count } = await supabase
+    .from('group_competitions')
+    .select('id', { count: 'exact', head: true })
+    .eq('status', 'completed')
+    .not('winner_group_id', 'is', null)
+    .in('winner_group_id', groupIds)
+  return count ?? 0
+}
+
+/** Batch-fetch total competition wins for many users */
+export async function getBatchCompetitionWins(
+  userIds: string[]
+): Promise<Map<string, number>> {
+  if (userIds.length === 0) return new Map()
+  const { data: members } = await supabase
+    .from('group_members')
+    .select('user_id, group_id')
+    .in('user_id', userIds)
+  const winsByUser = new Map<string, number>()
+  for (const id of userIds) winsByUser.set(id, 0)
+  const groupIdsByUser = new Map<string, string[]>()
+  for (const m of (members ?? []) as Array<{ user_id: string; group_id: string }>) {
+    const list = groupIdsByUser.get(m.user_id) ?? []
+    list.push(m.group_id)
+    groupIdsByUser.set(m.user_id, list)
+  }
+  const allGroupIds = [...new Set((members ?? []).map((m: { group_id: string }) => m.group_id))]
+  if (allGroupIds.length === 0) return winsByUser
+  const { data: comps } = await supabase
+    .from('group_competitions')
+    .select('winner_group_id')
+    .eq('status', 'completed')
+    .not('winner_group_id', 'is', null)
+    .in('winner_group_id', allGroupIds)
+  const winCountByGroup = new Map<string, number>()
+  for (const c of (comps ?? []) as Array<{ winner_group_id: string }>) {
+    winCountByGroup.set(
+      c.winner_group_id,
+      (winCountByGroup.get(c.winner_group_id) ?? 0) + 1
+    )
+  }
+  for (const [uid, gids] of groupIdsByUser) {
+    let total = 0
+    for (const gid of gids) total += winCountByGroup.get(gid) ?? 0
+    winsByUser.set(uid, total)
+  }
+  return winsByUser
 }
 
 // ──────────────────────────────────────────────
@@ -62,16 +143,12 @@ export function getLevelFromXP(xp: number): UserLevel {
 }
 
 // ──────────────────────────────────────────────
-// Get a user's level (fetches achievement count from DB)
+// Get a user's level (fetches profile + competition wins; workouts_missed not in DB yet, use 0)
 // ──────────────────────────────────────────────
 export async function getUserLevel(userId: string): Promise<UserLevel> {
-  const [profileRes, achievementRes] = await Promise.all([
+  const [profileRes, competitionWins] = await Promise.all([
     supabase.from('profiles').select('workouts_count, streak, groups_count, friends_count').eq('id', userId).single(),
-    supabase
-      .from('user_achievements')
-      .select('id', { count: 'exact', head: true })
-      .eq('user_id', userId)
-      .eq('unlocked', true),
+    getCompetitionWinsCount(userId),
   ])
 
   const profile = profileRes.data ?? {
@@ -80,10 +157,8 @@ export async function getUserLevel(userId: string): Promise<UserLevel> {
     groups_count: 0,
     friends_count: 0,
   }
-  const unlockedCount = achievementRes.count ?? 0
-
-  const xp = computeXP(profile as any, unlockedCount)
-  return getLevelFromXP(xp)
+  const points = computePoints(profile as any, competitionWins, 0)
+  return getLevelFromXP(points)
 }
 
 // ──────────────────────────────────────────────
@@ -94,16 +169,12 @@ export async function getBatchUserLevels(
 ): Promise<Map<string, UserLevel>> {
   if (userIds.length === 0) return new Map()
 
-  const [profilesRes, achievementsRes] = await Promise.all([
+  const [profilesRes, winsMap] = await Promise.all([
     supabase
       .from('profiles')
       .select('id, workouts_count, streak, groups_count, friends_count')
       .in('id', userIds),
-    supabase
-      .from('user_achievements')
-      .select('user_id')
-      .in('user_id', userIds)
-      .eq('unlocked', true),
+    getBatchCompetitionWins(userIds),
   ])
 
   const profiles = (profilesRes.data ?? []) as Array<{
@@ -114,16 +185,10 @@ export async function getBatchUserLevels(
     friends_count: number
   }>
 
-  // Count unlocked achievements per user
-  const achCountMap = new Map<string, number>()
-  for (const row of (achievementsRes.data ?? []) as Array<{ user_id: string }>) {
-    achCountMap.set(row.user_id, (achCountMap.get(row.user_id) ?? 0) + 1)
-  }
-
   const map = new Map<string, UserLevel>()
   for (const p of profiles) {
-    const xp = computeXP(p, achCountMap.get(p.id) ?? 0)
-    map.set(p.id, getLevelFromXP(xp))
+    const points = computePoints(p, winsMap.get(p.id) ?? 0, 0)
+    map.set(p.id, getLevelFromXP(points))
   }
   return map
 }

@@ -30,7 +30,7 @@ import { Colors } from '@/constants/theme';
 import { useAuthContext } from '@/hooks/use-auth-context';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { getAchievementFeedPosts, hasStreakFreezeAvailable, useStreakFreeze } from '@/lib/achievements';
-import { addComment } from '@/lib/comments';
+import { addComment, getCommentsForWorkouts } from '@/lib/comments';
 import {
   getDailyReminderInfo,
   getReminderMessage,
@@ -41,13 +41,13 @@ import { getFlashbacks, type FlashbackItem } from '@/lib/flashbacks';
 import { getFriends } from '@/lib/friends';
 import { computeXP, getLevelFromXP } from '@/lib/levels';
 import { getUnreadNotificationCount, markNotificationsAsRead } from '@/lib/notifications';
-import { addReaction, removeReaction, getReactionsForWorkouts } from '@/lib/reactions';
+import { addReaction, getReactionsForWorkouts, removeReaction } from '@/lib/reactions';
 import { getSocialNudges, type SocialNudge } from '@/lib/social-hooks';
 import { supabase } from '@/lib/supabase';
 import type { AchievementFeedPost } from '@/types/achievement';
 import type { WorkoutCommentWithProfile } from '@/types/comment';
 import type { WorkoutReactionWithProfile } from '@/types/reaction';
-import type { Workout } from '@/types/workout';
+import { WORKOUT_TYPES, type Workout } from '@/types/workout';
 
 const REACTION_EMOJIS_FREQUENT = ['🔥', '💪', '👍', '❤️', '😂', '😮', '🙌', '😊'];
 
@@ -60,17 +60,25 @@ const REACTION_EMOJI_SECTIONS: { title: string; emojis: string[] }[] = [
   { title: 'Animals & Nature', emojis: ['🐶', '🐱', '🐭', '🐹', '🐰', '🦊', '🐻', '🐼', '🐨', '🐯', '🦁', '🐮', '🐷', '🐸', '🐵', '🐔', '🐧', '🐦', '🦅', '🦋', '🌸', '🌺', '🌻', '🌹', '🌳', '🌴', '🌵', '🍀', '🌈', '☀️'] },
 ];
 
-// Zoomable feed image component
-function ZoomableFeedImage({ imageUrl, style }: { imageUrl: string; style: any }) {
+// Zoomable feed image (single or BeReal-style dual: tap to swap main/overlay)
+function ZoomableFeedImage({
+  imageUrl,
+  secondaryImageUrl,
+  style,
+}: {
+  imageUrl: string;
+  secondaryImageUrl?: string | null;
+  style: any;
+}) {
   const scale = useSharedValue(1);
   const savedScale = useSharedValue(1);
+  const [frontImage, setFrontImage] = useState<'primary' | 'secondary'>('primary');
 
   const pinchGesture = Gesture.Pinch()
     .onUpdate((e) => {
       scale.value = savedScale.value * e.scale;
     })
     .onEnd(() => {
-      // Always reset to original zoom when gesture ends
       scale.value = withSpring(1);
       savedScale.value = 1;
     });
@@ -79,12 +87,40 @@ function ZoomableFeedImage({ imageUrl, style }: { imageUrl: string; style: any }
     transform: [{ scale: scale.value }],
   }));
 
+  const hasDual = secondaryImageUrl && secondaryImageUrl.trim().length > 0;
+
+  if (!hasDual) {
+    return (
+      <GestureDetector gesture={pinchGesture}>
+        <Animated.View style={{ overflow: 'hidden' }}>
+          <Animated.Image source={{ uri: imageUrl }} style={[style, animatedImageStyle]} />
+        </Animated.View>
+      </GestureDetector>
+    );
+  }
+
+  const mainUrl = frontImage === 'primary' ? imageUrl : secondaryImageUrl!;
+  const overlayUrl = frontImage === 'primary' ? secondaryImageUrl! : imageUrl;
+
+  const toggle = () => {
+    // Make the tap-to-swap feel instant (before finger lifts),
+    // and reset any pinch zoom so the swap isn't delayed by zoom state.
+    scale.value = 1
+    savedScale.value = 1
+    setFrontImage((f) => (f === 'primary' ? 'secondary' : 'primary'));
+  };
+
   return (
-    <GestureDetector gesture={pinchGesture}>
-      <Animated.View style={{ overflow: 'hidden' }}>
-        <Animated.Image source={{ uri: imageUrl }} style={[style, animatedImageStyle]} />
-      </Animated.View>
-    </GestureDetector>
+    <View style={[style, { position: 'relative', overflow: 'hidden' }]}>
+      <GestureDetector gesture={pinchGesture}>
+        <Animated.View style={{ flex: 1, overflow: 'hidden' }}>
+          <Animated.Image source={{ uri: mainUrl }} style={[{ width: '100%', height: '100%' }, animatedImageStyle]} />
+        </Animated.View>
+      </GestureDetector>
+      <Pressable style={styles.dualPhotoCorner} onPressIn={toggle}>
+        <Image source={{ uri: overlayUrl }} style={styles.dualPhotoCornerImage} contentFit="cover" />
+      </Pressable>
+    </View>
   );
 }
 
@@ -124,12 +160,18 @@ function getTodayLocalDate(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+function getWorkoutTypeEmoji(type: string | null | undefined): string {
+  return WORKOUT_TYPES.find((t) => t.value === type)?.emoji ?? '💪';
+}
+
 export default function HomeScreen() {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
   const { session, profile } = useAuthContext();
   const [todayWorkout, setTodayWorkout] = useState<Workout | null>(null);
-  const [todayReactions, setTodayReactions] = useState<WorkoutReactionWithProfile[]>([]);
+  const [todayWorkoutReactions, setTodayWorkoutReactions] = useState<WorkoutReactionWithProfile[]>([]);
+  const [todayWorkoutComments, setTodayWorkoutComments] = useState<WorkoutCommentWithProfile[]>([]);
+  const todayWorkoutIdRef = useRef<string | null>(null);
   const [feedItems, setFeedItems] = useState<FeedItem[]>([]);
   const [achievementPosts, setAchievementPosts] = useState<AchievementFeedPost[]>([]);
   const [flashbacks, setFlashbacks] = useState<FlashbackItem[]>([]);
@@ -150,7 +192,7 @@ export default function HomeScreen() {
   // Reaction detail view modal
   const [viewReaction, setViewReaction] = useState<WorkoutReactionWithProfile | null>(null);
 
-  // Inline comments (Instagram-style: all comments visible + add comment on same card)
+  // Inline comments (Instagram-style: all comments visible + add comment / reply on same card)
   const [inlineCommentWorkoutId, setInlineCommentWorkoutId] = useState<string | null>(null);
   const [inlineCommentMessage, setInlineCommentMessage] = useState('');
   const [commentSubmittingWorkoutId, setCommentSubmittingWorkoutId] = useState<string | null>(null);
@@ -173,6 +215,26 @@ export default function HomeScreen() {
   const scrollViewRef = useRef<ScrollView>(null);
   const workoutRefs = useRef<Map<string, { ref: View | null; y: number }>>(new Map());
   const [pendingWorkoutNavigation, setPendingWorkoutNavigation] = useState<{ workoutId: string; expandComments: boolean } | null>(null);
+
+  // Keep ref in sync for realtime subscriptions
+  todayWorkoutIdRef.current = todayWorkout?.id ?? null;
+
+  // Fetch reactions and comments for the user's own "Today's workout" post
+  useEffect(() => {
+    if (!todayWorkout) {
+      setTodayWorkoutReactions([]);
+      setTodayWorkoutComments([]);
+      return;
+    }
+    const workoutId = todayWorkout.id;
+    Promise.all([
+      getReactionsForWorkouts([workoutId]),
+      getCommentsForWorkouts([workoutId]),
+    ]).then(([reactionsMap, commentsMap]) => {
+      setTodayWorkoutReactions(reactionsMap.get(workoutId) ?? []);
+      setTodayWorkoutComments(commentsMap.get(workoutId) ?? []);
+    });
+  }, [todayWorkout?.id]);
 
   const refreshFeed = useCallback(() => {
     if (session) getFriendsWorkouts(session.user.id).then(setFeedItems);
@@ -322,22 +384,25 @@ export default function HomeScreen() {
       Alert.alert('Comment failed', result.error.message);
       return;
     }
+    const newComment: WorkoutCommentWithProfile = {
+      id: result.id,
+      workout_id: workoutId,
+      user_id: session.user.id,
+      message: trimmed,
+      gif_url: null,
+      created_at: new Date().toISOString(),
+      display_name: profile?.display_name ?? null,
+      avatar_url: profile?.avatar_url ?? null,
+    };
     setFeedItems((prev) =>
       prev.map((i) => {
         if (i.workout.id !== workoutId) return i;
-        const newComment: WorkoutCommentWithProfile = {
-          id: result.id,
-          workout_id: workoutId,
-          user_id: session.user.id,
-          message: trimmed,
-          gif_url: null,
-          created_at: new Date().toISOString(),
-          display_name: profile?.display_name ?? null,
-          avatar_url: profile?.avatar_url ?? null,
-        };
         return { ...i, comments: [...(i.comments ?? []), newComment] };
       })
     );
+    if (todayWorkout?.id === workoutId) {
+      setTodayWorkoutComments((prev) => [...prev, newComment]);
+    }
     if (inlineCommentWorkoutId === workoutId) {
       setInlineCommentWorkoutId(null);
       setInlineCommentMessage('');
@@ -375,57 +440,82 @@ export default function HomeScreen() {
     const channels: ReturnType<typeof supabase.channel>[] = []
     let isMounted = true
 
-    // Subscribe to reactions on user's workouts
-    const reactionsChannel = supabase
-      .channel('notifications-reactions')
-      .on(
+    const refreshTodayReactions = (workoutId: string) => {
+      if (workoutId !== todayWorkoutIdRef.current) return
+      getReactionsForWorkouts([workoutId]).then((map) =>
+        setTodayWorkoutReactions(map.get(workoutId) ?? [])
+      )
+    }
+
+    const refreshTodayComments = (workoutId: string) => {
+      if (workoutId !== todayWorkoutIdRef.current) return
+      getCommentsForWorkouts([workoutId]).then((map) =>
+        setTodayWorkoutComments(map.get(workoutId) ?? [])
+      )
+    }
+
+    // Subscribe to reactions on user's workouts (INSERT/UPDATE/DELETE)
+    const reactionsChannel = supabase.channel('notifications-reactions')
+    ;(['INSERT', 'UPDATE', 'DELETE'] as const).forEach((eventType) => {
+      reactionsChannel.on(
         'postgres_changes',
         {
-          event: 'INSERT',
+          event: eventType,
           schema: 'public',
           table: 'workout_reactions',
         },
-        (payload) => {
-          // Check if this reaction is on one of the user's workouts
+        (payload: any) => {
+          const workoutId =
+            payload?.new?.workout_id ?? payload?.old?.workout_id ?? undefined
+          if (!workoutId) return
+
           supabase
             .from('workouts')
             .select('user_id')
-            .eq('id', payload.new.workout_id)
-            .single()
+            .eq('id', workoutId)
+            .maybeSingle()
             .then(({ data }) => {
               if (data && data.user_id === session.user.id) {
                 refreshUnreadCount()
+                refreshTodayReactions(workoutId)
               }
             })
         }
       )
-      .subscribe()
+    })
+    reactionsChannel.subscribe()
     channels.push(reactionsChannel)
 
-    // Subscribe to comments on user's workouts
-    const commentsChannel = supabase
-      .channel('notifications-comments')
-      .on(
+    // Subscribe to comments on user's workouts (INSERT/UPDATE/DELETE)
+    const commentsChannel = supabase.channel('notifications-comments')
+    ;(['INSERT', 'UPDATE', 'DELETE'] as const).forEach((eventType) => {
+      commentsChannel.on(
         'postgres_changes',
         {
-          event: 'INSERT',
+          event: eventType,
           schema: 'public',
           table: 'workout_comments',
         },
-        (payload) => {
+        (payload: any) => {
+          const workoutId =
+            payload?.new?.workout_id ?? payload?.old?.workout_id ?? undefined
+          if (!workoutId) return
+
           supabase
             .from('workouts')
             .select('user_id')
-            .eq('id', payload.new.workout_id)
-            .single()
+            .eq('id', workoutId)
+            .maybeSingle()
             .then(({ data }) => {
               if (data && data.user_id === session.user.id) {
                 refreshUnreadCount()
+                refreshTodayComments(workoutId)
               }
             })
         }
       )
-      .subscribe()
+    })
+    commentsChannel.subscribe()
     channels.push(commentsChannel)
 
     // Subscribe to user achievements
@@ -530,12 +620,6 @@ export default function HomeScreen() {
         .then(async ({ data }) => {
           const workout = (data as Workout) ?? null;
           setTodayWorkout(workout);
-          if (workout) {
-            const reactionsMap = await getReactionsForWorkouts([workout.id]);
-            setTodayReactions(reactionsMap.get(workout.id) ?? []);
-          } else {
-            setTodayReactions([]);
-          }
         });
       getFriendsWorkouts(session.user.id).then(setFeedItems);
       // Load flashbacks
@@ -783,49 +867,145 @@ export default function HomeScreen() {
             <ThemedText type="subtitle" style={[styles.sectionTitle, { color: colors.text }]}>
               Today&apos;s workout
             </ThemedText>
-            <View style={[styles.todayCard, { backgroundColor: colors.card }]}>
-              <ZoomableFeedImage imageUrl={todayWorkout.image_url} style={styles.todayImage} />
-              {todayWorkout.caption ? (
-                <View style={styles.captionRow}>
+            <View style={[styles.todayCard, { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.tint + '10' }]}>
+              <ZoomableFeedImage
+                imageUrl={todayWorkout.image_url}
+                secondaryImageUrl={todayWorkout.secondary_image_url}
+                style={styles.todayImage}
+              />
+              <View style={styles.captionRow}>
+                <ThemedText style={styles.todayTypeEmoji}>{getWorkoutTypeEmoji(todayWorkout.workout_type)}</ThemedText>
+                {todayWorkout.caption ? (
                   <ThemedText style={[styles.todayCaption, { color: colors.text }]}>
                     {todayWorkout.caption}
                   </ThemedText>
-                </View>
-              ) : null}
-              {todayReactions.length > 0 && (
-                <View style={[styles.reactionRow, { borderTopColor: colors.tint + '10', marginTop: 12 }]}>
-                  <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={styles.reactionBubbles}
-                  >
-                    {todayReactions.map((r) => (
-                      <View key={r.id} style={styles.reactionBubbleWrap}>
-                        <View style={styles.reactionBubble}>
-                          <View style={styles.reactionBubblePhotoWrap}>
-                            {r.reaction_image_url ? (
-                              <Image source={{ uri: r.reaction_image_url }} style={styles.reactionBubbleImage} />
-                            ) : (
-                              <View style={[styles.reactionBubblePlaceholder, { backgroundColor: colors.tint + '25' }]}>
-                                {r.avatar_url ? (
-                                  <Image source={{ uri: r.avatar_url }} style={styles.reactionBubbleImage} />
-                                ) : (
-                                  <ThemedText style={[styles.reactionBubbleInitials, { color: colors.tint }]}>
-                                    {getInitials(r.display_name)}
-                                  </ThemedText>
-                                )}
-                              </View>
-                            )}
-                          </View>
-                          <View style={styles.reactionEmojiBadge}>
-                            <ThemedText style={styles.reactionEmojiText}>{r.emoji}</ThemedText>
-                          </View>
+                ) : null}
+              </View>
+              {/* Friends' reactions on your post */}
+              <View style={[styles.reactionRow, { borderTopColor: colors.tint + '10' }]}>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.reactionBubbles}
+                >
+                  {todayWorkoutReactions.map((r) => (
+                    <Pressable key={r.id} onPress={() => setViewReaction(r)} style={({ pressed }) => [styles.reactionBubbleWrap, pressed && { opacity: 0.7 }]}>
+                      <View style={styles.reactionBubble}>
+                        <View style={styles.reactionBubblePhotoWrap}>
+                          {r.reaction_image_url ? (
+                            <Image source={{ uri: r.reaction_image_url }} style={styles.reactionBubbleImage} />
+                          ) : (
+                            <View style={[styles.reactionBubblePlaceholder, { backgroundColor: colors.tint + '25' }]}>
+                              {r.avatar_url ? (
+                                <Image source={{ uri: r.avatar_url }} style={styles.reactionBubbleImage} />
+                              ) : (
+                                <ThemedText style={[styles.reactionBubbleInitials, { color: colors.tint }]}>
+                                  {getInitials(r.display_name)}
+                                </ThemedText>
+                              )}
+                            </View>
+                          )}
+                        </View>
+                        <View style={styles.reactionEmojiBadge}>
+                          <ThemedText style={styles.reactionEmojiText}>{r.emoji}</ThemedText>
                         </View>
                       </View>
-                    ))}
-                  </ScrollView>
-                </View>
-              )}
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              </View>
+              {/* Comments on your post */}
+              <View style={[styles.commentsSection, { borderTopColor: colors.tint + '10' }]}>
+                {todayWorkoutComments.map((c) => (
+                  <View key={c.id} style={styles.commentRow}>
+                    <Pressable
+                      style={[styles.commentAvatar, { backgroundColor: colors.tint + '20' }]}
+                      onPress={() => c.user_id !== session?.user?.id && router.push(`/friend-profile?id=${c.user_id}`)}
+                    >
+                      {c.avatar_url ? (
+                        <Image source={{ uri: c.avatar_url }} style={styles.commentAvatarImage} />
+                      ) : (
+                        <ThemedText style={[styles.commentAvatarInitials, { color: colors.tint }]}>
+                          {getInitials(c.display_name)}
+                        </ThemedText>
+                      )}
+                    </Pressable>
+                    <View style={styles.commentBody}>
+                      <ThemedText type="defaultSemiBold" style={[styles.commentAuthor, { color: colors.text }]}>
+                        {c.display_name || 'Anonymous'}
+                      </ThemedText>
+                      {c.message ? (
+                        <ThemedText style={[styles.commentText, { color: colors.text }]}>{c.message}</ThemedText>
+                      ) : null}
+                    </View>
+                  </View>
+                ))}
+                {session && (
+                  <View style={styles.commentInlineRow}>
+                    <TextInput
+                      style={[
+                        styles.commentInlineInput,
+                        {
+                          backgroundColor: colors.cardElevated,
+                          color: colors.text,
+                          borderColor: colors.tabBarBorder,
+                        },
+                      ]}
+                      placeholder="Add a comment..."
+                      placeholderTextColor={colors.textMuted}
+                      value={inlineCommentWorkoutId === todayWorkout.id ? inlineCommentMessage : ''}
+                      onChangeText={(text) => {
+                        if (inlineCommentWorkoutId === todayWorkout.id) setInlineCommentMessage(text);
+                      }}
+                      onFocus={() => {
+                        setInlineCommentWorkoutId(todayWorkout.id);
+                        setInlineCommentMessage('');
+                      }}
+                      multiline
+                      maxLength={500}
+                    />
+                    <Pressable
+                      onPress={() =>
+                        handlePostComment(
+                          todayWorkout.id,
+                          inlineCommentWorkoutId === todayWorkout.id ? inlineCommentMessage : ''
+                        )
+                      }
+                      disabled={
+                        commentSubmittingWorkoutId === todayWorkout.id ||
+                        (inlineCommentWorkoutId === todayWorkout.id ? !inlineCommentMessage.trim() : true)
+                      }
+                      style={({ pressed }) => [
+                        styles.commentInlinePostBtn,
+                        {
+                          opacity:
+                            inlineCommentWorkoutId === todayWorkout.id && inlineCommentMessage.trim()
+                              ? pressed ? 0.7 : 1
+                              : 0.4,
+                        },
+                      ]}
+                    >
+                      {commentSubmittingWorkoutId === todayWorkout.id ? (
+                        <ActivityIndicator color={colors.tint} size="small" />
+                      ) : (
+                        <ThemedText
+                          style={[
+                            styles.commentInlinePostText,
+                            {
+                              color:
+                                inlineCommentWorkoutId === todayWorkout.id && inlineCommentMessage.trim()
+                                  ? colors.tint
+                                  : colors.textMuted,
+                            },
+                          ]}
+                        >
+                          Post
+                        </ThemedText>
+                      )}
+                    </Pressable>
+                  </View>
+                )}
+              </View>
             </View>
           </View>
         )}
@@ -852,15 +1032,24 @@ export default function HomeScreen() {
                       {fb.label}
                     </ThemedText>
                   </View>
-                  <ZoomableFeedImage imageUrl={fb.workout.image_url} style={styles.flashbackImage} />
-                  {fb.workout.caption ? (
+                  <ZoomableFeedImage
+                    imageUrl={fb.workout.image_url}
+                    secondaryImageUrl={fb.workout.secondary_image_url}
+                    style={styles.flashbackImage}
+                  />
+                  {(fb.workout.caption || fb.workout.workout_type) ? (
                     <View style={styles.flashbackCaptionWrap}>
-                      <ThemedText
-                        style={[styles.flashbackCaption, { color: colors.text }]}
-                        numberOfLines={2}
-                      >
-                        {fb.workout.caption}
-                      </ThemedText>
+                      {fb.workout.workout_type ? (
+                        <ThemedText style={styles.flashbackTypeEmoji}>{getWorkoutTypeEmoji(fb.workout.workout_type)}</ThemedText>
+                      ) : null}
+                      {fb.workout.caption ? (
+                        <ThemedText
+                          style={[styles.flashbackCaption, { color: colors.text }]}
+                          numberOfLines={2}
+                        >
+                          {fb.workout.caption}
+                        </ThemedText>
+                      ) : null}
                     </View>
                   ) : null}
                   <View style={styles.flashbackDateWrap}>
@@ -972,6 +1161,8 @@ export default function HomeScreen() {
                         </ThemedText>
                         <ThemedText style={[styles.feedDate, { color: colors.textMuted }]}>
                           {formatFeedDate(item.workout.workout_date)}
+                          {' · '}
+                          <ThemedText style={styles.feedTypeEmoji}>{getWorkoutTypeEmoji(item.workout.workout_type)}</ThemedText>
                         </ThemedText>
                       </View>
                     </Pressable>
@@ -993,7 +1184,11 @@ export default function HomeScreen() {
                       </Pressable>
                     )}
                   </View>
-                  <ZoomableFeedImage imageUrl={item.workout.image_url} style={styles.feedImage} />
+                  <ZoomableFeedImage
+                    imageUrl={item.workout.image_url}
+                    secondaryImageUrl={item.workout.secondary_image_url}
+                    style={styles.feedImage}
+                  />
                   {item.workout.caption ? (
                     <ThemedText style={[styles.feedCaption, { color: colors.text }]}>
                       {item.workout.caption}
@@ -1069,27 +1264,47 @@ export default function HomeScreen() {
                   </View>
                   {/* Comments — Instagram-style: all comments visible + inline add */}
                   <View style={[styles.commentsSection, { borderTopColor: colors.tint + '10' }]}>
-                    {(item.comments ?? []).map((c) => (
-                      <View key={c.id} style={styles.commentRow}>
-                        <View style={[styles.commentAvatar, { backgroundColor: colors.tint + '20' }]}>
-                          {c.avatar_url ? (
-                            <Image source={{ uri: c.avatar_url }} style={styles.commentAvatarImage} />
-                          ) : (
-                            <ThemedText style={[styles.commentAvatarInitials, { color: colors.tint }]}>
-                              {getInitials(c.display_name)}
+                    {(item.comments ?? []).map((c) => {
+                      const isOwner = session?.user?.id === item.workout.user_id;
+                      return (
+                        <View key={c.id} style={styles.commentRow}>
+                          <View style={[styles.commentAvatar, { backgroundColor: colors.tint + '20' }]}>
+                            {c.avatar_url ? (
+                              <Image source={{ uri: c.avatar_url }} style={styles.commentAvatarImage} />
+                            ) : (
+                              <ThemedText style={[styles.commentAvatarInitials, { color: colors.tint }]}>
+                                {getInitials(c.display_name)}
+                              </ThemedText>
+                            )}
+                          </View>
+                          <View style={styles.commentBody}>
+                            <ThemedText type="defaultSemiBold" style={[styles.commentAuthor, { color: colors.text }]}>
+                              {c.display_name || 'Anonymous'}
                             </ThemedText>
-                          )}
+                            {c.message ? (
+                              <ThemedText style={[styles.commentText, { color: colors.text }]}>{c.message}</ThemedText>
+                            ) : null}
+                            {isOwner && (
+                              <Pressable
+                                style={styles.commentReplyBtn}
+                                onPress={() => {
+                                  const firstName =
+                                    (c.display_name || '')
+                                      .trim()
+                                      .split(/\s+/)[0] || 'friend';
+                                  setInlineCommentWorkoutId(item.workout.id);
+                                  setInlineCommentMessage(`@${firstName} `);
+                                }}
+                              >
+                                <ThemedText style={[styles.commentReplyText, { color: colors.textMuted }]}>
+                                  Reply
+                                </ThemedText>
+                              </Pressable>
+                            )}
+                          </View>
                         </View>
-                        <View style={styles.commentBody}>
-                          <ThemedText type="defaultSemiBold" style={[styles.commentAuthor, { color: colors.text }]}>
-                            {c.display_name || 'Anonymous'}
-                          </ThemedText>
-                          {c.message ? (
-                            <ThemedText style={[styles.commentText, { color: colors.text }]}>{c.message}</ThemedText>
-                          ) : null}
-                        </View>
-                      </View>
-                    ))}
+                      );
+                    })}
                     {session && (
                       <View style={styles.commentInlineRow}>
                         <TextInput
@@ -1253,7 +1468,7 @@ export default function HomeScreen() {
       </Modal>
 
 
-      <Modal visible={reactCameraOpen} animationType="slide" presentationStyle="fullScreen">
+      <Modal visible={reactCameraOpen} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setReactCameraOpen(false)}>
         <CameraCapture
           onCapture={handleReactCameraCapture}
           onClose={() => setReactCameraOpen(false)}
@@ -1451,11 +1666,24 @@ const styles = StyleSheet.create({
   section: { marginBottom: 28 },
   sectionTitle: { fontSize: 18, fontWeight: '800', marginBottom: 14, letterSpacing: -0.3, textTransform: 'uppercase' },
 
-  // Today's workout
+  // Today's workout — rectangular (4:5) like BeReal so photos aren't cropped
   todayCard: { borderRadius: 16, overflow: 'hidden' },
-  todayImage: { width: '100%', aspectRatio: 1 },
-  captionRow: { padding: 16 },
-  todayCaption: { fontSize: 14, lineHeight: 21, letterSpacing: 0.1 },
+  todayImage: { width: '100%', aspectRatio: 4 / 5 },
+  dualPhotoCorner: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    width: '30%',
+    aspectRatio: 4 / 5,
+    borderRadius: 12,
+    overflow: 'hidden',
+    borderWidth: 3,
+    borderColor: '#fff',
+  },
+  dualPhotoCornerImage: { width: '100%', height: '100%' },
+  captionRow: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 16 },
+  todayTypeEmoji: { fontSize: 18 },
+  todayCaption: { flex: 1, fontSize: 14, lineHeight: 21, letterSpacing: 0.1 },
 
   // Empty state
   emptyCard: {
@@ -1512,7 +1740,8 @@ const styles = StyleSheet.create({
   feedCardMeta: { flex: 1 },
   feedName: { fontSize: 15, fontWeight: '800', letterSpacing: 0.1 },
   feedDate: { fontSize: 11, marginTop: 2, letterSpacing: 0.3, textTransform: 'uppercase', fontWeight: '500' },
-  feedImage: { width: '100%', aspectRatio: 1 },
+  feedTypeEmoji: { textTransform: 'none' },
+  feedImage: { width: '100%', aspectRatio: 4 / 5 },
   feedCaption: { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 6, fontSize: 14, lineHeight: 21, letterSpacing: 0.15 },
 
   // Tagged friends
@@ -1661,6 +1890,8 @@ const styles = StyleSheet.create({
   commentBody: { flex: 1, minWidth: 0 },
   commentAuthor: { fontSize: 13, fontWeight: '800', marginBottom: 2, letterSpacing: 0.1 },
   commentText: { fontSize: 13, lineHeight: 19, letterSpacing: 0.15 },
+  commentReplyBtn: { marginTop: 4 },
+  commentReplyText: { fontSize: 12, fontWeight: '600' },
   commentGif: { width: 120, height: 90, borderRadius: 10, marginTop: 6 },
   commentInlineRow: {
     flexDirection: 'row',
@@ -1800,13 +2031,18 @@ const styles = StyleSheet.create({
   flashbackLabel: { fontSize: 12, fontWeight: '800', letterSpacing: 0.3 },
   flashbackImage: {
     width: 220,
-    height: 220,
+    aspectRatio: 4 / 5,
   },
   flashbackCaptionWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
     paddingHorizontal: 12,
     paddingTop: 8,
   },
+  flashbackTypeEmoji: { fontSize: 16 },
   flashbackCaption: {
+    flex: 1,
     fontSize: 13,
     lineHeight: 18,
   },

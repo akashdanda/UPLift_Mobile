@@ -84,6 +84,22 @@ function NotificationItem({
           title: `${notification.friend_display_name || 'A friend'} ${notification.activity_description || 'was active'}`,
           subtitle: 'Stay motivated!',
         }
+      case 'group_invite':
+        return {
+          icon: '👥',
+          title: `${notification.invited_by_name || 'Someone'} invited you to join ${
+            notification.group_name || 'a group'
+          }`,
+          subtitle: 'Tap to view your group invites',
+        }
+      case 'duel_update':
+        return {
+          icon: '⚔️',
+          title: notification.duel_status === 'pending'
+            ? `${notification.duel_opponent_name || 'A friend'} challenged you to a 1v1`
+            : `Your ${notification.duel_type === 'streak' ? 'streak' : 'workout'} challenge was updated`,
+          subtitle: 'Open your challenges to see the latest score',
+        }
       default:
         return { icon: '🔔', title: 'New notification', subtitle: '' }
     }
@@ -93,11 +109,13 @@ function NotificationItem({
   const avatarUrl =
     notification.actor_avatar_url ||
     notification.friend_avatar_url ||
-    notification.competition_group_avatar_url
+    notification.competition_group_avatar_url ||
+    notification.group_avatar_url
   const displayName =
     notification.actor_display_name ||
     notification.friend_display_name ||
-    notification.competition_group_name
+    notification.competition_group_name ||
+    notification.group_name
 
   return (
     <Pressable
@@ -331,6 +349,14 @@ export function NotificationsModal({
       }
     } else if (notification.competition_id) {
       router.push(`/competition-detail?id=${notification.competition_id}`)
+      onClose()
+    } else if (notification.type === 'group_invite' && notification.group_id) {
+      // Navigate to Groups tab where invites are visible
+      router.push('/(tabs)/groups')
+      onClose()
+    } else if (notification.type === 'duel_update' && notification.duel_id) {
+      // Navigate directly to the duel detail screen
+      router.push(`/duel-detail?id=${notification.duel_id}`)
       onClose()
     } else if (notification.friend_id) {
       router.push({ pathname: '/friend-profile', params: { id: notification.friend_id } })

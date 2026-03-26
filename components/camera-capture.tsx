@@ -21,6 +21,8 @@ type CameraCaptureProps = {
   onClose: () => void
   aspect?: [number, number]
   quality?: number
+  /** Which camera to use by default. 'back' for workout, 'front' for selfie. */
+  facing?: 'front' | 'back'
 }
 
 export function CameraCapture({
@@ -28,6 +30,7 @@ export function CameraCapture({
   onClose,
   aspect = [1, 1],
   quality = 0.8,
+  facing = 'front',
 }: CameraCaptureProps) {
   const colorScheme = useColorScheme()
   const colors = Colors[colorScheme ?? 'light']
@@ -76,22 +79,29 @@ export function CameraCapture({
         return
       }
 
-      // Flip horizontally to match the preview (front camera preview is mirrored)
-      const mirrored = await manipulateAsync(
-        photo.uri,
-        [{ flip: FlipType.Horizontal }],
-        { compress: quality, format: SaveFormat.JPEG }
-      )
+      // For front camera, flip horizontally to match the mirrored preview.
+      // For back camera, keep the original orientation.
+      let processedUri = photo.uri
+      if (facing === 'front') {
+        const mirrored = await manipulateAsync(
+          photo.uri,
+          [{ flip: FlipType.Horizontal }],
+          { compress: quality, format: SaveFormat.JPEG }
+        )
+        processedUri = mirrored.uri
+      }
 
       // Copy to a unique path so preview and upload always use this exact file (no cache/reuse mix-up)
       const cacheDir = FileSystem.cacheDirectory ?? FileSystem.documentDirectory
+      let finalUri = processedUri
       if (cacheDir) {
         const uniquePath = `${cacheDir}capture-${Date.now()}-${Math.random().toString(36).slice(2, 9)}.jpg`
-        await FileSystem.copyAsync({ from: mirrored.uri, to: uniquePath })
-        setCapturedUri(uniquePath)
-      } else {
-        setCapturedUri(mirrored.uri)
+        await FileSystem.copyAsync({ from: processedUri, to: uniquePath })
+        finalUri = uniquePath
       }
+
+      // Immediately pass the captured photo back to caller.
+      onCapture(finalUri)
     } catch {
       // ignore capture errors
     }
@@ -134,11 +144,12 @@ export function CameraCapture({
       <CameraView
         ref={cameraRef}
         style={styles.camera}
-        facing="front"
+        facing={facing}
+        pointerEvents="none"
       />
       <SafeAreaView style={styles.cameraOverlay} edges={['top', 'bottom']}>
         <View style={styles.topBar}>
-          <Pressable onPress={onClose} style={styles.closeBtn}>
+          <Pressable onPress={onClose} style={styles.closeBtn} hitSlop={20}>
             <Ionicons name="close" size={32} color="#fff" />
           </Pressable>
         </View>
@@ -180,13 +191,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'flex-start',
     paddingHorizontal: 16,
-    paddingTop: 8,
+    paddingTop: 12,
+    zIndex: 10,
   },
   closeBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(0,0,0,0.4)',
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(30,30,30,0.85)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.4)',
     alignItems: 'center',
     justifyContent: 'center',
   },
