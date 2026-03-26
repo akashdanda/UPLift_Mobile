@@ -145,10 +145,11 @@ export function CameraCapture({
         ref={cameraRef}
         style={styles.camera}
         facing={facing}
+        pointerEvents="none"
       />
       <SafeAreaView style={styles.cameraOverlay} edges={['top', 'bottom']}>
         <View style={styles.topBar}>
-          <Pressable onPress={onClose} style={styles.closeBtn}>
+          <Pressable onPress={onClose} style={styles.closeBtn} hitSlop={20}>
             <Ionicons name="close" size={32} color="#fff" />
           </Pressable>
         </View>
@@ -190,13 +191,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'flex-start',
     paddingHorizontal: 16,
-    paddingTop: 8,
+    paddingTop: 12,
+    zIndex: 10,
   },
   closeBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(0,0,0,0.4)',
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(30,30,30,0.85)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.4)',
     alignItems: 'center',
     justifyContent: 'center',
   },

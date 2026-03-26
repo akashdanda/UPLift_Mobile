@@ -103,6 +103,10 @@ function ZoomableFeedImage({
   const overlayUrl = frontImage === 'primary' ? secondaryImageUrl! : imageUrl;
 
   const toggle = () => {
+    // Make the tap-to-swap feel instant (before finger lifts),
+    // and reset any pinch zoom so the swap isn't delayed by zoom state.
+    scale.value = 1
+    savedScale.value = 1
     setFrontImage((f) => (f === 'primary' ? 'secondary' : 'primary'));
   };
 
@@ -110,12 +114,10 @@ function ZoomableFeedImage({
     <View style={[style, { position: 'relative', overflow: 'hidden' }]}>
       <GestureDetector gesture={pinchGesture}>
         <Animated.View style={{ flex: 1, overflow: 'hidden' }}>
-          <Pressable style={{ width: '100%', height: '100%' }} onPress={toggle}>
-            <Animated.Image source={{ uri: mainUrl }} style={[{ width: '100%', height: '100%' }, animatedImageStyle]} />
-          </Pressable>
+          <Animated.Image source={{ uri: mainUrl }} style={[{ width: '100%', height: '100%' }, animatedImageStyle]} />
         </Animated.View>
       </GestureDetector>
-      <Pressable style={styles.dualPhotoCorner} onPress={toggle}>
+      <Pressable style={styles.dualPhotoCorner} onPressIn={toggle}>
         <Image source={{ uri: overlayUrl }} style={styles.dualPhotoCornerImage} contentFit="cover" />
       </Pressable>
     </View>
@@ -438,68 +440,82 @@ export default function HomeScreen() {
     const channels: ReturnType<typeof supabase.channel>[] = []
     let isMounted = true
 
-    // Subscribe to reactions on user's workouts
-    const reactionsChannel = supabase
-      .channel('notifications-reactions')
-      .on(
+    const refreshTodayReactions = (workoutId: string) => {
+      if (workoutId !== todayWorkoutIdRef.current) return
+      getReactionsForWorkouts([workoutId]).then((map) =>
+        setTodayWorkoutReactions(map.get(workoutId) ?? [])
+      )
+    }
+
+    const refreshTodayComments = (workoutId: string) => {
+      if (workoutId !== todayWorkoutIdRef.current) return
+      getCommentsForWorkouts([workoutId]).then((map) =>
+        setTodayWorkoutComments(map.get(workoutId) ?? [])
+      )
+    }
+
+    // Subscribe to reactions on user's workouts (INSERT/UPDATE/DELETE)
+    const reactionsChannel = supabase.channel('notifications-reactions')
+    ;(['INSERT', 'UPDATE', 'DELETE'] as const).forEach((eventType) => {
+      reactionsChannel.on(
         'postgres_changes',
         {
-          event: 'INSERT',
+          event: eventType,
           schema: 'public',
           table: 'workout_reactions',
         },
-        (payload) => {
-          const workoutId = (payload.new as { workout_id: string }).workout_id
+        (payload: any) => {
+          const workoutId =
+            payload?.new?.workout_id ?? payload?.old?.workout_id ?? undefined
+          if (!workoutId) return
+
           supabase
             .from('workouts')
             .select('user_id')
             .eq('id', workoutId)
-            .single()
+            .maybeSingle()
             .then(({ data }) => {
               if (data && data.user_id === session.user.id) {
                 refreshUnreadCount()
-                if (workoutId === todayWorkoutIdRef.current) {
-                  getReactionsForWorkouts([workoutId]).then((map) =>
-                    setTodayWorkoutReactions(map.get(workoutId) ?? [])
-                  )
-                }
+                refreshTodayReactions(workoutId)
               }
             })
         }
       )
-      .subscribe()
+    })
+    reactionsChannel.subscribe()
     channels.push(reactionsChannel)
 
-    // Subscribe to comments on user's workouts
-    const commentsChannel = supabase
-      .channel('notifications-comments')
-      .on(
+    // Subscribe to comments on user's workouts (INSERT/UPDATE/DELETE)
+    const commentsChannel = supabase.channel('notifications-comments')
+    ;(['INSERT', 'UPDATE', 'DELETE'] as const).forEach((eventType) => {
+      commentsChannel.on(
         'postgres_changes',
         {
-          event: 'INSERT',
+          event: eventType,
           schema: 'public',
           table: 'workout_comments',
         },
-        (payload) => {
-          const workoutId = (payload.new as { workout_id: string }).workout_id
+        (payload: any) => {
+          const workoutId =
+            payload?.new?.workout_id ?? payload?.old?.workout_id ?? undefined
+          if (!workoutId) return
+
           supabase
             .from('workouts')
             .select('user_id')
             .eq('id', workoutId)
-            .single()
+            .maybeSingle()
             .then(({ data }) => {
               if (data && data.user_id === session.user.id) {
                 refreshUnreadCount()
-                if (workoutId === todayWorkoutIdRef.current) {
-                  getCommentsForWorkouts([workoutId]).then((map) =>
-                    setTodayWorkoutComments(map.get(workoutId) ?? [])
-                  )
-                }
+                refreshTodayComments(workoutId)
               }
             })
         }
       )
-      .subscribe()
+    })
+    commentsChannel.subscribe()
     channels.push(commentsChannel)
 
     // Subscribe to user achievements
@@ -1449,7 +1465,7 @@ export default function HomeScreen() {
       </Modal>
 
 
-      <Modal visible={reactCameraOpen} animationType="slide" presentationStyle="fullScreen">
+      <Modal visible={reactCameraOpen} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setReactCameraOpen(false)}>
         <CameraCapture
           onCapture={handleReactCameraCapture}
           onClose={() => setReactCameraOpen(false)}

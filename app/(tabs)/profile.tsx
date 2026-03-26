@@ -412,7 +412,7 @@ export default function ProfileScreen() {
                 New
               </ThemedText>
             </Pressable>
-            {highlights.map((h) => (
+            {highlights.filter((h) => h.workouts_count > 0).map((h) => (
               <Pressable
                 key={h.id}
                 onPress={() => router.push({ pathname: '/highlight-detail', params: { id: h.id } })}

@@ -74,9 +74,40 @@ export default function FriendsScreen() {
         setPending(p)
       })
       .finally(() => setLoading(false))
-    // Load suggestions & active duels
-    getMutualFriendSuggestions(userId, 10).then(setMutualSuggestions).catch(() => {})
-    getBuddySuggestions(userId, 5).then(setBuddySuggestions).catch(() => {})
+    getMutualFriendSuggestions(userId, 30)
+      .then(async (suggestions) => {
+        setMutualSuggestions(suggestions)
+        if (suggestions.length > 0) {
+          const statuses = await Promise.all(
+            suggestions.map((s) => getFriendshipStatus(userId, s.id))
+          )
+          setSearchStatus((prev) => {
+            const next = { ...prev }
+            suggestions.forEach((s, i) => {
+              next[s.id] = statuses[i]
+            })
+            return next
+          })
+        }
+      })
+      .catch(() => {})
+    getBuddySuggestions(userId, 5)
+      .then(async (buddies) => {
+        setBuddySuggestions(buddies)
+        if (buddies.length > 0) {
+          const statuses = await Promise.all(
+            buddies.map((b) => getFriendshipStatus(userId, b.id))
+          )
+          setSearchStatus((prev) => {
+            const next = { ...prev }
+            buddies.forEach((b, i) => {
+              next[b.id] = statuses[i]
+            })
+            return next
+          })
+        }
+      })
+      .catch(() => {})
     getUserDuels(userId, ['active', 'pending']).then(setActiveDuels).catch(() => {})
   }, [userId])
 
@@ -389,7 +420,7 @@ export default function FriendsScreen() {
             )}
 
             {/* Suggested Friends (Mutuals) - DISCOVERY */}
-            {mutualSuggestions.length > 0 && (
+            {mutualSuggestions.some((s) => (searchStatus[s.id] ?? 'none') === 'none') && (
               <>
                 <ThemedText type="subtitle" style={[styles.sectionTitle, { color: colors.text }]}>
                   People you may know
@@ -397,7 +428,7 @@ export default function FriendsScreen() {
                 <View
                   style={[styles.listCard, { backgroundColor: colors.card, borderColor: colors.tabBarBorder }]}
                 >
-                  {mutualSuggestions.map((suggestion) => {
+                  {mutualSuggestions.filter((s) => (searchStatus[s.id] ?? 'none') === 'none').slice(0, 10).map((suggestion) => {
                     const status = searchStatus[suggestion.id] ?? 'none'
                     const hasMutuals = suggestion.mutual_count >= 1 && suggestion.mutual_names?.length
                     const mutualText =
@@ -470,7 +501,7 @@ export default function FriendsScreen() {
             )}
 
             {/* Workout Buddy Suggestions - DISCOVERY */}
-            {buddySuggestions.length > 0 && (
+            {buddySuggestions.some((b) => (searchStatus[b.id] ?? 'none') === 'none') && (
               <>
                 <ThemedText type="subtitle" style={[styles.sectionTitle, { color: colors.text }]}>
                   Workout Buddies
@@ -481,7 +512,7 @@ export default function FriendsScreen() {
                 <View
                   style={[styles.listCard, { backgroundColor: colors.card, borderColor: colors.tabBarBorder }]}
                 >
-                  {buddySuggestions.map((buddy) => {
+                  {buddySuggestions.filter((b) => (searchStatus[b.id] ?? 'none') === 'none').map((buddy) => {
                     const status = searchStatus[buddy.id] ?? 'none'
                     return (
                       <View key={buddy.id} style={[styles.friendRow, { borderBottomColor: colors.tabBarBorder }]}>

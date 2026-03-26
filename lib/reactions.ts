@@ -1,6 +1,6 @@
 import { supabase } from '@/lib/supabase'
 import { uploadReactionImage } from '@/lib/reaction-upload'
-import { sendEventPush } from '@/lib/push-notifications'
+import { pushReaction } from '@/lib/push-notifications'
 import type { WorkoutReactionWithProfile } from '@/types/reaction'
 
 /** Fetch all reactions for the given workout IDs, with reactor profile info */
@@ -78,7 +78,6 @@ export async function addReaction(
     )
 
     if (error) return { error }
-    // Best-effort: send a push to the workout owner if this is someone else reacting
     try {
       const { data: workout } = await supabase
         .from('workouts')
@@ -87,7 +86,7 @@ export async function addReaction(
         .maybeSingle()
       const ownerId = (workout as { user_id: string } | null)?.user_id
       if (ownerId && ownerId !== userId) {
-        await sendEventPush(ownerId, 'Someone reacted to your workout.')
+        await pushReaction(ownerId, userId, emoji)
       }
     } catch {
       // ignore

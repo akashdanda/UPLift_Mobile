@@ -29,6 +29,7 @@ import {
 } from '@/lib/achievements'
 import { getFriends, type FriendWithProfile } from '@/lib/friends'
 import { computeXP, getLevelFromXP } from '@/lib/levels'
+import { pushFirstFriendWorkout } from '@/lib/push-notifications'
 import { supabase } from '@/lib/supabase'
 import { addWorkoutTags } from '@/lib/tags'
 import { uploadWorkoutImage } from '@/lib/workout-upload'
@@ -48,10 +49,10 @@ function BeRealPreview({ primaryUri, secondaryUri }: { primaryUri: string; secon
 
   return (
     <View style={styles.dualPreview}>
-      <Pressable style={{ width: '100%', height: '100%' }} onPress={toggle}>
+      <Pressable style={{ width: '100%', height: '100%' }} onPressIn={toggle}>
         <Image source={{ uri: mainUri }} style={styles.dualPreviewMain} />
       </Pressable>
-      <Pressable style={styles.dualPreviewSecondaryWrap} onPress={toggle}>
+      <Pressable style={styles.dualPreviewSecondaryWrap} onPressIn={toggle}>
         <Image source={{ uri: overlayUri }} style={styles.dualPreviewSecondary} />
       </Pressable>
     </View>
@@ -299,6 +300,16 @@ export default function LogWorkoutScreen() {
       }
     } catch {
       // Don't block workout posting for achievement errors
+    }
+
+    try {
+      const displayName = profile?.display_name || 'Your friend'
+      const friends = await getFriends(session.user.id)
+      for (const f of friends) {
+        await pushFirstFriendWorkout(f.id, displayName)
+      }
+    } catch {
+      // best-effort
     }
   }
 
@@ -550,7 +561,7 @@ export default function LogWorkoutScreen() {
         />
       )}
 
-      <Modal visible={cameraOpen} animationType="slide" presentationStyle="fullScreen">
+      <Modal visible={cameraOpen} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setCameraOpen(false)}>
         <CameraCapture
           onCapture={handleCapture}
           onClose={() => setCameraOpen(false)}

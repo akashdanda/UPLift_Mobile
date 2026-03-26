@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase'
+import { pushFriendRequest, pushFriendAccepted } from '@/lib/push-notifications'
 import type { Friendship } from '@/types/friendship'
 import type { ProfilePublic } from '@/types/friendship'
 
@@ -74,6 +75,7 @@ export async function sendFriendRequest(requesterId: string, addresseeId: string
     if (error.code === '23505') return { error: new Error('Request already sent or already friends') }
     return { error }
   }
+  try { await pushFriendRequest(addresseeId, requesterId) } catch { /* best-effort */ }
   return { error: null }
 }
 
@@ -81,11 +83,14 @@ export async function sendFriendRequest(requesterId: string, addresseeId: string
 export async function acceptFriendRequest(friendshipId: string, addresseeId: string): Promise<{ error: Error | null }> {
   const { data, error: fetchError } = await supabase
     .from('friendships')
-    .select('addressee_id')
+    .select('requester_id, addressee_id')
     .eq('id', friendshipId)
     .single()
   if (fetchError || !data || data.addressee_id !== addresseeId) return { error: new Error('Request not found') }
   const { error } = await supabase.from('friendships').update({ status: 'accepted' }).eq('id', friendshipId)
+  if (!error) {
+    try { await pushFriendAccepted(data.requester_id, addresseeId) } catch { /* best-effort */ }
+  }
   return { error: error ?? null }
 }
 

@@ -125,7 +125,7 @@ export default function LeaderboardScreen() {
   const showPointsInfo = useCallback(() => {
     Alert.alert(
       'How Points Work',
-      `👥 Each friend: +${LEADERBOARD_POINTS.perFriend} pts\n📁 Each group: +${LEADERBOARD_POINTS.perGroup} pt\n💪 Each workout: +${LEADERBOARD_POINTS.perWorkout} pts\n🏆 Competition win: +${LEADERBOARD_POINTS.perCompetitionWin} pts\n❌ Workout missed: ${LEADERBOARD_POINTS.perWorkoutMissed} pts\n🔥 Every 10 streak: +${LEADERBOARD_POINTS.perStreakTier} pts (10→50, 20→100, …)`,
+      `All points are based on this month's activity only.\n\n💪 Each workout: +${LEADERBOARD_POINTS.perWorkout} pts\n🏆 Competition win: +${LEADERBOARD_POINTS.perCompetitionWin} pts\n👥 Friend added: +${LEADERBOARD_POINTS.perFriend} pts\n📁 Group joined: +${LEADERBOARD_POINTS.perGroup} pt`,
       [{ text: 'OK' }]
     )
   }, [])

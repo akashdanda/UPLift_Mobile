@@ -15,6 +15,7 @@ import {
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
+import { WorkoutDualImageGrid } from '@/components/workout-dual-image'
 import { ThemedText } from '@/components/themed-text'
 import { ThemedView } from '@/components/themed-view'
 import { Colors } from '@/constants/theme'
@@ -170,7 +171,10 @@ export default function ManageHighlightsScreen() {
           onPress: async () => {
             const result = await removeWorkoutFromHighlight(detail.id, workoutId, session.user.id)
             if ('error' in result) Alert.alert('Error', result.error.message)
-            else loadDetail()
+            else if (result.highlightDeleted) {
+              loadList()
+              router.replace('/manage-highlights')
+            } else loadDetail()
           },
         },
       ]
@@ -299,7 +303,11 @@ export default function ManageHighlightsScreen() {
                   onPress={() => handleSetCover(workout.id)}
                   style={[styles.gridItem, { width: size, height: size }]}
                 >
-                  <Image source={{ uri: workout.image_url }} style={styles.gridImage} />
+                  <WorkoutDualImageGrid
+                    primaryUri={workout.image_url}
+                    secondaryUri={workout.secondary_image_url}
+                    style={styles.gridImage}
+                  />
                   {detail.cover_workout_id === workout.id ? (
                     <View style={[styles.coverBadge, { backgroundColor: colors.tint }]}>
                       <Ionicons name="checkmark" size={14} color="#fff" />

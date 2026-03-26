@@ -1,5 +1,4 @@
 import Ionicons from '@expo/vector-icons/Ionicons'
-import { Image } from 'expo-image'
 import { router, useLocalSearchParams } from 'expo-router'
 import { useCallback, useEffect, useState } from 'react'
 import {
@@ -12,20 +11,22 @@ import {
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
+import { WorkoutDualImageGrid } from '@/components/workout-dual-image'
 import { ThemedText } from '@/components/themed-text'
 import { Colors } from '@/constants/theme'
 import { useAuthContext } from '@/hooks/use-auth-context'
 import { useColorScheme } from '@/hooks/use-color-scheme'
-import { addWorkoutToHighlight, getHighlightWithWorkouts, setHighlightCover } from '@/lib/highlights'
+import {
+  addWorkoutToHighlight,
+  getHighlightWithWorkouts,
+  removeWorkoutFromHighlight,
+  setHighlightCover,
+} from '@/lib/highlights'
 import { supabase } from '@/lib/supabase'
 import type { Workout } from '@/types/workout'
 
 const COLS = 3
 const GAP = 4
-
-function formatDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
-}
 
 export default function AddWorkoutsToHighlightScreen() {
   const { highlightId } = useLocalSearchParams<{ highlightId: string }>()
@@ -36,7 +37,7 @@ export default function AddWorkoutsToHighlightScreen() {
   const [workouts, setWorkouts] = useState<Workout[]>([])
   const [inHighlightIds, setInHighlightIds] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
-  const [addingId, setAddingId] = useState<string | null>(null)
+  const [mutatingId, setMutatingId] = useState<string | null>(null)
 
   const load = useCallback(() => {
     if (!session || !highlightId) return
@@ -64,12 +65,30 @@ export default function AddWorkoutsToHighlightScreen() {
     if (!session || !highlightId) return
     if (inHighlightIds.has(workoutId)) return
     const wasEmpty = inHighlightIds.size === 0
-    setAddingId(workoutId)
+    setMutatingId(workoutId)
     const result = await addWorkoutToHighlight(highlightId, workoutId, session.user.id)
-    setAddingId(null)
+    setMutatingId(null)
     if ('error' in result) return
     setInHighlightIds((prev) => new Set([...prev, workoutId]))
     if (wasEmpty) await setHighlightCover(highlightId, session.user.id, workoutId)
+  }
+
+  const handleRemove = async (workoutId: string) => {
+    if (!session || !highlightId) return
+    if (!inHighlightIds.has(workoutId)) return
+    setMutatingId(workoutId)
+    const result = await removeWorkoutFromHighlight(highlightId, workoutId, session.user.id)
+    setMutatingId(null)
+    if ('error' in result) return
+    if (result.highlightDeleted) {
+      router.back()
+      return
+    }
+    setInHighlightIds((prev) => {
+      const next = new Set(prev)
+      next.delete(workoutId)
+      return next
+    })
   }
 
   const screenWidth = Dimensions.get('window').width
@@ -90,28 +109,72 @@ export default function AddWorkoutsToHighlightScreen() {
           >
             {workouts.map((workout) => {
               const inHighlight = inHighlightIds.has(workout.id)
-              const adding = addingId === workout.id
+              const mutating = mutatingId === workout.id
               return (
                 <View key={workout.id} style={[styles.gridItem, { width: size, height: size }]}>
-                  <Image source={{ uri: workout.image_url }} style={styles.gridImage} />
+                  <WorkoutDualImageGrid
+                    primaryUri={workout.image_url}
+                    secondaryUri={workout.secondary_image_url}
+                    style={styles.gridImage}
+                  />
                   <View style={styles.overlay}>
-                    {inHighlight ? (
-                      <View style={[styles.badge, { backgroundColor: colors.tint }]}>
-                        <Ionicons name="checkmark" size={16} color="#fff" />
-                      </View>
-                    ) : (
+                    <View
+                      style={[
+                        styles.toggleTrack,
+                        {
+                          borderColor: `${colors.tint}55`,
+                          backgroundColor: colorScheme === 'dark' ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.35)',
+                        },
+                      ]}
+                    >
                       <Pressable
                         onPress={() => handleAdd(workout.id)}
-                        disabled={adding}
-                        style={[styles.addBtn, { backgroundColor: colors.tint }]}
+                        disabled={mutating || inHighlight}
+                        style={({ pressed }) => [
+                          styles.toggleSegment,
+                          !inHighlight
+                            ? { backgroundColor: colors.tint }
+                            : { backgroundColor: 'transparent' },
+                          pressed && !inHighlight && { opacity: 0.85 },
+                          (mutating || inHighlight) && styles.toggleSegmentDisabled,
+                        ]}
                       >
-                        {adding ? (
+                        {mutating && !inHighlight ? (
                           <ActivityIndicator size="small" color="#fff" />
                         ) : (
-                          <ThemedText style={styles.addBtnText}>Add</ThemedText>
+                          <ThemedText
+                            style={[
+                              styles.toggleSegmentText,
+                              { color: !inHighlight ? '#fff' : colors.textMuted },
+                            ]}
+                          >
+                            Add
+                          </ThemedText>
                         )}
                       </Pressable>
-                    )}
+                      <Pressable
+                        onPress={() => handleRemove(workout.id)}
+                        disabled={mutating || !inHighlight}
+                        style={({ pressed }) => [
+                          styles.toggleSegment,
+                          inHighlight
+                            ? { backgroundColor: colors.tint }
+                            : { backgroundColor: 'transparent' },
+                          pressed && inHighlight && { opacity: 0.85 },
+                          (mutating || !inHighlight) && styles.toggleSegmentDisabled,
+                        ]}
+                      >
+                        {mutating && inHighlight ? (
+                          <ActivityIndicator size="small" color="#fff" />
+                        ) : (
+                          <Ionicons
+                            name="checkmark"
+                            size={16}
+                            color={inHighlight ? '#fff' : colors.textMuted}
+                          />
+                        )}
+                      </Pressable>
+                    </View>
                   </View>
                 </View>
               )
@@ -144,22 +207,30 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     padding: 6,
-    alignItems: 'center',
+    alignItems: 'stretch',
     justifyContent: 'center',
   },
-  badge: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+  toggleTrack: {
+    flexDirection: 'row',
+    borderRadius: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    overflow: 'hidden',
+    minHeight: 32,
+  },
+  toggleSegment: {
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  addBtn: {
     paddingVertical: 6,
-    paddingHorizontal: 14,
-    borderRadius: 6,
+    paddingHorizontal: 4,
   },
-  addBtnText: { color: '#fff', fontSize: 13, fontWeight: '600' },
+  toggleSegmentDisabled: {
+    opacity: 0.45,
+  },
+  toggleSegmentText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
   footer: {
     borderTopWidth: StyleSheet.hairlineWidth,
     paddingHorizontal: 16,
