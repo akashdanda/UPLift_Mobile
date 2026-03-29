@@ -438,7 +438,7 @@ export default function FriendProfileScreen() {
             <ThemedText type="defaultSemiBold" style={[styles.statValue, { color: colors.tint }]}>
               {profile.workouts_count ?? 0}
             </ThemedText>
-            <ThemedText style={[styles.statLabel, { color: colors.textMuted }]} numberOfLines={2}>
+            <ThemedText style={[styles.statLabel, { color: colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit>
               Workouts
             </ThemedText>
           </View>
@@ -458,7 +458,7 @@ export default function FriendProfileScreen() {
             <ThemedText type="defaultSemiBold" style={[styles.statValue, { color: colors.tint }]}>
               {profile.streak ?? 0}
             </ThemedText>
-            <ThemedText style={[styles.statLabel, { color: colors.textMuted }]} numberOfLines={2}>
+            <ThemedText style={[styles.statLabel, { color: colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit>
               Streak
             </ThemedText>
           </View>
@@ -466,7 +466,7 @@ export default function FriendProfileScreen() {
             <ThemedText type="defaultSemiBold" style={[styles.statValue, { color: colors.tint }]}>
               {profile.groups_count ?? 0}
             </ThemedText>
-            <ThemedText style={[styles.statLabel, { color: colors.textMuted }]} numberOfLines={2}>
+            <ThemedText style={[styles.statLabel, { color: colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit>
               Groups
             </ThemedText>
           </View>

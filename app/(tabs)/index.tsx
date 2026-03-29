@@ -7,6 +7,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Dimensions,
+  KeyboardAvoidingView,
   Modal,
   Platform,
   Pressable,
@@ -22,6 +24,9 @@ import Animated, {
   withSpring
 } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
+import * as Sharing from 'expo-sharing';
+import ViewShot from 'react-native-view-shot';
 
 import { NotificationsModal } from '@/components/notifications-modal';
 import { ReportModal } from '@/components/report-modal';
@@ -193,9 +198,11 @@ export default function HomeScreen() {
   const [viewReaction, setViewReaction] = useState<WorkoutReactionWithProfile | null>(null);
 
   // Inline comments (Instagram-style: all comments visible + add comment / reply on same card)
-  const [inlineCommentWorkoutId, setInlineCommentWorkoutId] = useState<string | null>(null);
-  const [inlineCommentMessage, setInlineCommentMessage] = useState('');
+  const [commentModalWorkoutId, setCommentModalWorkoutId] = useState<string | null>(null);
+  const [commentModalMessage, setCommentModalMessage] = useState('');
   const [commentSubmittingWorkoutId, setCommentSubmittingWorkoutId] = useState<string | null>(null);
+  const commentInputRef = useRef<TextInput>(null);
+
   
   // Highlight workout when navigating from notification
   const [highlightedWorkoutId, setHighlightedWorkoutId] = useState<string | null>(null);
@@ -272,9 +279,10 @@ export default function HomeScreen() {
       const workoutIndex = feedItems.findIndex((item) => item.workout.id === workoutId);
       
       if (workoutIndex >= 0) {
-        // If it's a comment notification, expand comments
+        // If it's a comment notification, open comment modal
         if (expandComments) {
-          setInlineCommentWorkoutId(workoutId);
+          setCommentModalWorkoutId(workoutId);
+          setCommentModalMessage('');
         }
         
         // Highlight the workout temporarily
@@ -403,12 +411,72 @@ export default function HomeScreen() {
     if (todayWorkout?.id === workoutId) {
       setTodayWorkoutComments((prev) => [...prev, newComment]);
     }
-    if (inlineCommentWorkoutId === workoutId) {
-      setInlineCommentWorkoutId(null);
-      setInlineCommentMessage('');
-    }
+    // Clear the message but keep modal open
+    setCommentModalMessage('');
     refreshFeed();
   };
+
+  // Share state: when set, renders a hidden composite view that gets captured
+  type ShareData = {
+    primaryUrl: string;
+    secondaryUrl?: string | null;
+    workoutType?: string | null;
+    workoutDate?: string | null;
+    caption?: string | null;
+    displayName?: string | null;
+  };
+  const [shareData, setShareData] = useState<ShareData | null>(null);
+  const shareViewRef = useRef<ViewShot>(null);
+
+  const handleShareWorkout = (
+    imageUrl: string,
+    secondaryImageUrl?: string | null,
+    workoutType?: string | null,
+    workoutDate?: string | null,
+    caption?: string | null,
+    displayName?: string | null,
+  ) => {
+    // Always render the branded composite card (with or without dual camera)
+    setShareData({
+      primaryUrl: imageUrl,
+      secondaryUrl: secondaryImageUrl,
+      workoutType,
+      workoutDate,
+      caption,
+      displayName,
+    });
+  };
+
+  // Capture the composite view once it renders
+  useEffect(() => {
+    if (!shareData) return;
+    // Give the images a moment to load before capturing
+    const timer = setTimeout(async () => {
+      try {
+        const uri = await shareViewRef.current?.capture?.();
+        if (!uri) {
+          Alert.alert('Share failed', 'Could not compose the image.');
+          setShareData(null);
+          return;
+        }
+        if (!(await Sharing.isAvailableAsync())) {
+          Alert.alert('Sharing not available', 'Sharing is not supported on this device.');
+          setShareData(null);
+          return;
+        }
+        await Sharing.shareAsync(uri, {
+          mimeType: 'image/jpeg',
+          UTI: 'public.jpeg',
+        });
+      } catch (e: any) {
+        console.warn('Share error:', e);
+        Alert.alert('Share failed', e?.message ?? 'Could not share this workout.');
+      } finally {
+        setShareData(null);
+      }
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [shareData]);
 
   const handleRemoveReaction = async (item: FeedItem) => {
     if (!session) return;
@@ -685,6 +753,7 @@ export default function HomeScreen() {
   const streak = profile?.streak ?? 0;
 
   return (
+  <>
     <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]} edges={['top']}>
       <ScrollView
         ref={scrollViewRef}
@@ -694,14 +763,9 @@ export default function HomeScreen() {
       >
         {/* Header */}
         <View style={styles.headerRow}>
-          <View style={{ flex: 1 }}>
-            <ThemedText type="title" style={styles.greeting}>
-              Uplift
-            </ThemedText>
-            <ThemedText style={[styles.headerSub, { color: colors.textMuted }]}>
-              Become your best self together
-            </ThemedText>
-          </View>
+          <ThemedText type="title" style={styles.greeting}>
+            Uplift
+          </ThemedText>
           <Pressable
             onPress={handleOpenNotifications}
             style={({ pressed }) => [
@@ -720,168 +784,92 @@ export default function HomeScreen() {
           </Pressable>
         </View>
 
-        {/* Streak banner */}
-        <View style={[styles.streakBanner, { backgroundColor: streakAtRisk ? '#EF4444' + '18' : colors.warm + '15' }]}>
-          <Ionicons name="flame" size={28} color={streakAtRisk ? '#EF4444' : colors.warm} />
-          <View style={styles.streakText}>
-            <ThemedText type="defaultSemiBold" style={[styles.streakValue, { color: streakAtRisk ? '#EF4444' : colors.warm }]}>
-              {streak > 0 ? `${streak} day streak` : 'No streak yet'}
-              {streakAtRisk ? ' ⚠️' : ''}
-            </ThemedText>
-            <ThemedText style={[styles.streakHint, { color: colors.textMuted }]}>
-              {streakAtRisk
-                ? "Your streak is at risk! Log a workout before midnight."
-                : streak > 0
-                  ? 'Keep it going — log today to stay on fire'
-                  : 'Log your first workout to start a streak'}
-            </ThemedText>
-            {streakAtRisk && freezeAvailable && (
-              <Pressable
-                onPress={async () => {
-                  if (!session) return;
-                  setFreezeLoading(true);
-                  const used = await useStreakFreeze(session.user.id);
-                  setFreezeLoading(false);
-                  if (used) {
-                    setFreezeAvailable(false);
-                    setStreakAtRisk(false);
-                    Alert.alert('Streak Frozen! ❄️', 'Your streak is safe for today. You get 1 freeze per month.');
-                  } else {
-                    Alert.alert('Already used', 'You already used your streak freeze this month.');
-                  }
-                }}
-                disabled={freezeLoading}
-                style={[styles.freezeButton, { backgroundColor: '#3B82F6' }]}
-              >
-                {freezeLoading ? (
-                  <ActivityIndicator size="small" color="#fff" />
-                ) : (
-                  <ThemedText style={styles.freezeButtonText}>❄️ Use Streak Freeze</ThemedText>
-                )}
-              </Pressable>
-            )}
-          </View>
-        </View>
-
-{/* Daily reminder banner — only when notifications on and haven't posted today */}
-        {profile?.notifications_enabled !== false &&
-          reminderInfo &&
-          !reminderInfo.hasPostedToday &&
-          getReminderMessage(reminderInfo) && (
-            <Pressable
-              onPress={() => router.push('/log-workout')}
-              style={[
-                styles.reminderBanner,
-                {
-                  backgroundColor:
-                    reminderInfo.hoursLeftUntilCutoff !== null &&
-                    reminderInfo.hoursLeftUntilCutoff <= 3
-                      ? colors.tint + '20'
-                      : colors.cardElevated,
-                  borderColor: colors.tabBarBorder,
-                },
-              ]}
-            >
-              <Ionicons
-                name="notifications"
-                size={22}
-                color={
-                  reminderInfo.hoursLeftUntilCutoff !== null &&
-                  reminderInfo.hoursLeftUntilCutoff <= 3
-                    ? colors.tint
-                    : colors.textMuted
-                }
-              />
-              <ThemedText
-                style={[styles.reminderBannerText, { color: colors.text }]}
-                numberOfLines={2}
-              >
-                {getReminderMessage(reminderInfo)}
-              </ThemedText>
-              <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
-            </Pressable>
-          )}
-
-        {/* Social nudges */}
-        {socialNudges.length > 0 && (
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.nudgeScroll}
-            style={styles.nudgeScrollView}
-          >
-            {socialNudges.map((nudge, idx) => (
-              <View
-                key={`nudge-${idx}`}
-                style={[styles.nudgeCard, { backgroundColor: colors.card }]}
-              >
-                <ThemedText style={styles.nudgeEmoji}>{nudge.emoji}</ThemedText>
-                <ThemedText style={[styles.nudgeTitle, { color: colors.text }]} numberOfLines={2}>
-                  {nudge.title}
-                </ThemedText>
-                <ThemedText style={[styles.nudgeMessage, { color: colors.textMuted }]} numberOfLines={2}>
-                  {nudge.message}
-                </ThemedText>
-              </View>
-            ))}
-          </ScrollView>
-        )}
-
-        {/* Quick actions */}
-        <View style={styles.quickActions}>
+        {/* Log workout CTA — looks like a feed card placeholder */}
+        {!todayWorkout && (
           <Pressable
-            style={({ pressed }) => [
-              styles.actionPill,
-              { backgroundColor: todayWorkout ? colors.tint : colors.tint },
-              pressed && styles.actionPillPressed,
-            ]}
             onPress={() => router.push('/log-workout')}
-          >
-            <Ionicons
-              name={todayWorkout ? 'checkmark-circle' : 'camera'}
-              size={18}
-              color="#fff"
-            />
-            <ThemedText style={styles.actionPillText}>
-              {todayWorkout ? 'Logged' : 'Log workout'}
-            </ThemedText>
-          </Pressable>
-          <Pressable
             style={({ pressed }) => [
-              styles.actionPillOutline,
-              { borderColor: colors.tint + '50', backgroundColor: colors.cardElevated },
-              pressed && styles.actionPillPressed,
+              styles.logWorkoutCta,
+              pressed && { opacity: 0.8, transform: [{ scale: 0.985 }] },
             ]}
-            onPress={() => router.push({ pathname: '/leaderboard', params: { scope: 'global' } })}
           >
-            <Ionicons name="trophy" size={18} color={colors.tint} />
-            <ThemedText style={[styles.actionPillTextOutline, { color: colors.text }]}>
-              Top athletes
-            </ThemedText>
+            <LinearGradient
+              colors={['#13101A', colors.tint + '12', '#13101A']}
+              start={{ x: 0.5, y: 0 }}
+              end={{ x: 0.5, y: 1 }}
+              style={styles.logWorkoutCtaBg}
+            >
+              {/* Subtle radial-ish glow behind the icon */}
+              <View style={[styles.logWorkoutCtaGlow, { backgroundColor: colors.tint + '10' }]} />
+
+              <View style={[styles.logWorkoutCtaRing, { borderColor: colors.tint + '60' }]}>
+                <Ionicons name="camera-outline" size={30} color={colors.tint} />
+              </View>
+
+              <ThemedText style={[styles.logWorkoutCtaTitle, { color: '#fff' }]}>
+                Log your workout
+              </ThemedText>
+              <ThemedText style={styles.logWorkoutCtaSub}>
+                Tap to snap a photo & share with friends
+              </ThemedText>
+            </LinearGradient>
           </Pressable>
-        </View>
+        )}
 
         {/* Today's workout */}
         {todayWorkout && (
-          <View style={styles.section}>
-            <ThemedText type="subtitle" style={[styles.sectionTitle, { color: colors.text }]}>
-              Today&apos;s workout
-            </ThemedText>
-            <View style={[styles.todayCard, { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.tint + '10' }]}>
+          <View style={styles.feedCard}>
+            <View style={styles.feedImageContainer}>
               <ZoomableFeedImage
                 imageUrl={todayWorkout.image_url}
                 secondaryImageUrl={todayWorkout.secondary_image_url}
-                style={styles.todayImage}
+                style={styles.feedImage}
               />
-              <View style={styles.captionRow}>
-                <ThemedText style={styles.todayTypeEmoji}>{getWorkoutTypeEmoji(todayWorkout.workout_type)}</ThemedText>
-                {todayWorkout.caption ? (
-                  <ThemedText style={[styles.todayCaption, { color: colors.text }]}>
-                    {todayWorkout.caption}
-                  </ThemedText>
-                ) : null}
+              <LinearGradient
+                colors={['transparent', 'rgba(0,0,0,0.75)']}
+                style={styles.feedGradient}
+              >
+                <View style={styles.feedOverlayInfo}>
+                  <View style={{ flex: 1 }}>
+                    <ThemedText type="defaultSemiBold" style={styles.feedOverlayName}>
+                      Your workout
+                    </ThemedText>
+                    {todayWorkout.caption ? (
+                      <ThemedText style={styles.feedOverlayCaption} numberOfLines={1}>
+                        {todayWorkout.caption}
+                      </ThemedText>
+                    ) : null}
+                    <ThemedText style={styles.feedOverlayMeta}>
+                      {getWorkoutTypeEmoji(todayWorkout.workout_type)} Today
+                    </ThemedText>
+                  </View>
+                </View>
+              </LinearGradient>
+              {/* Action buttons on right side */}
+              <View style={styles.feedActionColumn}>
+                <Pressable
+                  onPress={() => {
+                    setCommentModalWorkoutId(todayWorkout.id);
+                    setCommentModalMessage('');
+                  }}
+                  style={styles.feedActionBtn}
+                >
+                  <Ionicons name="chatbubble-outline" size={24} color="#fff" />
+                  {todayWorkoutComments.length > 0 && (
+                    <ThemedText style={styles.feedActionCount}>
+                      {todayWorkoutComments.length}
+                    </ThemedText>
+                  )}
+                </Pressable>
+                <Pressable
+                  onPress={() => handleShareWorkout(todayWorkout.image_url, todayWorkout.secondary_image_url, todayWorkout.workout_type, todayWorkout.workout_date, todayWorkout.caption, profile?.display_name)}
+                  style={styles.feedActionBtn}
+                >
+                  <Ionicons name="paper-plane-outline" size={24} color="#fff" />
+                </Pressable>
               </View>
-              {/* Friends' reactions on your post */}
+            </View>
+            {/* Friends' reactions on your post */}
               <View style={[styles.reactionRow, { borderTopColor: colors.tint + '10' }]}>
                 <ScrollView
                   horizontal
@@ -914,99 +902,20 @@ export default function HomeScreen() {
                   ))}
                 </ScrollView>
               </View>
-              {/* Comments on your post */}
-              <View style={[styles.commentsSection, { borderTopColor: colors.tint + '10' }]}>
-                {todayWorkoutComments.map((c) => (
-                  <View key={c.id} style={styles.commentRow}>
-                    <Pressable
-                      style={[styles.commentAvatar, { backgroundColor: colors.tint + '20' }]}
-                      onPress={() => c.user_id !== session?.user?.id && router.push(`/friend-profile?id=${c.user_id}`)}
-                    >
-                      {c.avatar_url ? (
-                        <Image source={{ uri: c.avatar_url }} style={styles.commentAvatarImage} />
-                      ) : (
-                        <ThemedText style={[styles.commentAvatarInitials, { color: colors.tint }]}>
-                          {getInitials(c.display_name)}
-                        </ThemedText>
-                      )}
-                    </Pressable>
-                    <View style={styles.commentBody}>
-                      <ThemedText type="defaultSemiBold" style={[styles.commentAuthor, { color: colors.text }]}>
-                        {c.display_name || 'Anonymous'}
-                      </ThemedText>
-                      {c.message ? (
-                        <ThemedText style={[styles.commentText, { color: colors.text }]}>{c.message}</ThemedText>
-                      ) : null}
-                    </View>
-                  </View>
-                ))}
-                {session && (
-                  <View style={styles.commentInlineRow}>
-                    <TextInput
-                      style={[
-                        styles.commentInlineInput,
-                        {
-                          backgroundColor: colors.cardElevated,
-                          color: colors.text,
-                          borderColor: colors.tabBarBorder,
-                        },
-                      ]}
-                      placeholder="Add a comment..."
-                      placeholderTextColor={colors.textMuted}
-                      value={inlineCommentWorkoutId === todayWorkout.id ? inlineCommentMessage : ''}
-                      onChangeText={(text) => {
-                        if (inlineCommentWorkoutId === todayWorkout.id) setInlineCommentMessage(text);
-                      }}
-                      onFocus={() => {
-                        setInlineCommentWorkoutId(todayWorkout.id);
-                        setInlineCommentMessage('');
-                      }}
-                      multiline
-                      maxLength={500}
-                    />
-                    <Pressable
-                      onPress={() =>
-                        handlePostComment(
-                          todayWorkout.id,
-                          inlineCommentWorkoutId === todayWorkout.id ? inlineCommentMessage : ''
-                        )
-                      }
-                      disabled={
-                        commentSubmittingWorkoutId === todayWorkout.id ||
-                        (inlineCommentWorkoutId === todayWorkout.id ? !inlineCommentMessage.trim() : true)
-                      }
-                      style={({ pressed }) => [
-                        styles.commentInlinePostBtn,
-                        {
-                          opacity:
-                            inlineCommentWorkoutId === todayWorkout.id && inlineCommentMessage.trim()
-                              ? pressed ? 0.7 : 1
-                              : 0.4,
-                        },
-                      ]}
-                    >
-                      {commentSubmittingWorkoutId === todayWorkout.id ? (
-                        <ActivityIndicator color={colors.tint} size="small" />
-                      ) : (
-                        <ThemedText
-                          style={[
-                            styles.commentInlinePostText,
-                            {
-                              color:
-                                inlineCommentWorkoutId === todayWorkout.id && inlineCommentMessage.trim()
-                                  ? colors.tint
-                                  : colors.textMuted,
-                            },
-                          ]}
-                        >
-                          Post
-                        </ThemedText>
-                      )}
-                    </Pressable>
-                  </View>
-                )}
-              </View>
-            </View>
+              {/* Comments tap-to-open */}
+              {todayWorkoutComments.length > 0 && (
+                <Pressable
+                  style={styles.viewCommentsBtn}
+                  onPress={() => {
+                    setCommentModalWorkoutId(todayWorkout.id);
+                    setCommentModalMessage('');
+                  }}
+                >
+                  <ThemedText style={[styles.viewCommentsText, { color: colors.textMuted }]}>
+                    View {todayWorkoutComments.length === 1 ? '1 comment' : `all ${todayWorkoutComments.length} comments`}
+                  </ThemedText>
+                </Pressable>
+              )}
           </View>
         )}
 
@@ -1106,12 +1015,9 @@ export default function HomeScreen() {
         )}
 
         {/* Feed */}
-        <View style={styles.section}>
-          <ThemedText type="subtitle" style={[styles.sectionTitle, { color: colors.text }]}>
-            Feed
-          </ThemedText>
+        <View style={styles.feedSection}>
           {feedItems.length === 0 ? (
-            <View style={[styles.emptyCard, { backgroundColor: colors.cardElevated }]}>
+            <View style={[styles.emptyCard, { backgroundColor: colors.cardElevated, marginHorizontal: 20 }]}>
               <Ionicons name="people-outline" size={32} color={colors.textMuted + '60'} style={{ marginBottom: 8 }} />
               <ThemedText style={[styles.emptyText, { color: colors.textMuted }]}>
                 Add friends to see their workout posts here
@@ -1119,7 +1025,7 @@ export default function HomeScreen() {
             </View>
           ) : (
             <View style={styles.feedList}>
-              {feedItems.map((item, index) => {
+              {feedItems.map((item) => {
                 const isHighlighted = highlightedWorkoutId === item.workout.id;
                 return (
                 <View
@@ -1137,63 +1043,90 @@ export default function HomeScreen() {
                   }}
                   style={[
                     styles.feedCard,
-                    { backgroundColor: colors.card, borderColor: colors.tint + '10' },
                     isHighlighted && { borderWidth: 2, borderColor: colors.tint },
                   ]}
                 >
-                  <View style={styles.feedCardHeader}>
-                    <Pressable
-                      style={styles.feedCardHeaderLeft}
-                      onPress={() => router.push(`/friend-profile?id=${item.workout.user_id}`)}
+                  {/* Image with overlays */}
+                  <View style={styles.feedImageContainer}>
+                    <ZoomableFeedImage
+                      imageUrl={item.workout.image_url}
+                      secondaryImageUrl={item.workout.secondary_image_url}
+                      style={styles.feedImage}
+                    />
+                    {/* Bottom gradient with user info */}
+                    <LinearGradient
+                      colors={['transparent', 'rgba(0,0,0,0.75)']}
+                      style={styles.feedGradient}
                     >
-                      <View style={[styles.feedAvatar, { backgroundColor: colors.tint + '18', borderColor: colors.tint + '50' }]}>
-                        {item.avatar_url ? (
-                          <Image source={{ uri: item.avatar_url }} style={styles.feedAvatarImage} />
-                        ) : (
-                          <ThemedText style={[styles.feedAvatarInitials, { color: colors.tint }]}>
-                            {getInitials(item.display_name)}
+                      <Pressable
+                        style={styles.feedOverlayInfo}
+                        onPress={() => router.push(`/friend-profile?id=${item.workout.user_id}`)}
+                      >
+                        <View style={styles.feedOverlayAvatar}>
+                          {item.avatar_url ? (
+                            <Image source={{ uri: item.avatar_url }} style={styles.feedOverlayAvatarImg} />
+                          ) : (
+                            <ThemedText style={styles.feedOverlayAvatarInitials}>
+                              {getInitials(item.display_name)}
+                            </ThemedText>
+                          )}
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <ThemedText type="defaultSemiBold" style={styles.feedOverlayName}>
+                            {item.display_name || 'Anonymous'}
                           </ThemedText>
-                        )}
-                      </View>
-                      <View style={styles.feedCardMeta}>
-                        <ThemedText type="defaultSemiBold" style={[styles.feedName, { color: colors.text }]}>
-                          {item.display_name || 'Anonymous'}
-                        </ThemedText>
-                        <ThemedText style={[styles.feedDate, { color: colors.textMuted }]}>
-                          {formatFeedDate(item.workout.workout_date)}
-                          {' · '}
-                          <ThemedText style={styles.feedTypeEmoji}>{getWorkoutTypeEmoji(item.workout.workout_type)}</ThemedText>
-                        </ThemedText>
-                      </View>
-                    </Pressable>
-                    {item.workout.user_id !== session?.user?.id && (
+                          {item.workout.caption ? (
+                            <ThemedText style={styles.feedOverlayCaption} numberOfLines={1}>
+                              {item.workout.caption}
+                            </ThemedText>
+                          ) : null}
+                          <ThemedText style={styles.feedOverlayMeta}>
+                            {getWorkoutTypeEmoji(item.workout.workout_type)}{' '}
+                            {formatFeedDate(item.workout.workout_date)}
+                          </ThemedText>
+                        </View>
+                      </Pressable>
+                    </LinearGradient>
+                    {/* Action buttons on right side */}
+                    <View style={styles.feedActionColumn}>
                       <Pressable
                         onPress={() => {
-                          setReportTarget({
-                            workoutId: item.workout.id,
-                            name: `${item.display_name}'s post`,
-                          });
-                          setReportModalVisible(true);
+                          setCommentModalWorkoutId(item.workout.id);
+                          setCommentModalMessage('');
                         }}
-                        style={({ pressed }) => [
-                          styles.feedCardMenuButton,
-                          pressed && { opacity: 0.7 },
-                        ]}
+                        style={styles.feedActionBtn}
                       >
-                        <Ionicons name="ellipsis-horizontal" size={20} color={colors.textMuted} />
+                        <Ionicons name="chatbubble-outline" size={24} color="#fff" />
+                        {(item.comments ?? []).length > 0 && (
+                          <ThemedText style={styles.feedActionCount}>
+                            {(item.comments ?? []).length}
+                          </ThemedText>
+                        )}
                       </Pressable>
-                    )}
+                      {item.workout.user_id === session?.user?.id && (
+                        <Pressable
+                          onPress={() => handleShareWorkout(item.workout.image_url, item.workout.secondary_image_url, item.workout.workout_type, item.workout.workout_date, item.workout.caption, item.display_name)}
+                          style={styles.feedActionBtn}
+                        >
+                          <Ionicons name="paper-plane-outline" size={24} color="#fff" />
+                        </Pressable>
+                      )}
+                      {item.workout.user_id !== session?.user?.id && (
+                        <Pressable
+                          onPress={() => {
+                            setReportTarget({
+                              workoutId: item.workout.id,
+                              name: `${item.display_name}'s post`,
+                            });
+                            setReportModalVisible(true);
+                          }}
+                          style={styles.feedActionBtn}
+                        >
+                          <Ionicons name="ellipsis-vertical" size={22} color="rgba(255,255,255,0.7)" />
+                        </Pressable>
+                      )}
+                    </View>
                   </View>
-                  <ZoomableFeedImage
-                    imageUrl={item.workout.image_url}
-                    secondaryImageUrl={item.workout.secondary_image_url}
-                    style={styles.feedImage}
-                  />
-                  {item.workout.caption ? (
-                    <ThemedText style={[styles.feedCaption, { color: colors.text }]}>
-                      {item.workout.caption}
-                    </ThemedText>
-                  ) : null}
                   {/* Tagged friends */}
                   {(item.tags ?? []).length > 0 && (
                     <View style={styles.taggedRow}>
@@ -1208,7 +1141,28 @@ export default function HomeScreen() {
                       ))}
                     </View>
                   )}
+                  {/* Reaction row — always visible with + button */}
                   <View style={[styles.reactionRow, { borderTopColor: colors.tint + '10' }]}>
+                    {/* Add reaction + button */}
+                    {session && (
+                      <Pressable
+                        onPress={() => {
+                          const myReaction = item.reactions?.find((r) => r.user_id === session.user.id);
+                          if (myReaction) {
+                            handleRemoveReaction(item);
+                          } else {
+                            openReactModal(item);
+                          }
+                        }}
+                        style={({ pressed }) => [
+                          styles.addReactionBtn,
+                          { borderColor: colors.tint + '50' },
+                          pressed && { opacity: 0.7, transform: [{ scale: 0.92 }] },
+                        ]}
+                      >
+                        <Ionicons name="add" size={20} color={colors.tint} />
+                      </Pressable>
+                    )}
                     <ScrollView
                       horizontal
                       showsHorizontalScrollIndicator={false}
@@ -1239,140 +1193,23 @@ export default function HomeScreen() {
                         </Pressable>
                       ))}
                     </ScrollView>
-                    {session && (() => {
-                      const myReaction = item.reactions?.find((r) => r.user_id === session.user.id);
-                      return myReaction ? (
-                        <Pressable
-                          onPress={() => handleRemoveReaction(item)}
-                          style={[styles.reactButton, { backgroundColor: colors.textMuted + '15', borderColor: colors.textMuted + '25' }]}
-                        >
-                          <Ionicons name="close-circle-outline" size={16} color={colors.textMuted} />
-                          <ThemedText style={[styles.reactButtonText, { color: colors.textMuted }]}>
-                            Remove
-                          </ThemedText>
-                        </Pressable>
-                      ) : (
-                        <Pressable
-                          onPress={() => openReactModal(item)}
-                          style={[styles.reactButton, { backgroundColor: colors.tint + '15', borderColor: colors.tint + '30' }]}
-                        >
-                          <Ionicons name="add-circle-outline" size={16} color={colors.tint} />
-                          <ThemedText style={[styles.reactButtonText, { color: colors.tint }]}>React</ThemedText>
-                        </Pressable>
-                      );
-                    })()}
                   </View>
-                  {/* Comments — Instagram-style: all comments visible + inline add */}
-                  <View style={[styles.commentsSection, { borderTopColor: colors.tint + '10' }]}>
-                    {(item.comments ?? []).map((c) => {
-                      const isOwner = session?.user?.id === item.workout.user_id;
-                      return (
-                        <View key={c.id} style={styles.commentRow}>
-                          <View style={[styles.commentAvatar, { backgroundColor: colors.tint + '20' }]}>
-                            {c.avatar_url ? (
-                              <Image source={{ uri: c.avatar_url }} style={styles.commentAvatarImage} />
-                            ) : (
-                              <ThemedText style={[styles.commentAvatarInitials, { color: colors.tint }]}>
-                                {getInitials(c.display_name)}
-                              </ThemedText>
-                            )}
-                          </View>
-                          <View style={styles.commentBody}>
-                            <ThemedText type="defaultSemiBold" style={[styles.commentAuthor, { color: colors.text }]}>
-                              {c.display_name || 'Anonymous'}
-                            </ThemedText>
-                            {c.message ? (
-                              <ThemedText style={[styles.commentText, { color: colors.text }]}>{c.message}</ThemedText>
-                            ) : null}
-                            {isOwner && (
-                              <Pressable
-                                style={styles.commentReplyBtn}
-                                onPress={() => {
-                                  const firstName =
-                                    (c.display_name || '')
-                                      .trim()
-                                      .split(/\s+/)[0] || 'friend';
-                                  setInlineCommentWorkoutId(item.workout.id);
-                                  setInlineCommentMessage(`@${firstName} `);
-                                }}
-                              >
-                                <ThemedText style={[styles.commentReplyText, { color: colors.textMuted }]}>
-                                  Reply
-                                </ThemedText>
-                              </Pressable>
-                            )}
-                          </View>
-                        </View>
-                      );
-                    })}
-                    {session && (
-                      <View style={styles.commentInlineRow}>
-                        <TextInput
-                          style={[
-                            styles.commentInlineInput,
-                            {
-                              backgroundColor: colors.cardElevated,
-                              color: colors.text,
-                              borderColor: colors.tabBarBorder,
-                            },
-                          ]}
-                          placeholder="Add a comment..."
-                          placeholderTextColor={colors.textMuted}
-                          value={inlineCommentWorkoutId === item.workout.id ? inlineCommentMessage : ''}
-                          onChangeText={(text) => {
-                            if (inlineCommentWorkoutId === item.workout.id) setInlineCommentMessage(text);
-                          }}
-                          onFocus={() => {
-                            setInlineCommentWorkoutId(item.workout.id);
-                            setInlineCommentMessage('');
-                          }}
-                          multiline
-                          maxLength={500}
-                        />
-                        <Pressable
-                          onPress={() =>
-                            handlePostComment(
-                              item.workout.id,
-                              inlineCommentWorkoutId === item.workout.id ? inlineCommentMessage : ''
-                            )
-                          }
-                          disabled={
-                            commentSubmittingWorkoutId === item.workout.id ||
-                            (inlineCommentWorkoutId === item.workout.id ? !inlineCommentMessage.trim() : true)
-                          }
-                          style={({ pressed }) => [
-                            styles.commentInlinePostBtn,
-                            {
-                              opacity:
-                                inlineCommentWorkoutId === item.workout.id && inlineCommentMessage.trim()
-                                  ? pressed
-                                    ? 0.7
-                                    : 1
-                                  : 0.4,
-                            },
-                          ]}
-                        >
-                          {commentSubmittingWorkoutId === item.workout.id ? (
-                            <ActivityIndicator color={colors.tint} size="small" />
-                          ) : (
-                            <ThemedText
-                              style={[
-                                styles.commentInlinePostText,
-                                {
-                                  color:
-                                    inlineCommentWorkoutId === item.workout.id && inlineCommentMessage.trim()
-                                      ? colors.tint
-                                      : colors.textMuted,
-                                },
-                              ]}
-                            >
-                              Post
-                            </ThemedText>
-                          )}
-                        </Pressable>
-                      </View>
-                    )}
-                  </View>
+                  {/* Comments — tap to open modal */}
+                  {(item.comments ?? []).length > 0 && (
+                    <Pressable
+                      style={styles.viewCommentsBtn}
+                      onPress={() => {
+                        setCommentModalWorkoutId(item.workout.id);
+                        setCommentModalMessage('');
+                      }}
+                    >
+                      <ThemedText style={[styles.viewCommentsText, { color: colors.textMuted }]}>
+                        {(item.comments ?? []).length === 1
+                          ? 'View 1 comment'
+                          : `View all ${(item.comments ?? []).length} comments`}
+                      </ThemedText>
+                    </Pressable>
+                  )}
                 </View>
                 )
               })}
@@ -1387,7 +1224,8 @@ export default function HomeScreen() {
         animationType="slide"
         onRequestClose={closeReactModal}
       >
-        <Pressable style={styles.reactModalOverlay} onPress={closeReactModal}>
+        <View style={styles.reactModalOverlay}>
+          <Pressable style={styles.reactModalDismiss} onPress={closeReactModal} />
           <View key={reactModalKey} style={[styles.reactModalContent, { backgroundColor: colors.card }]}>
             <ThemedText type="subtitle" style={[styles.reactModalTitle, { color: colors.text }]}>
               Add reaction
@@ -1464,7 +1302,7 @@ export default function HomeScreen() {
               </Pressable>
             </View>
           </View>
-        </Pressable>
+        </View>
       </Modal>
 
 
@@ -1563,23 +1401,302 @@ export default function HomeScreen() {
           reportedEntityName={reportTarget.name}
         />
       )}
+
+      {/* Comments Modal — Instagram-style bottom sheet */}
+      <Modal
+        visible={!!commentModalWorkoutId}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setCommentModalWorkoutId(null)}
+      >
+        <Pressable
+          style={styles.commentModalOverlay}
+          onPress={() => setCommentModalWorkoutId(null)}
+        >
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            style={styles.commentModalKeyboard}
+          >
+            <Pressable
+              style={[styles.commentModalSheet, { backgroundColor: colors.card }]}
+              onPress={(e) => e.stopPropagation()}
+            >
+              {/* Drag handle */}
+              <View style={styles.commentModalHandle}>
+                <View style={[styles.commentModalHandleBar, { backgroundColor: colors.textMuted + '40' }]} />
+              </View>
+
+              {/* Title */}
+              <ThemedText type="defaultSemiBold" style={[styles.commentModalTitle, { color: colors.text }]}>
+                Comments
+              </ThemedText>
+
+              {/* Comment list */}
+              <ScrollView
+                style={styles.commentModalScroll}
+                contentContainerStyle={styles.commentModalScrollContent}
+                keyboardShouldPersistTaps="handled"
+              >
+                {(() => {
+                  // Gather comments for the active workout
+                  let comments: WorkoutCommentWithProfile[] = [];
+                  let isOwnPost = false;
+                  if (commentModalWorkoutId && todayWorkout?.id === commentModalWorkoutId) {
+                    comments = todayWorkoutComments;
+                    isOwnPost = true;
+                  } else if (commentModalWorkoutId) {
+                    const feedItem = feedItems.find((fi) => fi.workout.id === commentModalWorkoutId);
+                    comments = feedItem?.comments ?? [];
+                    isOwnPost = feedItem?.workout.user_id === session?.user?.id;
+                  }
+
+                  if (comments.length === 0) {
+                    return (
+                      <View style={styles.commentModalEmpty}>
+                        <ThemedText style={[styles.commentModalEmptyText, { color: colors.textMuted }]}>
+                          No comments yet. Be the first!
+                        </ThemedText>
+                      </View>
+                    );
+                  }
+
+                  return comments.map((c) => (
+                    <View key={c.id} style={styles.commentRow}>
+                      <Pressable
+                        style={[styles.commentAvatar, { backgroundColor: colors.tint + '20' }]}
+                        onPress={() => {
+                          if (c.user_id !== session?.user?.id) {
+                            setCommentModalWorkoutId(null);
+                            router.push(`/friend-profile?id=${c.user_id}`);
+                          }
+                        }}
+                      >
+                        {c.avatar_url ? (
+                          <Image source={{ uri: c.avatar_url }} style={styles.commentAvatarImage} />
+                        ) : (
+                          <ThemedText style={[styles.commentAvatarInitials, { color: colors.tint }]}>
+                            {getInitials(c.display_name)}
+                          </ThemedText>
+                        )}
+                      </Pressable>
+                      <View style={styles.commentBody}>
+                        <ThemedText type="defaultSemiBold" style={[styles.commentAuthor, { color: colors.text }]}>
+                          {c.display_name || 'Anonymous'}
+                        </ThemedText>
+                        {c.message ? (
+                          <ThemedText style={[styles.commentText, { color: colors.text }]}>{c.message}</ThemedText>
+                        ) : null}
+                        {/* Reply — on own posts or to other people's comments */}
+                        {(isOwnPost || c.user_id !== session?.user?.id) && c.user_id !== session?.user?.id && (
+                          <Pressable
+                            style={styles.commentReplyBtn}
+                            onPress={() => {
+                              const firstName =
+                                (c.display_name || '').trim().split(/\s+/)[0] || 'friend';
+                              setCommentModalMessage(`@${firstName} `);
+                              commentInputRef.current?.focus();
+                            }}
+                          >
+                            <ThemedText style={[styles.commentReplyText, { color: colors.textMuted }]}>
+                              Reply
+                            </ThemedText>
+                          </Pressable>
+                        )}
+                      </View>
+                    </View>
+                  ));
+                })()}
+              </ScrollView>
+
+              {/* Input row */}
+              {session && commentModalWorkoutId && (
+                <View style={[styles.commentModalInputRow, { borderTopColor: colors.textMuted + '20' }]}>
+                  <TextInput
+                    ref={commentInputRef}
+                    style={[
+                      styles.commentModalInput,
+                      {
+                        backgroundColor: colors.cardElevated,
+                        color: colors.text,
+                        borderColor: colors.tabBarBorder,
+                      },
+                    ]}
+                    placeholder="Add a comment..."
+                    placeholderTextColor={colors.textMuted}
+                    value={commentModalMessage}
+                    onChangeText={setCommentModalMessage}
+                    multiline
+                    maxLength={500}
+                  />
+                  <Pressable
+                    onPress={() => {
+                      if (commentModalWorkoutId) {
+                        handlePostComment(commentModalWorkoutId, commentModalMessage);
+                      }
+                    }}
+                    disabled={
+                      !commentModalWorkoutId ||
+                      commentSubmittingWorkoutId === commentModalWorkoutId ||
+                      !commentModalMessage.trim()
+                    }
+                    style={({ pressed }) => [
+                      styles.commentModalPostBtn,
+                      {
+                        opacity: commentModalMessage.trim()
+                          ? pressed ? 0.7 : 1
+                          : 0.4,
+                      },
+                    ]}
+                  >
+                    {commentSubmittingWorkoutId === commentModalWorkoutId ? (
+                      <ActivityIndicator color={colors.tint} size="small" />
+                    ) : (
+                      <Ionicons
+                        name="send"
+                        size={20}
+                        color={commentModalMessage.trim() ? colors.tint : colors.textMuted}
+                      />
+                    )}
+                  </Pressable>
+                </View>
+              )}
+            </Pressable>
+          </KeyboardAvoidingView>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
+    {/* Share card - rendered at screen size, positioned off-screen-left inside a Modal */}
+    <Modal visible={!!shareData} transparent animationType="none" statusBarTranslucent>
+      {shareData && (() => {
+        const wt = WORKOUT_TYPES.find((t) => t.value === shareData.workoutType);
+        const dateLabel = shareData.workoutDate ? formatFeedDate(shareData.workoutDate) : 'Today';
+        const screenW = Dimensions.get('window').width;
+        return (
+          <View style={{ position: 'absolute', left: -screenW * 2, top: 0 }} collapsable={false}>
+            <ViewShot
+              ref={shareViewRef}
+              options={{ format: 'jpg', quality: 0.95 }}
+              collapsable={false}
+              style={{ width: screenW, backgroundColor: '#000' }}
+            >
+              {/* Image container - same aspect ratio as feed */}
+              <View style={{ width: screenW, aspectRatio: 10 / 16, position: 'relative', overflow: 'hidden' }}>
+                {/* Primary workout photo */}
+                <Image
+                  source={{ uri: shareData.primaryUrl }}
+                  style={{ width: '100%', height: '100%' }}
+                  contentFit="cover"
+                />
+
+                {/* Dual camera selfie overlay - same position as feed */}
+                {shareData.secondaryUrl && shareData.secondaryUrl.trim().length > 0 && (
+                  <View style={styles.dualPhotoCorner}>
+                    <Image
+                      source={{ uri: shareData.secondaryUrl }}
+                      style={styles.dualPhotoCornerImage}
+                      contentFit="cover"
+                    />
+                  </View>
+                )}
+
+                {/* Top gradient for UPLIFT branding */}
+                <LinearGradient
+                  colors={['rgba(0,0,0,0.6)', 'rgba(0,0,0,0)']}
+                  style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 80 }}
+                />
+
+                {/* UPLIFT branding - top right */}
+                <ThemedText style={styles.shareWatermark}>UPLIFT</ThemedText>
+
+                {/* Bottom gradient for user info - same as feed */}
+                <LinearGradient
+                  colors={['transparent', 'rgba(0,0,0,0.75)']}
+                  style={styles.feedGradient}
+                >
+                  <View style={styles.feedOverlayInfo}>
+                    <View style={{ flex: 1 }}>
+                      {shareData.displayName && (
+                        <ThemedText type="defaultSemiBold" style={styles.feedOverlayName}>
+                          {shareData.displayName}
+                        </ThemedText>
+                      )}
+                      {shareData.caption ? (
+                        <ThemedText style={styles.feedOverlayCaption} numberOfLines={1}>
+                          {shareData.caption}
+                        </ThemedText>
+                      ) : null}
+                      <ThemedText style={styles.feedOverlayMeta}>
+                        {wt ? `${wt.emoji} ` : ''}{dateLabel}
+                      </ThemedText>
+                    </View>
+                  </View>
+                </LinearGradient>
+              </View>
+            </ViewShot>
+          </View>
+        );
+      })()}
+    </Modal>
+  </>
   );
 }
 
 const styles = StyleSheet.create({
   safe: { flex: 1 },
   scrollView: { flex: 1 },
-  content: { padding: 20, paddingBottom: 40 },
+  content: { paddingTop: 10, paddingBottom: 40 },
+  logWorkoutCta: {
+    width: '100%',
+    aspectRatio: 2 / 3,
+    overflow: 'hidden',
+    marginBottom: 2,
+  },
+  logWorkoutCtaBg: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  logWorkoutCtaGlow: {
+    position: 'absolute',
+    width: 180,
+    height: 180,
+    borderRadius: 90,
+  },
+  logWorkoutCtaRing: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    marginBottom: 16,
+  },
+  logWorkoutCtaTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+    marginBottom: 6,
+  },
+  logWorkoutCtaSub: {
+    color: 'rgba(255,255,255,0.35)',
+    fontSize: 13,
+    fontWeight: '500',
+    letterSpacing: 0.1,
+  },
 
   // Header
-  headerRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 24 },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+    paddingHorizontal: 20,
+  },
   greeting: { fontSize: 26, fontWeight: '800', letterSpacing: -0.5 },
-  headerSub: { fontSize: 13, marginTop: 3, letterSpacing: 0.2 },
   notificationsButton: {
     position: 'relative',
     padding: 8,
-    marginLeft: 12,
   },
   notificationBadge: {
     position: 'absolute',
@@ -1598,92 +1715,38 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
 
-  // Streak banner
-  streakBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 18,
-    borderRadius: 18,
-    marginBottom: 20,
-    gap: 14,
-  },
-  streakText: { flex: 1 },
-  streakValue: { fontSize: 16, fontWeight: '700', letterSpacing: -0.2 },
-  streakHint: { fontSize: 12, marginTop: 3, letterSpacing: 0.1 },
-  freezeButton: {
-    marginTop: 10,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 10,
-    alignSelf: 'flex-start',
-    alignItems: 'center',
-  },
-  freezeButtonText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '800',
-    letterSpacing: 0.3,
-    textTransform: 'uppercase',
-  },
-
-  reminderBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 14,
-    borderRadius: 14,
-    marginBottom: 16,
-    gap: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-  },
-  reminderBannerText: { flex: 1, fontSize: 13, fontWeight: '600', letterSpacing: 0.1 },
-
-  // Quick actions — pill buttons
-  quickActions: { flexDirection: 'row', gap: 10, marginBottom: 28 },
-  actionPill: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 7,
-    paddingVertical: 15,
-    borderRadius: 14,
-  },
-  actionPillOutline: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 7,
-    paddingVertical: 15,
-    borderRadius: 14,
-    borderWidth: 1.5,
-  },
-  actionPillPressed: { opacity: 0.75 },
-  actionPillText: { color: '#fff', fontSize: 14, fontWeight: '700', letterSpacing: 0.3 },
-  actionPillTextOutline: { fontSize: 14, fontWeight: '700', letterSpacing: 0.3 },
-
   // Sections
-  section: { marginBottom: 28 },
-  sectionTitle: { fontSize: 18, fontWeight: '800', marginBottom: 14, letterSpacing: -0.3, textTransform: 'uppercase' },
+  section: { marginBottom: 20, paddingHorizontal: 20 },
+  sectionTitle: { fontSize: 16, fontWeight: '800', marginBottom: 12, letterSpacing: -0.3, textTransform: 'uppercase' },
 
-  // Today's workout — rectangular (4:5) like BeReal so photos aren't cropped
-  todayCard: { borderRadius: 16, overflow: 'hidden' },
-  todayImage: { width: '100%', aspectRatio: 4 / 5 },
+  // Dual photo overlay (BeReal-style)
   dualPhotoCorner: {
     position: 'absolute',
     top: 12,
-    right: 12,
-    width: '30%',
-    aspectRatio: 4 / 5,
-    borderRadius: 12,
+    left: 12,
+    width: '28%',
+    aspectRatio: 2 / 3,
+    borderRadius: 14,
     overflow: 'hidden',
     borderWidth: 3,
     borderColor: '#fff',
+    zIndex: 5,
   },
   dualPhotoCornerImage: { width: '100%', height: '100%' },
-  captionRow: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 16 },
-  todayTypeEmoji: { fontSize: 18 },
-  todayCaption: { flex: 1, fontSize: 14, lineHeight: 21, letterSpacing: 0.1 },
+
+  // Share watermark
+  shareWatermark: {
+    position: 'absolute',
+    top: 14,
+    right: 14,
+    color: 'rgba(255,255,255,0.9)',
+    fontSize: 14,
+    fontWeight: '900',
+    letterSpacing: 2,
+    textShadowColor: 'rgba(0,0,0,0.6)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
+  },
 
   // Empty state
   emptyCard: {
@@ -1694,62 +1757,106 @@ const styles = StyleSheet.create({
   },
   emptyText: { textAlign: 'center', fontSize: 14, lineHeight: 22, letterSpacing: 0.1 },
 
-  // Feed
-  feedList: { gap: 28 },
+  // Feed — fullscreen style
+  feedSection: { marginBottom: 20 },
+  feedList: { gap: 4 },
   feedCard: {
-    borderRadius: 20,
     overflow: 'hidden',
-    borderWidth: 1,
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.12,
-        shadowRadius: 12,
-      },
-      android: { elevation: 6 },
-    }),
+    marginBottom: 8,
+    backgroundColor: '#13101A',
+    borderRadius: 0,
   },
-  feedCardHeader: {
+  feedImageContainer: {
+    position: 'relative',
+  },
+  feedImage: { width: '100%', aspectRatio: 10 / 16 },
+  feedGradient: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    paddingTop: 48,
+    paddingBottom: 12,
+    paddingHorizontal: 14,
+    justifyContent: 'flex-end',
+  },
+  feedOverlayInfo: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 14,
-    paddingHorizontal: 16,
+    gap: 10,
   },
-  feedCardHeaderLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  feedCardMenuButton: {
-    padding: 8,
-    marginLeft: 8,
-  },
-  feedAvatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+  feedOverlayAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    overflow: 'hidden',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.8)',
+    backgroundColor: 'rgba(255,255,255,0.2)',
     alignItems: 'center',
     justifyContent: 'center',
-    overflow: 'hidden',
-    marginRight: 12,
-    borderWidth: 2,
   },
-  feedAvatarImage: { width: 44, height: 44 },
-  feedAvatarInitials: { fontSize: 15, fontWeight: '700' },
-  feedCardMeta: { flex: 1 },
-  feedName: { fontSize: 15, fontWeight: '800', letterSpacing: 0.1 },
-  feedDate: { fontSize: 11, marginTop: 2, letterSpacing: 0.3, textTransform: 'uppercase', fontWeight: '500' },
-  feedTypeEmoji: { textTransform: 'none' },
-  feedImage: { width: '100%', aspectRatio: 4 / 5 },
-  feedCaption: { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 6, fontSize: 14, lineHeight: 21, letterSpacing: 0.15 },
+  feedOverlayAvatarImg: { width: 32, height: 32 },
+  feedOverlayAvatarInitials: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  feedOverlayName: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '700',
+    letterSpacing: 0.1,
+    textShadowColor: 'rgba(0,0,0,0.4)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
+  feedOverlayCaption: {
+    color: 'rgba(255,255,255,0.85)',
+    fontSize: 12,
+    lineHeight: 16,
+    marginTop: 1,
+    textShadowColor: 'rgba(0,0,0,0.4)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
+  feedOverlayMeta: {
+    color: 'rgba(255,255,255,0.6)',
+    fontSize: 11,
+    marginTop: 1,
+    fontWeight: '600',
+    textShadowColor: 'rgba(0,0,0,0.4)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
+  // Action buttons on right side of image
+  feedActionColumn: {
+    position: 'absolute',
+    right: 14,
+    bottom: 14,
+    alignItems: 'center',
+    gap: 18,
+  },
+  feedActionBtn: {
+    alignItems: 'center',
+    gap: 3,
+  },
+  feedActionCount: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '700',
+    textShadowColor: 'rgba(0,0,0,0.4)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+  },
 
   // Tagged friends
   taggedRow: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingBottom: 10,
+    paddingTop: 10,
+    paddingBottom: 8,
     gap: 4,
     flexWrap: 'wrap',
   },
@@ -1764,6 +1871,16 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderTopWidth: 1,
     gap: 10,
+  },
+  addReactionBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    marginRight: 8,
   },
   reactionBubbles: { flexDirection: 'row', alignItems: 'center', gap: 8, flexGrow: 0 },
   reactionBubbleWrap: {
@@ -1912,11 +2029,102 @@ const styles = StyleSheet.create({
   commentInlinePostBtn: { paddingVertical: 10, paddingHorizontal: 6, justifyContent: 'center' },
   commentInlinePostText: { fontSize: 13, fontWeight: '800', letterSpacing: 0.3 },
 
+  // "View comments" link on cards
+  viewCommentsBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  viewCommentsText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+
+  // Comment modal — Instagram-style bottom sheet
+  commentModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  commentModalKeyboard: {
+    justifyContent: 'flex-end',
+  },
+  commentModalSheet: {
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '70%',
+    minHeight: 300,
+  },
+  commentModalHandle: {
+    alignItems: 'center',
+    paddingTop: 10,
+    paddingBottom: 6,
+  },
+  commentModalHandleBar: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+  },
+  commentModalTitle: {
+    textAlign: 'center',
+    fontSize: 15,
+    fontWeight: '800',
+    letterSpacing: 0.1,
+    paddingBottom: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(255,255,255,0.08)',
+  },
+  commentModalScroll: {
+    flex: 1,
+  },
+  commentModalScrollContent: {
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    paddingBottom: 10,
+  },
+  commentModalEmpty: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 40,
+  },
+  commentModalEmptyText: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  commentModalInputRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    paddingBottom: Platform.OS === 'ios' ? 30 : 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  commentModalInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: 22,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    fontSize: 14,
+    minHeight: 40,
+    maxHeight: 80,
+  },
+  commentModalPostBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
   // React modal
   reactModalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'flex-end',
+  },
+  reactModalDismiss: {
+    flex: 1,
   },
   reactModalContent: {
     borderTopLeftRadius: 20,
@@ -2000,19 +2208,6 @@ const styles = StyleSheet.create({
   },
   reactCancelText: { fontSize: 15 },
 
-  // Social nudge cards
-  nudgeScrollView: { marginBottom: 16 },
-  nudgeScroll: { gap: 10, paddingRight: 4 },
-  nudgeCard: {
-    width: 200,
-    padding: 14,
-    borderRadius: 14,
-    overflow: 'visible',
-  },
-  nudgeEmoji: { fontSize: 22, marginBottom: 6, lineHeight: 30 },
-  nudgeTitle: { fontSize: 12, fontWeight: '800', marginBottom: 3, letterSpacing: 0.2 },
-  nudgeMessage: { fontSize: 11, lineHeight: 16, letterSpacing: 0.1 },
-
   // Flashback cards
   flashbackScroll: { gap: 14, paddingRight: 4 },
   flashbackCard: {
@@ -2031,7 +2226,7 @@ const styles = StyleSheet.create({
   flashbackLabel: { fontSize: 12, fontWeight: '800', letterSpacing: 0.3 },
   flashbackImage: {
     width: 220,
-    aspectRatio: 4 / 5,
+    aspectRatio: 2 / 3,
   },
   flashbackCaptionWrap: {
     flexDirection: 'row',

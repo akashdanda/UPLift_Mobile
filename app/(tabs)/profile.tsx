@@ -544,8 +544,8 @@ export default function ProfileScreen() {
               <ThemedText style={[styles.statValue, { color: s.color }]}>{s.value}</ThemedText>
               <ThemedText
                 style={[styles.statLabel, { color: colors.textMuted }]}
-                numberOfLines={s.label === 'Best streak' ? 1 : 2}
-                adjustsFontSizeToFit={s.label === 'Best streak'}
+                numberOfLines={1}
+                adjustsFontSizeToFit
               >
                 {s.label}
               </ThemedText>

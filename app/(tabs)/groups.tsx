@@ -185,6 +185,9 @@ export default function GroupsScreen() {
         </View>
       </View>
 
+      {/* Spacer pushes join button to bottom */}
+      {showJoin && <View style={{ flex: 1 }} />}
+
       {/* Join button */}
       {showJoin && !g._joined && (
         <Pressable
@@ -515,12 +518,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: CARD_GAP,
+    alignItems: 'stretch',
   },
   gridCard: {
     width: CARD_WIDTH,
     borderRadius: 16,
     padding: 14,
     overflow: 'hidden',
+    flexDirection: 'column',
   },
   gridAvatarWrap: { marginBottom: 12 },
   gridAvatar: {
