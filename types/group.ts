@@ -35,6 +35,69 @@ export type GroupMemberWithProfile = GroupMember & {
   workouts_count: number
 }
 
+// Group Feed
+export type GroupFeedPostType = 'post' | 'announcement' | 'poll'
+
+export type GroupFeedPost = {
+  id: string
+  group_id: string
+  user_id: string
+  content: string | null
+  image_url: string | null
+  post_type: GroupFeedPostType
+  is_pinned: boolean
+  created_at: string
+}
+
+export type GroupFeedPostWithAuthor = GroupFeedPost & {
+  display_name: string | null
+  avatar_url: string | null
+  role: GroupRole | null
+}
+
+export type GroupPollOption = {
+  id: string
+  post_id: string
+  label: string
+  sort_order: number
+  vote_count: number
+}
+
+export type GroupPollVote = {
+  id: string
+  option_id: string
+  user_id: string
+  created_at: string
+}
+
+// Group Feed Reactions
+export type GroupFeedReaction = {
+  id: string
+  post_id: string
+  user_id: string
+  emoji: string
+  created_at: string
+}
+
+export type GroupFeedReactionWithProfile = GroupFeedReaction & {
+  display_name: string | null
+  avatar_url: string | null
+}
+
+// Group Feed Comments
+export type GroupFeedComment = {
+  id: string
+  post_id: string
+  user_id: string
+  message: string
+  created_at: string
+}
+
+export type GroupFeedCommentWithProfile = GroupFeedComment & {
+  display_name: string | null
+  avatar_url: string | null
+}
+
 export type CompetitionType = 'matchmaking' | 'challenge'
 export type CompetitionStatus = 'pending' | 'active' | 'completed' | 'cancelled'
 
