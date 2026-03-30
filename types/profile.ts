@@ -14,6 +14,10 @@ export type Profile = {
   /** Expo push token for sending push notifications (set when user grants permission). */
   expo_push_token?: string | null
   display_name_changed_at: string | null
+  /** E.164 when set; used only for contact matching (not shown on public profile cards). */
+  phone_e164?: string | null
+  /** When true, others can find this user by matching a saved phone with synced contacts. */
+  discoverable_by_phone?: boolean
   created_at: string
   updated_at: string
 }
@@ -25,4 +29,6 @@ export type ProfileUpdate = {
   bio?: string | null
   notifications_enabled?: boolean
   expo_push_token?: string | null
+  phone_e164?: string | null
+  discoverable_by_phone?: boolean
 }

@@ -10,6 +10,7 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   TextInput,
   View,
 } from 'react-native'
@@ -18,6 +19,7 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { ThemedText } from '@/components/themed-text'
 import { useAuthContext } from '@/hooks/use-auth-context'
 import { uploadAvatar } from '@/lib/avatar-upload'
+import { normalizePhoneE164 } from '@/lib/contact-sync'
 import { supabase } from '@/lib/supabase'
 import { Colors } from '@/constants/theme'
 import { useColorScheme } from '@/hooks/use-color-scheme'
@@ -69,6 +71,8 @@ export default function EditProfileScreen() {
   const [displayName, setDisplayName] = useState('')
   const [fullName, setFullName] = useState('')
   const [bio, setBio] = useState('')
+  const [phoneInput, setPhoneInput] = useState('')
+  const [discoverableByPhone, setDiscoverableByPhone] = useState(false)
   const [saving, setSaving] = useState(false)
   const [uploadingPhoto, setUploadingPhoto] = useState(false)
   const [canChangeDisplayName, setCanChangeDisplayName] = useState(true)
@@ -86,6 +90,8 @@ export default function EditProfileScreen() {
     setDisplayName(getInitialDisplayName(session, profile))
     setFullName(getInitialFullName(session, profile))
     setBio(profile?.bio || '')
+    setPhoneInput(profile?.phone_e164 ?? '')
+    setDiscoverableByPhone(profile?.discoverable_by_phone ?? false)
     setLocalAvatarUrl(null)
     setAvatarLoadError(false)
     
@@ -150,11 +156,19 @@ export default function EditProfileScreen() {
   }
 
   const handleSave = async () => {
+    const rawPhone = phoneInput.trim()
+    const normalized = rawPhone ? normalizePhoneE164(rawPhone) : null
+    if (discoverableByPhone && !normalized) {
+      Alert.alert('Phone number', 'Add a valid phone number or turn off “Findable by phone”.')
+      return
+    }
     setSaving(true)
     const { error } = await updateProfile({
       display_name: displayName.trim() || null,
       full_name: fullName.trim() || null,
       bio: bio.trim() || null,
+      phone_e164: normalized,
+      discoverable_by_phone: discoverableByPhone && !!normalized,
     })
     setSaving(false)
     if (error) {
@@ -248,6 +262,42 @@ export default function EditProfileScreen() {
             />
           </View>
           <View style={styles.section}>
+            <ThemedText style={[styles.label, { color: colors.textMuted }]}>Phone (optional)</ThemedText>
+            <ThemedText style={[styles.hint, { color: colors.textMuted, marginBottom: 8 }]}>
+              Used only to let friends find you when they sync contacts. Save as digits; we store E.164 (e.g. +1…).
+            </ThemedText>
+            <TextInput
+              style={[
+                styles.input,
+                { backgroundColor: colors.card, color: colors.text, borderColor: colors.tabBarBorder },
+              ]}
+              placeholder="+1 or digits only"
+              placeholderTextColor={colors.textMuted}
+              value={phoneInput}
+              onChangeText={setPhoneInput}
+              editable={!saving}
+              keyboardType="phone-pad"
+            />
+            <View style={styles.switchRow}>
+              <View style={{ flex: 1, paddingRight: 12 }}>
+                <ThemedText style={[styles.label, { color: colors.textMuted, marginBottom: 4 }]}>
+                  Findable by phone
+                </ThemedText>
+                <ThemedText style={[styles.hint, { color: colors.textMuted }]}>
+                  Others can match you when they sync contacts
+                </ThemedText>
+              </View>
+              <Switch
+                value={discoverableByPhone}
+                onValueChange={setDiscoverableByPhone}
+                disabled={saving}
+                trackColor={{ false: colors.tabBarBorder, true: colors.tint + '88' }}
+                thumbColor={discoverableByPhone ? colors.tint : '#f4f3f4'}
+              />
+            </View>
+          </View>
+
+          <View style={styles.section}>
             <ThemedText style={[styles.label, { color: colors.textMuted }]}>Bio</ThemedText>
             <TextInput
               style={[
@@ -315,6 +365,12 @@ const styles = StyleSheet.create({
   label: { fontSize: 14 },
   limitHint: { fontSize: 12, fontWeight: '600' },
   hint: { fontSize: 12, marginTop: 6 },
+  switchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 14,
+  },
   input: {
     borderWidth: 1,
     borderRadius: 12,

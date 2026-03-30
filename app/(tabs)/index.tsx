@@ -1607,6 +1607,11 @@ export default function HomeScreen() {
                     {shareData.displayName}
                   </ThemedText>
                 )}
+                {shareData.caption && shareData.caption.trim().length > 0 && (
+                  <ThemedText style={shareStyles.caption} numberOfLines={2}>
+                    {shareData.caption}
+                  </ThemedText>
+                )}
                 <View style={shareStyles.metaRow}>
                   <View style={shareStyles.datePill}>
                     <Ionicons name="calendar-outline" size={12} color="rgba(255,255,255,0.7)" />
@@ -2321,6 +2326,17 @@ const shareStyles = StyleSheet.create({
     textShadowOffset: { width: 0, height: 2 },
     textShadowRadius: 6,
     marginBottom: 10,
+  },
+  caption: {
+    color: 'rgba(255,255,255,0.92)',
+    fontSize: 16,
+    fontWeight: '700',
+    lineHeight: 22,
+    letterSpacing: 0.1,
+    textShadowColor: 'rgba(0,0,0,0.6)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 6,
+    marginBottom: 12,
   },
   metaRow: {
     flexDirection: 'row',

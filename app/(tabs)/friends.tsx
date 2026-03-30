@@ -6,6 +6,7 @@ import { useCallback, useState } from 'react'
 import {
   ActivityIndicator,
   Alert,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -21,6 +22,11 @@ import { useColorScheme } from '@/hooks/use-color-scheme'
 import { getBuddySuggestions, type BuddySuggestion } from '@/lib/buddy-matching'
 import { getUserDuels } from '@/lib/duels'
 import type { DuelWithProfiles } from '@/types/duel'
+import {
+  getNormalizedContactPhoneNumbers,
+  matchProfilesByPhoneNumbers,
+  requestContactsPermission,
+} from '@/lib/contact-sync'
 import {
   acceptFriendRequest,
   getFriends,
@@ -62,6 +68,8 @@ export default function FriendsScreen() {
   const [mutualSuggestions, setMutualSuggestions] = useState<MutualFriendSuggestion[]>([])
   const [activeDuels, setActiveDuels] = useState<DuelWithProfiles[]>([])
   const [activeTab, setActiveTab] = useState<'friends' | 'challenges'>('friends')
+  const [contactMatches, setContactMatches] = useState<ProfilePublic[]>([])
+  const [contactSyncing, setContactSyncing] = useState(false)
 
   const userId = session?.user?.id ?? ''
 
@@ -175,6 +183,47 @@ export default function FriendsScreen() {
     }
   }
 
+  const handleSyncContacts = useCallback(async () => {
+    if (!userId) return
+    if (Platform.OS === 'web') {
+      Alert.alert('Contacts', 'Contact sync is available on iOS and Android.')
+      return
+    }
+    setContactSyncing(true)
+    try {
+      const granted = await requestContactsPermission()
+      if (!granted) {
+        Alert.alert('Contacts', 'Allow Uplift to access contacts to find friends who are on the app.')
+        return
+      }
+      const phones = await getNormalizedContactPhoneNumbers()
+      if (phones.length === 0) {
+        Alert.alert('Contacts', 'No phone numbers found in your contacts.')
+        setContactMatches([])
+        return
+      }
+      const matches = await matchProfilesByPhoneNumbers(userId, phones)
+      const friendIds = new Set(friends.map((f) => f.id))
+      const filtered = matches.filter((m) => !friendIds.has(m.id))
+      setContactMatches(filtered)
+      if (filtered.length > 0) {
+        const statuses = await Promise.all(filtered.map((p) => getFriendshipStatus(userId, p.id)))
+        setSearchStatus((prev) => {
+          const next = { ...prev }
+          filtered.forEach((p, i) => {
+            next[p.id] = statuses[i]
+          })
+          return next
+        })
+      }
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Could not sync contacts'
+      Alert.alert('Error', msg)
+    } finally {
+      setContactSyncing(false)
+    }
+  }, [userId, friends])
+
   const handleUnfriend = (friend: FriendWithProfile) => {
     Alert.alert('Remove friend', `Remove ${friend.display_name || 'this user'} from friends?`, [
       { text: 'Cancel', style: 'cancel' },
@@ -255,6 +304,88 @@ export default function FriendsScreen() {
             <ThemedText type="subtitle" style={[styles.sectionTitle, { color: colors.text }]}>
               Add friend
             </ThemedText>
+            {Platform.OS !== 'web' && (
+              <>
+                <ThemedText style={[styles.contactHint, { color: colors.textMuted }]}>
+                  Find people you know: add your phone in Edit profile (optional) so friends can find you too.
+                </ThemedText>
+                <Pressable
+                  style={[
+                    styles.syncContactsBtn,
+                    { backgroundColor: colors.card, borderColor: colors.tabBarBorder },
+                    contactSyncing && { opacity: 0.7 },
+                  ]}
+                  onPress={handleSyncContacts}
+                  disabled={contactSyncing}
+                >
+                  {contactSyncing ? (
+                    <ActivityIndicator size="small" color={colors.tint} />
+                  ) : (
+                    <>
+                      <Ionicons name="people-outline" size={20} color={colors.tint} />
+                      <ThemedText style={[styles.syncContactsBtnText, { color: colors.text }]}>
+                        Sync contacts
+                      </ThemedText>
+                    </>
+                  )}
+                </Pressable>
+                {contactMatches.length > 0 && (
+                  <>
+                    <ThemedText type="subtitle" style={[styles.sectionTitle, { color: colors.text, marginTop: 8 }]}>
+                      From your contacts
+                    </ThemedText>
+                    <View style={[styles.resultsCard, { backgroundColor: colors.card, borderColor: colors.tabBarBorder }]}>
+                      {contactMatches.map((p) => {
+                        const status = searchStatus[p.id] ?? 'none'
+                        return (
+                          <View key={p.id} style={[styles.resultRow, { borderBottomColor: colors.tabBarBorder }]}>
+                            <View style={[styles.avatarSmall, { backgroundColor: colors.tint + '25' }]}>
+                              {p.avatar_url ? (
+                                <Image source={{ uri: p.avatar_url }} style={styles.avatarSmallImage} />
+                              ) : (
+                                <ThemedText style={[styles.avatarInitials, { color: colors.tint }]}>
+                                  {getInitials(p.display_name)}
+                                </ThemedText>
+                              )}
+                            </View>
+                            <View style={styles.resultInfo}>
+                              <ThemedText style={[styles.resultName, { color: colors.text }]} numberOfLines={1} ellipsizeMode="tail">
+                                {p.display_name || 'No name'}
+                              </ThemedText>
+                              <ThemedText style={[styles.resultMeta, { color: colors.textMuted }]}>
+                                {p.workouts_count} workouts
+                              </ThemedText>
+                            </View>
+                            {status === 'none' && (
+                              <Pressable
+                                style={[styles.addButton, { backgroundColor: colors.tint }]}
+                                onPress={() => handleAddFriend(p.id)}
+                                disabled={actingId === p.id}
+                              >
+                                {actingId === p.id ? (
+                                  <ActivityIndicator color="#fff" size="small" />
+                                ) : (
+                                  <ThemedText style={styles.addButtonText}>Add</ThemedText>
+                                )}
+                              </Pressable>
+                            )}
+                            {status === 'pending_sent' && (
+                              <ThemedText style={[styles.statusLabel, { color: colors.textMuted }]}>Pending</ThemedText>
+                            )}
+                            {status === 'pending_received' && (
+                              <ThemedText style={[styles.statusLabel, { color: colors.textMuted }]}>Request</ThemedText>
+                            )}
+                            {status === 'friends' && (
+                              <ThemedText style={[styles.statusLabel, { color: colors.tint }]}>Friends</ThemedText>
+                            )}
+                          </View>
+                        )
+                      })}
+                    </View>
+                  </>
+                )}
+              </>
+            )}
             <View style={styles.searchRow}>
               <TextInput
                 style={[
@@ -712,6 +843,19 @@ const styles = StyleSheet.create({
   scrollView: { flex: 1 },
   scrollContent: { padding: 24, paddingBottom: 40 },
   sectionTitle: { marginBottom: 14 },
+  contactHint: { fontSize: 13, lineHeight: 18, marginBottom: 12, letterSpacing: 0.1 },
+  syncContactsBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    marginBottom: 14,
+  },
+  syncContactsBtnText: { fontSize: 15, fontWeight: '700', letterSpacing: 0.2 },
   searchRow: { flexDirection: 'row', gap: 12, marginBottom: 16 },
   searchInput: {
     flex: 1,

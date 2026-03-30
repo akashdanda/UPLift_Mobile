@@ -61,6 +61,12 @@
           "icon": "./assets/images/icon.png",
           "color": "#3B82F6"
         }
+      ],
+      [
+        "expo-contacts",
+        {
+          "contactsPermission": "Allow Uplift to read phone numbers from your contacts so we can suggest friends who are already on Uplift."
+        }
       ]
     ],
     "experiments": {
