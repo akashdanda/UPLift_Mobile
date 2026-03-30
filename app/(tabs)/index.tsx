@@ -2,7 +2,9 @@ import { CameraCapture } from '@/components/camera-capture';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useFocusEffect } from '@react-navigation/native';
 import { Image } from 'expo-image';
+import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
+import * as Sharing from 'expo-sharing';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -24,8 +26,6 @@ import Animated, {
   withSpring
 } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
-import * as Sharing from 'expo-sharing';
 import ViewShot from 'react-native-view-shot';
 
 import { NotificationsModal } from '@/components/notifications-modal';
@@ -34,12 +34,11 @@ import { ThemedText } from '@/components/themed-text';
 import { Colors } from '@/constants/theme';
 import { useAuthContext } from '@/hooks/use-auth-context';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { getAchievementFeedPosts, hasStreakFreezeAvailable, useStreakFreeze } from '@/lib/achievements';
+import { getAchievementFeedPosts, hasStreakFreezeAvailable } from '@/lib/achievements';
 import { addComment, getCommentsForWorkouts } from '@/lib/comments';
 import {
   getDailyReminderInfo,
-  getReminderMessage,
-  type DailyReminderInfo,
+  type DailyReminderInfo
 } from '@/lib/daily-reminder';
 import { getFriendsWorkouts, type FeedItem } from '@/lib/feed';
 import { getFlashbacks, type FlashbackItem } from '@/lib/flashbacks';
@@ -763,58 +762,39 @@ export default function HomeScreen() {
       >
         {/* Header */}
         <View style={styles.headerRow}>
-          <ThemedText type="title" style={styles.greeting}>
+            <ThemedText type="title" style={styles.greeting}>
             Uplift
-          </ThemedText>
-          <Pressable
-            onPress={handleOpenNotifications}
-            style={({ pressed }) => [
-              styles.notificationsButton,
-              pressed && { opacity: 0.7 },
-            ]}
-          >
-            <Ionicons name="notifications-outline" size={24} color={colors.text} />
-            {unreadCount > 0 && (
-              <View style={[styles.notificationBadge, { backgroundColor: '#EF4444' }]}>
-                <ThemedText style={styles.notificationBadgeText}>
-                  {unreadCount > 99 ? '99+' : unreadCount}
-                </ThemedText>
-              </View>
+            </ThemedText>
+          <View style={styles.headerActions}>
+            {!todayWorkout && (
+              <Pressable
+                onPress={() => router.push('/log-workout')}
+                style={({ pressed }) => [
+                  styles.headerLogBtn,
+                  pressed && { opacity: 0.8, transform: [{ scale: 0.94 }] },
+                ]}
+              >
+                <Ionicons name="add" size={20} color="#000" />
+              </Pressable>
             )}
-          </Pressable>
-        </View>
-
-        {/* Log workout CTA — looks like a feed card placeholder */}
-        {!todayWorkout && (
-          <Pressable
-            onPress={() => router.push('/log-workout')}
-            style={({ pressed }) => [
-              styles.logWorkoutCta,
-              pressed && { opacity: 0.8, transform: [{ scale: 0.985 }] },
-            ]}
-          >
-            <LinearGradient
-              colors={['#13101A', colors.tint + '12', '#13101A']}
-              start={{ x: 0.5, y: 0 }}
-              end={{ x: 0.5, y: 1 }}
-              style={styles.logWorkoutCtaBg}
+            <Pressable
+              onPress={handleOpenNotifications}
+              style={({ pressed }) => [
+                styles.notificationsButton,
+                pressed && { opacity: 0.7 },
+              ]}
             >
-              {/* Subtle radial-ish glow behind the icon */}
-              <View style={[styles.logWorkoutCtaGlow, { backgroundColor: colors.tint + '10' }]} />
-
-              <View style={[styles.logWorkoutCtaRing, { borderColor: colors.tint + '60' }]}>
-                <Ionicons name="camera-outline" size={30} color={colors.tint} />
-              </View>
-
-              <ThemedText style={[styles.logWorkoutCtaTitle, { color: '#fff' }]}>
-                Log your workout
-              </ThemedText>
-              <ThemedText style={styles.logWorkoutCtaSub}>
-                Tap to snap a photo & share with friends
-              </ThemedText>
-            </LinearGradient>
-          </Pressable>
-        )}
+              <Ionicons name="notifications-outline" size={24} color={colors.text} />
+              {unreadCount > 0 && (
+                <View style={[styles.notificationBadge, { backgroundColor: '#EF4444' }]}>
+                  <ThemedText style={styles.notificationBadgeText}>
+                    {unreadCount > 99 ? '99+' : unreadCount}
+            </ThemedText>
+                </View>
+              )}
+            </Pressable>
+          </View>
+        </View>
 
         {/* Today's workout */}
         {todayWorkout && (
@@ -826,14 +806,15 @@ export default function HomeScreen() {
                 style={styles.feedImage}
               />
               <LinearGradient
-                colors={['transparent', 'rgba(0,0,0,0.75)']}
+                colors={['transparent', 'rgba(0,0,0,0.3)', 'rgba(0,0,0,0.8)']}
+                locations={[0, 0.5, 1]}
                 style={styles.feedGradient}
               >
                 <View style={styles.feedOverlayInfo}>
                   <View style={{ flex: 1 }}>
                     <ThemedText type="defaultSemiBold" style={styles.feedOverlayName}>
                       Your workout
-                    </ThemedText>
+            </ThemedText>
                     {todayWorkout.caption ? (
                       <ThemedText style={styles.feedOverlayCaption} numberOfLines={1}>
                         {todayWorkout.caption}
@@ -841,31 +822,31 @@ export default function HomeScreen() {
                     ) : null}
                     <ThemedText style={styles.feedOverlayMeta}>
                       {getWorkoutTypeEmoji(todayWorkout.workout_type)} Today
-                    </ThemedText>
-                  </View>
-                </View>
+            </ThemedText>
+          </View>
+        </View>
               </LinearGradient>
               {/* Action buttons on right side */}
               <View style={styles.feedActionColumn}>
-                <Pressable
+          <Pressable
                   onPress={() => {
                     setCommentModalWorkoutId(todayWorkout.id);
                     setCommentModalMessage('');
                   }}
                   style={styles.feedActionBtn}
                 >
-                  <Ionicons name="chatbubble-outline" size={24} color="#fff" />
+                  <Ionicons name="chatbubble" size={24} color="rgba(255,255,255,0.9)" />
                   {todayWorkoutComments.length > 0 && (
                     <ThemedText style={styles.feedActionCount}>
                       {todayWorkoutComments.length}
-                    </ThemedText>
+            </ThemedText>
                   )}
-                </Pressable>
-                <Pressable
+          </Pressable>
+          <Pressable
                   onPress={() => handleShareWorkout(todayWorkout.image_url, todayWorkout.secondary_image_url, todayWorkout.workout_type, todayWorkout.workout_date, todayWorkout.caption, profile?.display_name)}
                   style={styles.feedActionBtn}
                 >
-                  <Ionicons name="paper-plane-outline" size={24} color="#fff" />
+                  <Ionicons name="paper-plane" size={22} color="rgba(255,255,255,0.9)" />
                 </Pressable>
               </View>
             </View>
@@ -889,7 +870,7 @@ export default function HomeScreen() {
                               ) : (
                                 <ThemedText style={[styles.reactionBubbleInitials, { color: colors.tint }]}>
                                   {getInitials(r.display_name)}
-                                </ThemedText>
+            </ThemedText>
                               )}
                             </View>
                           )}
@@ -898,10 +879,10 @@ export default function HomeScreen() {
                           <ThemedText style={styles.reactionEmojiText}>{r.emoji}</ThemedText>
                         </View>
                       </View>
-                    </Pressable>
+          </Pressable>
                   ))}
                 </ScrollView>
-              </View>
+        </View>
               {/* Comments tap-to-open */}
               {todayWorkoutComments.length > 0 && (
                 <Pressable
@@ -939,8 +920,8 @@ export default function HomeScreen() {
                     <ThemedText style={styles.flashbackEmoji}>{fb.emoji}</ThemedText>
                     <ThemedText style={[styles.flashbackLabel, { color: colors.tint }]}>
                       {fb.label}
-                    </ThemedText>
-                  </View>
+                  </ThemedText>
+                </View>
                   <ZoomableFeedImage
                     imageUrl={fb.workout.image_url}
                     secondaryImageUrl={fb.workout.secondary_image_url}
@@ -958,8 +939,8 @@ export default function HomeScreen() {
                         >
                           {fb.workout.caption}
                         </ThemedText>
-                      ) : null}
-                    </View>
+              ) : null}
+            </View>
                   ) : null}
                   <View style={styles.flashbackDateWrap}>
                     <Ionicons name="calendar-outline" size={13} color={colors.textMuted} />
@@ -983,7 +964,7 @@ export default function HomeScreen() {
 
         {/* Achievement announcements */}
         {achievementPosts.length > 0 && (
-          <View style={styles.section}>
+        <View style={styles.section}>
             {achievementPosts.map((post) => (
               <Pressable
                 key={post.id}
@@ -998,7 +979,7 @@ export default function HomeScreen() {
                   <View style={[styles.achievementFeedIconWrap, { backgroundColor: colors.tint + '15' }]}>
                     <ThemedText style={styles.achievementFeedIcon}>
                       {post.achievement_icon ?? '🏅'}
-                    </ThemedText>
+          </ThemedText>
                   </View>
                   <View style={styles.achievementFeedTextBlock}>
                     <ThemedText style={[styles.achievementFeedMessage, { color: colors.text }]}>
@@ -1055,7 +1036,8 @@ export default function HomeScreen() {
                     />
                     {/* Bottom gradient with user info */}
                     <LinearGradient
-                      colors={['transparent', 'rgba(0,0,0,0.75)']}
+                      colors={['transparent', 'rgba(0,0,0,0.3)', 'rgba(0,0,0,0.8)']}
+                      locations={[0, 0.5, 1]}
                       style={styles.feedGradient}
                     >
                       <Pressable
@@ -1063,18 +1045,18 @@ export default function HomeScreen() {
                         onPress={() => router.push(`/friend-profile?id=${item.workout.user_id}`)}
                       >
                         <View style={styles.feedOverlayAvatar}>
-                          {item.avatar_url ? (
+                      {item.avatar_url ? (
                             <Image source={{ uri: item.avatar_url }} style={styles.feedOverlayAvatarImg} />
-                          ) : (
+                      ) : (
                             <ThemedText style={styles.feedOverlayAvatarInitials}>
-                              {getInitials(item.display_name)}
-                            </ThemedText>
-                          )}
-                        </View>
+                          {getInitials(item.display_name)}
+                        </ThemedText>
+                      )}
+                    </View>
                         <View style={{ flex: 1 }}>
                           <ThemedText type="defaultSemiBold" style={styles.feedOverlayName}>
-                            {item.display_name || 'Anonymous'}
-                          </ThemedText>
+                        {item.display_name || 'Anonymous'}
+                      </ThemedText>
                           {item.workout.caption ? (
                             <ThemedText style={styles.feedOverlayCaption} numberOfLines={1}>
                               {item.workout.caption}
@@ -1082,21 +1064,21 @@ export default function HomeScreen() {
                           ) : null}
                           <ThemedText style={styles.feedOverlayMeta}>
                             {getWorkoutTypeEmoji(item.workout.workout_type)}{' '}
-                            {formatFeedDate(item.workout.workout_date)}
-                          </ThemedText>
-                        </View>
+                        {formatFeedDate(item.workout.workout_date)}
+                      </ThemedText>
+                    </View>
                       </Pressable>
                     </LinearGradient>
                     {/* Action buttons on right side */}
                     <View style={styles.feedActionColumn}>
-                      <Pressable
-                        onPress={() => {
-                          setCommentModalWorkoutId(item.workout.id);
-                          setCommentModalMessage('');
-                        }}
-                        style={styles.feedActionBtn}
-                      >
-                        <Ionicons name="chatbubble-outline" size={24} color="#fff" />
+                <Pressable
+                  onPress={() => {
+                    setCommentModalWorkoutId(item.workout.id);
+                    setCommentModalMessage('');
+                  }}
+                  style={styles.feedActionBtn}
+                >
+                        <Ionicons name="chatbubble" size={24} color="rgba(255,255,255,0.9)" />
                         {(item.comments ?? []).length > 0 && (
                           <ThemedText style={styles.feedActionCount}>
                             {(item.comments ?? []).length}
@@ -1108,7 +1090,7 @@ export default function HomeScreen() {
                           onPress={() => handleShareWorkout(item.workout.image_url, item.workout.secondary_image_url, item.workout.workout_type, item.workout.workout_date, item.workout.caption, item.display_name)}
                           style={styles.feedActionBtn}
                         >
-                          <Ionicons name="paper-plane-outline" size={24} color="#fff" />
+                          <Ionicons name="paper-plane" size={22} color="rgba(255,255,255,0.9)" />
                         </Pressable>
                       )}
                       {item.workout.user_id !== session?.user?.id && (
@@ -1122,10 +1104,10 @@ export default function HomeScreen() {
                           }}
                           style={styles.feedActionBtn}
                         >
-                          <Ionicons name="ellipsis-vertical" size={22} color="rgba(255,255,255,0.7)" />
+                          <Ionicons name="ellipsis-horizontal" size={22} color="rgba(255,255,255,0.6)" />
                         </Pressable>
                       )}
-                    </View>
+                  </View>
                   </View>
                   {/* Tagged friends */}
                   {(item.tags ?? []).length > 0 && (
@@ -1136,10 +1118,10 @@ export default function HomeScreen() {
                         <Pressable key={tag.id} onPress={() => router.push(`/friend-profile?id=${tag.tagged_user_id}`)}>
                           <ThemedText style={[styles.taggedName, { color: colors.tint }]}>
                             {tag.display_name || 'Friend'}{tIdx < (item.tags?.length ?? 0) - 1 ? ', ' : ''}
-                          </ThemedText>
+                    </ThemedText>
                         </Pressable>
                       ))}
-                    </View>
+                </View>
                   )}
                   {/* Reaction row — always visible with + button */}
                   <View style={[styles.reactionRow, { borderTopColor: colors.tint + '10' }]}>
@@ -1565,72 +1547,72 @@ export default function HomeScreen() {
         </Pressable>
       </Modal>
     </SafeAreaView>
-    {/* Share card - rendered at screen size, positioned off-screen-left inside a Modal */}
+    {/* Share card — story-optimized 9:16 branded card, rendered off-screen */}
     <Modal visible={!!shareData} transparent animationType="none" statusBarTranslucent>
       {shareData && (() => {
         const wt = WORKOUT_TYPES.find((t) => t.value === shareData.workoutType);
         const dateLabel = shareData.workoutDate ? formatFeedDate(shareData.workoutDate) : 'Today';
         const screenW = Dimensions.get('window').width;
+        const cardW = screenW;
+        const cardH = cardW * (16 / 9);
         return (
           <View style={{ position: 'absolute', left: -screenW * 2, top: 0 }} collapsable={false}>
             <ViewShot
               ref={shareViewRef}
               options={{ format: 'jpg', quality: 0.95 }}
-              collapsable={false}
-              style={{ width: screenW, backgroundColor: '#000' }}
+              style={{ width: cardW, height: cardH, backgroundColor: '#000' }}
             >
-              {/* Image container - same aspect ratio as feed */}
-              <View style={{ width: screenW, aspectRatio: 10 / 16, position: 'relative', overflow: 'hidden' }}>
-                {/* Primary workout photo */}
-                <Image
-                  source={{ uri: shareData.primaryUrl }}
-                  style={{ width: '100%', height: '100%' }}
-                  contentFit="cover"
-                />
+              {/* Full-bleed workout photo */}
+              <Image
+                source={{ uri: shareData.primaryUrl }}
+                style={{ position: 'absolute', width: cardW, height: cardH }}
+                contentFit="cover"
+              />
 
-                {/* Dual camera selfie overlay - same position as feed */}
-                {shareData.secondaryUrl && shareData.secondaryUrl.trim().length > 0 && (
-                  <View style={styles.dualPhotoCorner}>
-                    <Image
-                      source={{ uri: shareData.secondaryUrl }}
-                      style={styles.dualPhotoCornerImage}
-                      contentFit="cover"
-                    />
+              {/* Dark vignette overlay for readability */}
+              <LinearGradient
+                colors={['rgba(0,0,0,0.5)', 'transparent', 'transparent', 'rgba(0,0,0,0.7)']}
+                locations={[0, 0.2, 0.55, 1]}
+                style={{ position: 'absolute', width: cardW, height: cardH }}
+              />
+
+              {/* Top bar — left: UPLIFT; right: workout type */}
+              <View style={shareStyles.topBar}>
+                <View style={shareStyles.brandPill}>
+                  <ThemedText style={shareStyles.brandText}>UPLIFT</ThemedText>
+                </View>
+                {wt && (
+                  <View style={shareStyles.typePill}>
+                    <ThemedText style={shareStyles.typePillEmoji}>{wt.emoji}</ThemedText>
+                    <ThemedText style={shareStyles.typePillLabel}>{wt.label}</ThemedText>
                   </View>
                 )}
+              </View>
 
-                {/* Top gradient for UPLIFT branding */}
-                <LinearGradient
-                  colors={['rgba(0,0,0,0.6)', 'rgba(0,0,0,0)']}
-                  style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 80 }}
-                />
+              {/* Selfie overlay — top-left with glow border */}
+              {shareData.secondaryUrl && shareData.secondaryUrl.trim().length > 0 && (
+                <View style={shareStyles.selfieContainer}>
+                  <Image
+                    source={{ uri: shareData.secondaryUrl }}
+                    style={shareStyles.selfieImage}
+                    contentFit="cover"
+                  />
+                </View>
+              )}
 
-                {/* UPLIFT branding - top right */}
-                <ThemedText style={styles.shareWatermark}>UPLIFT</ThemedText>
-
-                {/* Bottom gradient for user info - same as feed */}
-                <LinearGradient
-                  colors={['transparent', 'rgba(0,0,0,0.75)']}
-                  style={styles.feedGradient}
-                >
-                  <View style={styles.feedOverlayInfo}>
-                    <View style={{ flex: 1 }}>
-                      {shareData.displayName && (
-                        <ThemedText type="defaultSemiBold" style={styles.feedOverlayName}>
-                          {shareData.displayName}
-                        </ThemedText>
-                      )}
-                      {shareData.caption ? (
-                        <ThemedText style={styles.feedOverlayCaption} numberOfLines={1}>
-                          {shareData.caption}
-                        </ThemedText>
-                      ) : null}
-                      <ThemedText style={styles.feedOverlayMeta}>
-                        {wt ? `${wt.emoji} ` : ''}{dateLabel}
-                      </ThemedText>
-                    </View>
+              {/* Bottom info panel — name + date (bottom-left) */}
+              <View style={shareStyles.bottomPanel}>
+                {shareData.displayName && (
+                  <ThemedText style={shareStyles.displayName} numberOfLines={1}>
+                    {shareData.displayName}
+                  </ThemedText>
+                )}
+                <View style={shareStyles.metaRow}>
+                  <View style={shareStyles.datePill}>
+                    <Ionicons name="calendar-outline" size={12} color="rgba(255,255,255,0.7)" />
+                    <ThemedText style={shareStyles.dateText}>{dateLabel}</ThemedText>
                   </View>
-                </LinearGradient>
+                </View>
               </View>
             </ViewShot>
           </View>
@@ -1645,55 +1627,28 @@ const styles = StyleSheet.create({
   safe: { flex: 1 },
   scrollView: { flex: 1 },
   content: { paddingTop: 10, paddingBottom: 40 },
-  logWorkoutCta: {
-    width: '100%',
-    aspectRatio: 2 / 3,
-    overflow: 'hidden',
-    marginBottom: 2,
-  },
-  logWorkoutCtaBg: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  logWorkoutCtaGlow: {
-    position: 'absolute',
-    width: 180,
-    height: 180,
-    borderRadius: 90,
-  },
-  logWorkoutCtaRing: {
-    width: 68,
-    height: 68,
-    borderRadius: 34,
-    borderWidth: 2,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    marginBottom: 16,
-  },
-  logWorkoutCtaTitle: {
-    fontSize: 17,
-    fontWeight: '700',
-    letterSpacing: 0.2,
-    marginBottom: 6,
-  },
-  logWorkoutCtaSub: {
-    color: 'rgba(255,255,255,0.35)',
-    fontSize: 13,
-    fontWeight: '500',
-    letterSpacing: 0.1,
-  },
-
   // Header
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 12,
+    marginBottom: 8,
     paddingHorizontal: 20,
   },
-  greeting: { fontSize: 26, fontWeight: '800', letterSpacing: -0.5 },
+  greeting: { fontSize: 24, fontWeight: '800', letterSpacing: -0.3 },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  headerLogBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   notificationsButton: {
     position: 'relative',
     padding: 8,
@@ -1722,14 +1677,14 @@ const styles = StyleSheet.create({
   // Dual photo overlay (BeReal-style)
   dualPhotoCorner: {
     position: 'absolute',
-    top: 12,
-    left: 12,
-    width: '28%',
+    top: 14,
+    left: 14,
+    width: '26%',
     aspectRatio: 2 / 3,
-    borderRadius: 14,
+    borderRadius: 16,
     overflow: 'hidden',
-    borderWidth: 3,
-    borderColor: '#fff',
+    borderWidth: 2.5,
+    borderColor: 'rgba(255,255,255,0.9)',
     zIndex: 5,
   },
   dualPhotoCornerImage: { width: '100%', height: '100%' },
@@ -1738,7 +1693,7 @@ const styles = StyleSheet.create({
   shareWatermark: {
     position: 'absolute',
     top: 14,
-    right: 14,
+    left: 14,
     color: 'rgba(255,255,255,0.9)',
     fontSize: 14,
     fontWeight: '900',
@@ -1750,8 +1705,8 @@ const styles = StyleSheet.create({
 
   // Empty state
   emptyCard: {
-    padding: 36,
-    borderRadius: 16,
+    padding: 40,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1759,26 +1714,28 @@ const styles = StyleSheet.create({
 
   // Feed — fullscreen style
   feedSection: { marginBottom: 20 },
-  feedList: { gap: 4 },
+  feedList: { gap: 16, paddingHorizontal: 12 },
   feedCard: {
     overflow: 'hidden',
-    marginBottom: 8,
+    marginBottom: 0,
     backgroundColor: '#13101A',
-    borderRadius: 0,
+    borderRadius: 20,
   },
   feedImageContainer: {
     position: 'relative',
   },
-  feedImage: { width: '100%', aspectRatio: 10 / 16 },
+  feedImage: { width: '100%', aspectRatio: 10 / 16, borderRadius: 20 },
   feedGradient: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
-    paddingTop: 48,
-    paddingBottom: 12,
-    paddingHorizontal: 14,
+    paddingTop: 64,
+    paddingBottom: 16,
+    paddingHorizontal: 16,
     justifyContent: 'flex-end',
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
   },
   feedOverlayInfo: {
     flexDirection: 'row',
@@ -1786,44 +1743,44 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   feedOverlayAvatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     overflow: 'hidden',
-    borderWidth: 1.5,
-    borderColor: 'rgba(255,255,255,0.8)',
-    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.9)',
+    backgroundColor: 'rgba(255,255,255,0.15)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  feedOverlayAvatarImg: { width: 32, height: 32 },
+  feedOverlayAvatarImg: { width: 34, height: 34 },
   feedOverlayAvatarInitials: {
     color: '#fff',
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
   },
   feedOverlayName: {
     color: '#fff',
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '700',
     letterSpacing: 0.1,
-    textShadowColor: 'rgba(0,0,0,0.4)',
+    textShadowColor: 'rgba(0,0,0,0.5)',
     textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 2,
+    textShadowRadius: 3,
   },
   feedOverlayCaption: {
     color: 'rgba(255,255,255,0.85)',
-    fontSize: 12,
-    lineHeight: 16,
-    marginTop: 1,
-    textShadowColor: 'rgba(0,0,0,0.4)',
+    fontSize: 13,
+    lineHeight: 17,
+    marginTop: 2,
+    textShadowColor: 'rgba(0,0,0,0.5)',
     textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 2,
+    textShadowRadius: 3,
   },
   feedOverlayMeta: {
-    color: 'rgba(255,255,255,0.6)',
+    color: 'rgba(255,255,255,0.55)',
     fontSize: 11,
-    marginTop: 1,
+    marginTop: 2,
     fontWeight: '600',
     textShadowColor: 'rgba(0,0,0,0.4)',
     textShadowOffset: { width: 0, height: 1 },
@@ -1833,19 +1790,19 @@ const styles = StyleSheet.create({
   feedActionColumn: {
     position: 'absolute',
     right: 14,
-    bottom: 14,
+    bottom: 16,
     alignItems: 'center',
-    gap: 18,
+    gap: 20,
   },
   feedActionBtn: {
     alignItems: 'center',
-    gap: 3,
+    gap: 4,
   },
   feedActionCount: {
     color: '#fff',
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '700',
-    textShadowColor: 'rgba(0,0,0,0.4)',
+    textShadowColor: 'rgba(0,0,0,0.5)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 3,
   },
@@ -1856,7 +1813,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingTop: 10,
-    paddingBottom: 8,
+    paddingBottom: 6,
     gap: 4,
     flexWrap: 'wrap',
   },
@@ -1867,20 +1824,20 @@ const styles = StyleSheet.create({
   reactionRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderTopWidth: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderTopWidth: 0,
     gap: 10,
   },
   addReactionBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     borderWidth: 1.5,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    marginRight: 8,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    marginRight: 6,
   },
   reactionBubbles: { flexDirection: 'row', alignItems: 'center', gap: 8, flexGrow: 0 },
   reactionBubbleWrap: {
@@ -2031,12 +1988,13 @@ const styles = StyleSheet.create({
 
   // "View comments" link on cards
   viewCommentsBtn: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingHorizontal: 14,
+    paddingTop: 4,
+    paddingBottom: 12,
   },
   viewCommentsText: {
     fontSize: 13,
-    fontWeight: '600',
+    fontWeight: '500',
   },
 
   // Comment modal — Instagram-style bottom sheet
@@ -2209,10 +2167,10 @@ const styles = StyleSheet.create({
   reactCancelText: { fontSize: 15 },
 
   // Flashback cards
-  flashbackScroll: { gap: 14, paddingRight: 4 },
+  flashbackScroll: { gap: 14, paddingRight: 4, paddingLeft: 4 },
   flashbackCard: {
-    width: 220,
-    borderRadius: 16,
+    width: 200,
+    borderRadius: 18,
     overflow: 'hidden',
   },
   flashbackBadge: {
@@ -2220,12 +2178,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
     paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingVertical: 10,
   },
   flashbackEmoji: { fontSize: 18 },
   flashbackLabel: { fontSize: 12, fontWeight: '800', letterSpacing: 0.3 },
   flashbackImage: {
-    width: 220,
+    width: 200,
     aspectRatio: 2 / 3,
   },
   flashbackCaptionWrap: {
@@ -2253,21 +2211,21 @@ const styles = StyleSheet.create({
 
   // Achievement feed cards
   achievementFeedCard: {
-    borderRadius: 16,
+    borderRadius: 18,
     borderWidth: 1,
-    padding: 14,
+    padding: 16,
     marginBottom: 10,
     overflow: 'visible',
   },
   achievementFeedRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 14,
   },
   achievementFeedIconWrap: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 46,
+    height: 46,
+    borderRadius: 23,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'visible',
@@ -2276,4 +2234,114 @@ const styles = StyleSheet.create({
   achievementFeedTextBlock: { flex: 1, minWidth: 0 },
   achievementFeedMessage: { fontSize: 13, fontWeight: '700', lineHeight: 19, letterSpacing: 0.1 },
   achievementFeedTime: { fontSize: 10, marginTop: 3, fontWeight: '600', letterSpacing: 0.2, textTransform: 'uppercase' },
+});
+
+// ─── Share Card Styles (story-optimized) ─────────────────
+const shareStyles = StyleSheet.create({
+  topBar: {
+    position: 'absolute',
+    top: 40,
+    left: 24,
+    right: 24,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  brandPill: {
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+  },
+  brandText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '900',
+    letterSpacing: 3,
+  },
+  typePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.15)',
+  },
+  typePillEmoji: {
+    fontSize: 14,
+  },
+  typePillLabel: {
+    color: 'rgba(255,255,255,0.9)',
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
+  selfieContainer: {
+    position: 'absolute',
+    top: 90,
+    left: 24,
+    width: '24%',
+    aspectRatio: 2 / 3,
+    borderRadius: 18,
+    overflow: 'hidden',
+    borderWidth: 2.5,
+    borderColor: 'rgba(255,255,255,0.85)',
+    zIndex: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  selfieImage: {
+    width: '100%',
+    height: '100%',
+  },
+  bottomPanel: {
+    position: 'absolute',
+    bottom: 40,
+    left: 24,
+    right: 24,
+    zIndex: 10,
+    paddingBottom: 8,
+  },
+  displayName: {
+    color: '#fff',
+    fontSize: 24,
+    fontWeight: '800',
+    letterSpacing: -0.3,
+    lineHeight: 28,
+    textShadowColor: 'rgba(0,0,0,0.6)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 6,
+    marginBottom: 10,
+  },
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  datePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.15)',
+  },
+  dateText: {
+    color: 'rgba(255,255,255,0.8)',
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+  },
 });
