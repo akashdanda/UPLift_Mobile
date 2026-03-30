@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   Alert,
   Dimensions,
+  FlatList,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -18,7 +19,7 @@ import {
   TextInput,
   View,
 } from 'react-native'
-import { SafeAreaView } from 'react-native-safe-area-context'
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import { ReportModal } from '@/components/report-modal'
 import { ThemedText } from '@/components/themed-text'
@@ -57,6 +58,9 @@ import { supabase } from '@/lib/supabase'
 import type { GroupMessage } from '@/types/group'
 
 const SCREEN_WIDTH = Dimensions.get('window').width
+const SCREEN_HEIGHT = Dimensions.get('window').height
+/** Fixed height so the friend list gets a bounded flex region and scrolls reliably */
+const INVITE_SHEET_HEIGHT = Math.round(SCREEN_HEIGHT * 0.72)
 const BANNER_HEIGHT = 180
 
 type DetailTab = 'overview' | 'members' | 'chat' | 'competitions'
@@ -84,6 +88,7 @@ export default function GroupDetailScreen() {
   const { session, refreshProfile } = useAuthContext()
   const colorScheme = useColorScheme()
   const colors = Colors[colorScheme ?? 'light']
+  const safeInsets = useSafeAreaInsets()
 
   const [group, setGroup] = useState<GroupWithMeta | null>(null)
   const [members, setMembers] = useState<GroupMemberWithProfile[]>([])
@@ -1010,22 +1015,34 @@ export default function GroupDetailScreen() {
         </ScrollView>
       </KeyboardAvoidingView>
 
-      {/* Invite Friends Modal */}
+      {/* Invite Friends Modal — View (not Pressable) for sheet so FlatList receives pan gestures */}
       <Modal
         visible={inviteModalVisible}
         transparent
         animationType="slide"
         onRequestClose={() => setInviteModalVisible(false)}
       >
-        <Pressable style={styles.inviteOverlay} onPress={() => setInviteModalVisible(false)}>
-          <Pressable style={[styles.inviteSheet, { backgroundColor: colors.card }]} onPress={(e) => e.stopPropagation()}>
-            <View style={styles.inviteHandle} />
-            <ThemedText type="subtitle" style={[styles.inviteTitle, { color: colors.text }]}>
-              Invite Friends
-            </ThemedText>
-            <ThemedText style={[styles.inviteSubtitle, { color: colors.textMuted }]}>
-              Select friends to invite to {group?.name}
-            </ThemedText>
+        <View style={styles.inviteOverlay}>
+          <Pressable
+            accessibilityRole="button"
+            style={StyleSheet.absoluteFill}
+            onPress={() => setInviteModalVisible(false)}
+          />
+          <View
+            style={[
+              styles.inviteSheet,
+              { backgroundColor: colors.card, height: INVITE_SHEET_HEIGHT },
+            ]}
+          >
+            <View style={styles.inviteSheetHeader}>
+              <View style={styles.inviteHandle} />
+              <ThemedText type="subtitle" style={[styles.inviteTitle, { color: colors.text }]}>
+                Invite Friends
+              </ThemedText>
+              <ThemedText style={[styles.inviteSubtitle, { color: colors.textMuted }]}>
+                Select friends to invite to {group?.name}
+              </ThemedText>
+            </View>
 
             {inviteLoading ? (
               <View style={styles.inviteCentered}>
@@ -1039,12 +1056,19 @@ export default function GroupDetailScreen() {
                 </ThemedText>
               </View>
             ) : (
-              <ScrollView style={styles.inviteList} showsVerticalScrollIndicator={false}>
-                {inviteFriends.map((friend) => {
+              <FlatList
+                data={inviteFriends}
+                keyExtractor={(item) => item.id}
+                style={styles.inviteList}
+                contentContainerStyle={{ paddingBottom: Math.max(16, safeInsets.bottom) }}
+                keyboardShouldPersistTaps="handled"
+                nestedScrollEnabled
+                showsVerticalScrollIndicator
+                renderItem={({ item: friend }) => {
                   const isPending = invitePendingIds.has(friend.id)
                   const isSending = inviteSendingId === friend.id
                   return (
-                    <View key={friend.id} style={[styles.inviteRow, { borderBottomColor: colors.tabBarBorder }]}>
+                    <View style={[styles.inviteRow, { borderBottomColor: colors.tabBarBorder }]}>
                       <View style={styles.inviteRowLeft}>
                         {friend.avatar_url ? (
                           <Image source={{ uri: friend.avatar_url }} style={styles.inviteAvatar} />
@@ -1079,11 +1103,11 @@ export default function GroupDetailScreen() {
                       )}
                     </View>
                   )
-                })}
-              </ScrollView>
+                }}
+              />
             )}
-          </Pressable>
-        </Pressable>
+          </View>
+        </View>
       </Modal>
 
       {/* Report Modal */}
@@ -1420,12 +1444,18 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   inviteSheet: {
+    width: '100%',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     paddingTop: 12,
     paddingHorizontal: 20,
-    paddingBottom: 40,
-    maxHeight: '70%',
+    zIndex: 1,
+    ...Platform.select({
+      android: { elevation: 12 },
+    }),
+  },
+  inviteSheetHeader: {
+    flexShrink: 0,
   },
   inviteHandle: {
     width: 36,
@@ -1449,7 +1479,9 @@ const styles = StyleSheet.create({
     letterSpacing: 0.1,
   },
   inviteCentered: {
+    flex: 1,
     alignItems: 'center',
+    justifyContent: 'center',
     paddingVertical: 40,
     gap: 12,
   },
@@ -1460,7 +1492,7 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   inviteList: {
-    flexGrow: 0,
+    flex: 1,
   },
   inviteRow: {
     flexDirection: 'row',
