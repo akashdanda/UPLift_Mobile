@@ -45,26 +45,100 @@ export default function AuthProvider({ children }: PropsWithChildren) {
   const fetchProfile = useCallback(async () => {
     if (!session) return
     try {
+      const userId = session.user.id
       const { data } = await supabase
         .from('profiles')
         .select('*')
-        .eq('id', session.user.id)
+        .eq('id', userId)
         .single()
       const profileData = data as Profile | null
       if (!profileData) {
         setProfile(null)
         return
       }
-      // Compute streak from workout history using client's local "today" (avoids UTC vs local bug)
+
       const now = new Date()
-      const refDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
-      const { data: streakData } = await supabase.rpc('get_current_streak', {
-        user_id_param: session.user.id,
-        reference_date: refDate,
+      const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+
+      const [allWorkoutsRes, groupsRes, friendsRes] = await Promise.all([
+        supabase
+          .from('workouts')
+          .select('workout_date, workout_type')
+          .eq('user_id', userId)
+          .order('workout_date', { ascending: true }),
+        supabase
+          .from('group_members')
+          .select('id', { count: 'exact', head: true })
+          .eq('user_id', userId),
+        supabase
+          .from('friendships')
+          .select('id', { count: 'exact', head: true })
+          .eq('status', 'accepted')
+          .or(`requester_id.eq.${userId},addressee_id.eq.${userId}`),
+      ])
+
+      const workouts = (allWorkoutsRes.data ?? []) as { workout_date: string; workout_type: string | null }[]
+
+      // Build a map: date → workout_type. Prefer non-rest if multiple entries exist on same date.
+      const dateMap = new Map<string, string | null>()
+      let nonRestCount = 0
+      for (const w of workouts) {
+        if (w.workout_type !== 'rest') nonRestCount++
+        const existing = dateMap.get(w.workout_date)
+        if (existing === undefined) {
+          dateMap.set(w.workout_date, w.workout_type)
+        } else if (w.workout_type !== 'rest') {
+          dateMap.set(w.workout_date, w.workout_type)
+        }
+      }
+
+      // --- Current streak: walk backwards from today ---
+      // Rest days pause (don't count, don't break). Missing days break.
+      let currentStreak = 0
+      {
+        const d = new Date(todayStr + 'T00:00:00')
+        if (!dateMap.has(todayStr)) {
+          d.setDate(d.getDate() - 1)
+        }
+        while (true) {
+          const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+          if (!dateMap.has(iso)) break
+          if (dateMap.get(iso) !== 'rest') currentStreak++
+          d.setDate(d.getDate() - 1)
+        }
+      }
+
+      // --- Longest streak: walk through all days from first to last workout ---
+      let longestStreak = 0
+      {
+        const sorted = [...dateMap.keys()].sort()
+        if (sorted.length > 0) {
+          const first = new Date(sorted[0] + 'T00:00:00')
+          const last = new Date(sorted[sorted.length - 1] + 'T00:00:00')
+          let run = 0
+          const d = new Date(first)
+          while (d <= last) {
+            const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+            if (dateMap.has(iso)) {
+              if (dateMap.get(iso) !== 'rest') run++
+            } else {
+              longestStreak = Math.max(longestStreak, run)
+              run = 0
+            }
+            d.setDate(d.getDate() + 1)
+          }
+          longestStreak = Math.max(longestStreak, run)
+        }
+      }
+
+      setProfile({
+        ...profileData,
+        streak: currentStreak,
+        longest_streak: longestStreak,
+        workouts_count: nonRestCount,
+        groups_count: groupsRes.count ?? profileData.groups_count ?? 0,
+        friends_count: friendsRes.count ?? profileData.friends_count ?? 0,
       })
-      const raw = Array.isArray(streakData) ? streakData?.[0] : streakData
-      const streak = typeof raw === 'number' ? raw : (profileData.streak ?? 0)
-      setProfile({ ...profileData, streak })
     } catch {
       setProfile(null)
     }
@@ -135,29 +209,7 @@ export default function AuthProvider({ children }: PropsWithChildren) {
     }
     let cancelled = false
     void (async () => {
-      try {
-        const { data } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', session.user.id)
-          .single()
-        const profileData = data as Profile | null
-        if (!cancelled && profileData) {
-          const now = new Date()
-          const refDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
-          const { data: streakData } = await supabase.rpc('get_current_streak', {
-            user_id_param: session.user.id,
-            reference_date: refDate,
-          })
-          const raw = Array.isArray(streakData) ? streakData?.[0] : streakData
-          const streak = typeof raw === 'number' ? raw : (profileData.streak ?? 0)
-          setProfile({ ...profileData, streak })
-        } else if (!cancelled) {
-          setProfile(null)
-        }
-      } catch {
-        if (!cancelled) setProfile(null)
-      }
+      await fetchProfileRef.current()
     })()
     return () => {
       cancelled = true
