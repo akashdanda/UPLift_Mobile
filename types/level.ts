@@ -48,8 +48,8 @@ export const LEVEL_TIERS: LevelDefinition[] = [
     title: 'Platinum',
     emoji: '💎',
     minXP: 500,
-    color: '#6366F1',
-    glowColor: '#6366F130',
+    color: '#6C52D6',
+    glowColor: '#6C52D630',
   },
   {
     tier: 'diamond',

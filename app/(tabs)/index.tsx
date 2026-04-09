@@ -171,6 +171,7 @@ function getWorkoutTypeEmoji(type: string | null | undefined): string {
 
 export default function HomeScreen() {
   const colorScheme = useColorScheme();
+  const isDark = colorScheme === 'dark';
   const colors = Colors[colorScheme ?? 'light'];
   const { session, profile } = useAuthContext();
   const [todayWorkout, setTodayWorkout] = useState<Workout | null>(null);
@@ -205,7 +206,6 @@ export default function HomeScreen() {
   const [commentSubmittingWorkoutId, setCommentSubmittingWorkoutId] = useState<string | null>(null);
   const commentInputRef = useRef<TextInput>(null);
 
-  
   // Highlight workout when navigating from notification
   const [highlightedWorkoutId, setHighlightedWorkoutId] = useState<string | null>(null);
   
@@ -503,7 +503,6 @@ export default function HomeScreen() {
     );
   };
 
-
   // Real-time notification subscriptions
   useEffect(() => {
     if (!session) return
@@ -775,7 +774,7 @@ export default function HomeScreen() {
         {/* Header */}
         <View style={styles.headerRow}>
             <ThemedText type="title" style={styles.greeting}>
-            Uplift
+            UPLIFT
             </ThemedText>
           <View style={styles.headerActions}>
             {!todayWorkout && (
@@ -783,10 +782,11 @@ export default function HomeScreen() {
                 onPress={() => router.push('/log-workout')}
                 style={({ pressed }) => [
                   styles.headerLogBtn,
+                  { backgroundColor: colors.tint },
                   pressed && { opacity: 0.8, transform: [{ scale: 0.94 }] },
                 ]}
               >
-                <Ionicons name="add" size={20} color="#000" />
+                <Ionicons name="add" size={20} color="#fff" />
               </Pressable>
             )}
             <Pressable
@@ -814,26 +814,22 @@ export default function HomeScreen() {
             onPress={() => setFeedTab('friends')}
             style={[
               styles.feedTabBtn,
-              { borderColor: colors.tabBarBorder },
-              feedTab === 'friends' && { backgroundColor: colors.tint, borderColor: colors.tint },
+              { backgroundColor: feedTab === 'friends' ? colors.tint : 'transparent' },
             ]}
           >
-            <Ionicons name="people" size={16} color={feedTab === 'friends' ? '#fff' : colors.textMuted} />
             <ThemedText
               style={[styles.feedTabLabel, { color: feedTab === 'friends' ? '#fff' : colors.textMuted }]}
             >
-              Friends Only
+              Friends
             </ThemedText>
           </Pressable>
           <Pressable
             onPress={() => setFeedTab('public')}
             style={[
               styles.feedTabBtn,
-              { borderColor: colors.tabBarBorder },
-              feedTab === 'public' && { backgroundColor: colors.tint, borderColor: colors.tint },
+              { backgroundColor: feedTab === 'public' ? colors.tint : 'transparent' },
             ]}
           >
-            <Ionicons name="globe" size={16} color={feedTab === 'public' ? '#fff' : colors.textMuted} />
             <ThemedText
               style={[styles.feedTabLabel, { color: feedTab === 'public' ? '#fff' : colors.textMuted }]}
             >
@@ -851,11 +847,7 @@ export default function HomeScreen() {
                 secondaryImageUrl={todayWorkout.secondary_image_url}
                 style={styles.feedImage}
               />
-              <LinearGradient
-                colors={['transparent', 'rgba(0,0,0,0.3)', 'rgba(0,0,0,0.8)']}
-                locations={[0, 0.5, 1]}
-                style={styles.feedGradient}
-              >
+              <LinearGradient colors={['transparent', 'rgba(0,0,0,0.65)']} style={styles.feedGradient}>
                 <View style={styles.feedOverlayInfo}>
                   <View style={{ flex: 1 }}>
                     <ThemedText type="defaultSemiBold" style={styles.feedOverlayName}>
@@ -1014,7 +1006,7 @@ export default function HomeScreen() {
             {achievementPosts.map((post) => (
               <Pressable
                 key={post.id}
-                style={[styles.achievementFeedCard, { backgroundColor: colors.card, borderColor: colors.tint + '30' }]}
+                style={[styles.achievementFeedCard, { backgroundColor: colors.card, borderColor: colors.tint + '40' }]}
                 onPress={() => {
                   if (post.user_id !== session?.user?.id) {
                     router.push(`/friend-profile?id=${post.user_id}`);
@@ -1049,7 +1041,7 @@ export default function HomeScreen() {
         <View style={styles.feedSection}>
           {(feedTab === 'friends' ? feedItems : globalFeedItems).length === 0 ? (
             !todayWorkout ? (
-              <View style={[styles.emptyCard, { backgroundColor: colors.cardElevated, marginHorizontal: 20 }]}>
+              <View style={[styles.emptyCard, { backgroundColor: colors.cardElevated, marginHorizontal: 20, borderColor: colors.tint + '25' }]}>
                 <Ionicons
                   name={feedTab === 'friends' ? 'people-outline' : 'globe-outline'}
                   size={32}
@@ -1094,11 +1086,7 @@ export default function HomeScreen() {
                       style={styles.feedImage}
                     />
                     {/* Bottom gradient with user info */}
-                    <LinearGradient
-                      colors={['transparent', 'rgba(0,0,0,0.3)', 'rgba(0,0,0,0.8)']}
-                      locations={[0, 0.5, 1]}
-                      style={styles.feedGradient}
-                    >
+                    <LinearGradient colors={['transparent', 'rgba(0,0,0,0.65)']} style={styles.feedGradient}>
                       <Pressable
                         style={styles.feedOverlayInfo}
                         onPress={() => router.push(`/friend-profile?id=${item.workout.user_id}`)}
@@ -1345,7 +1333,6 @@ export default function HomeScreen() {
           </View>
         </View>
       </Modal>
-
 
       <Modal visible={reactCameraOpen} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setReactCameraOpen(false)}>
         <CameraCapture
@@ -1628,11 +1615,14 @@ export default function HomeScreen() {
                 contentFit="cover"
               />
 
-              {/* Dark vignette overlay for readability */}
+              {/* Dark overlay for readability */}
               <LinearGradient
-                colors={['rgba(0,0,0,0.5)', 'transparent', 'transparent', 'rgba(0,0,0,0.7)']}
-                locations={[0, 0.2, 0.55, 1]}
-                style={{ position: 'absolute', width: cardW, height: cardH }}
+                colors={['transparent', 'rgba(0,0,0,0.55)']}
+                style={{
+                  position: 'absolute',
+                  width: cardW,
+                  height: cardH,
+                }}
               />
 
               {/* Top bar — left: UPLIFT; right: workout type */}
@@ -1699,7 +1689,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     paddingHorizontal: 20,
   },
-  greeting: { fontSize: 24, fontWeight: '800', letterSpacing: -0.3 },
+  greeting: { fontSize: 24, fontWeight: '800', letterSpacing: 4 },
   headerActions: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1736,7 +1726,7 @@ const styles = StyleSheet.create({
 
   // Sections
   section: { marginBottom: 20, paddingHorizontal: 20 },
-  sectionTitle: { fontSize: 16, fontWeight: '800', marginBottom: 12, letterSpacing: -0.3, textTransform: 'uppercase' },
+  sectionTitle: { fontSize: 16, fontWeight: '800', marginBottom: 12, letterSpacing: -0.3 },
 
   // Dual photo overlay (BeReal-style)
   dualPhotoCorner: {
@@ -1786,15 +1776,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
     paddingVertical: 10,
-    borderRadius: 12,
-    borderWidth: 1.5,
+    borderRadius: 10,
   },
   feedTabLabel: {
     fontSize: 13,
-    fontWeight: '700',
-    letterSpacing: 0.3,
+    fontWeight: '600',
   },
   // Feed — fullscreen style
   feedSection: { marginBottom: 20 },
@@ -1804,7 +1791,7 @@ const styles = StyleSheet.create({
     marginBottom: 0,
     backgroundColor: '#13101A',
     borderRadius: 20,
-  },
+    },
   feedImageContainer: {
     position: 'relative',
   },
@@ -2095,7 +2082,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 20,
     maxHeight: '70%',
     minHeight: 300,
-  },
+    },
   commentModalHandle: {
     alignItems: 'center',
     paddingTop: 10,
@@ -2241,7 +2228,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     alignItems: 'center',
   },
-  reactSubmitButtonText: { color: '#fff', fontSize: 14, fontWeight: '800', letterSpacing: 0.5, textTransform: 'uppercase' },
+  reactSubmitButtonText: { color: '#fff', fontSize: 14, fontWeight: '800', letterSpacing: 0.5 },
   reactCancelButton: {
     paddingVertical: 12,
     borderRadius: 14,
@@ -2256,7 +2243,7 @@ const styles = StyleSheet.create({
     width: 200,
     borderRadius: 18,
     overflow: 'hidden',
-  },
+    },
   flashbackBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2318,7 +2305,7 @@ const styles = StyleSheet.create({
   achievementFeedIconImg: { width: 30, height: 30, borderRadius: 15 },
   achievementFeedTextBlock: { flex: 1, minWidth: 0 },
   achievementFeedMessage: { fontSize: 13, fontWeight: '700', lineHeight: 19, letterSpacing: 0.1 },
-  achievementFeedTime: { fontSize: 10, marginTop: 3, fontWeight: '600', letterSpacing: 0.2, textTransform: 'uppercase' },
+  achievementFeedTime: { fontSize: 10, marginTop: 3, fontWeight: '600', letterSpacing: 0.2 },
 });
 
 // ─── Share Card Styles (story-optimized) ─────────────────
@@ -2378,12 +2365,7 @@ const shareStyles = StyleSheet.create({
     borderWidth: 2.5,
     borderColor: 'rgba(255,255,255,0.85)',
     zIndex: 5,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 8,
-    elevation: 8,
-  },
+    },
   selfieImage: {
     width: '100%',
     height: '100%',

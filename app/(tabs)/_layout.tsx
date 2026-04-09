@@ -4,7 +4,7 @@ import { Platform } from 'react-native';
 
 import { HapticTab } from '@/components/haptic-tab';
 import { IconSymbol } from '@/components/ui/icon-symbol';
-import { Colors } from '@/constants/theme';
+import { BrandViolet, Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
 const TAB_ICON_SIZE = 24;
@@ -28,7 +28,7 @@ export default function TabLayout() {
           borderTopWidth: 0,
           borderTopLeftRadius: 24,
           borderTopRightRadius: 24,
-          shadowColor: colorScheme === 'dark' ? '#A78BFA' : '#000',
+          shadowColor: colorScheme === 'dark' ? BrandViolet.primaryOnDark : '#000',
           shadowOffset: { width: 0, height: -4 },
           shadowOpacity: colorScheme === 'dark' ? 0.15 : 0.06,
           shadowRadius: 16,
@@ -38,7 +38,6 @@ export default function TabLayout() {
           fontSize: 8,
           fontWeight: '700',
           letterSpacing: 0.2,
-          textTransform: 'uppercase',
         },
         tabBarItemStyle: {
           paddingTop: 4,

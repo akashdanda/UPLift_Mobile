@@ -47,6 +47,7 @@ export default function DuelDetailScreen() {
   const { session } = useAuthContext()
   const colorScheme = useColorScheme()
   const colors = Colors[colorScheme ?? 'light']
+  const isDark = colorScheme === 'dark'
 
   const [duel, setDuel] = useState<DuelWithProfiles | null>(null)
   const [loading, setLoading] = useState(true)
@@ -188,7 +189,7 @@ export default function DuelDetailScreen() {
         </View>
 
         {/* Challenge type */}
-        <View style={[styles.typeCard, { backgroundColor: colors.card }]}>
+        <View style={[styles.typeCard, { backgroundColor: colors.card, shadowOpacity: isDark ? 0.15 : 0.08, }]}>
           <ThemedText style={styles.typeEmoji}>
             {duel.type === 'workout_count' ? '💪' : '🔥'}
           </ThemedText>
@@ -293,7 +294,7 @@ export default function DuelDetailScreen() {
 
         {/* Result banner */}
         {isCompleted && (
-          <View style={[styles.resultBanner, { backgroundColor: isTie ? '#EAB308' + '15' : iWon ? '#10B981' + '15' : '#EF4444' + '15' }]}>
+          <View style={[styles.resultBanner, { backgroundColor: isTie ? '#EAB308' + '15' : iWon ? '#10B981' + '15' : '#EF4444' + '15', shadowColor: isTie ? '#EAB308' : iWon ? '#10B981' : '#EF4444', shadowOpacity: isDark ? 0.15 : 0.08, }]}>
             <ThemedText type="defaultSemiBold" style={[styles.resultText, { color: isTie ? '#EAB308' : iWon ? '#10B981' : '#EF4444' }]}>
               {isTie
                 ? "It's a tie! 🤝"
@@ -308,9 +309,12 @@ export default function DuelDetailScreen() {
         {isPending && duel.opponent_id === userId && (
           <View style={styles.actionRow}>
             <Pressable
-              style={[styles.acceptBtn, { backgroundColor: colors.tint }]}
               onPress={handleAccept}
               disabled={acting}
+              style={[
+                styles.acceptBtn,
+                { backgroundColor: colors.tint, shadowOpacity: isDark ? 0.3 : 0.15 },
+              ]}
             >
               {acting ? (
                 <ActivityIndicator color="#fff" size="small" />
@@ -335,7 +339,7 @@ export default function DuelDetailScreen() {
               Waiting for {theirName || 'opponent'} to accept…
             </ThemedText>
             <Pressable
-              style={[styles.cancelBtn, { borderColor: colors.tabBarBorder }]}
+              style={[styles.cancelBtn, {  }]}
               onPress={handleCancel}
               disabled={acting}
             >
@@ -345,7 +349,7 @@ export default function DuelDetailScreen() {
         )}
 
         {isActive && (
-          <View style={[styles.tipCard, { backgroundColor: colors.tint + '10' }]}>
+          <View style={[styles.tipCard, { backgroundColor: colors.tint + '10', shadowOpacity: isDark ? 0.12 : 0.06, }]}>
             <Ionicons name="bulb-outline" size={18} color={colors.tint} />
             <ThemedText style={[styles.tipText, { color: colors.text }]}>
               Log workouts daily to increase your score! Scores update automatically.
@@ -384,7 +388,7 @@ const styles = StyleSheet.create({
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   statusRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 },
   statusBadge: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 },
-  statusText: { fontSize: 10, fontWeight: '800', letterSpacing: 1.2, textTransform: 'uppercase' },
+  statusText: { fontSize: 10, fontWeight: '800', letterSpacing: 1.2 },
   timeRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   timeText: { fontSize: 12, fontWeight: '600', letterSpacing: 0.2 },
   typeCard: {
@@ -419,7 +423,7 @@ const styles = StyleSheet.create({
   playerInitials: { fontSize: 24, fontWeight: '700' },
   playerName: { fontSize: 14, fontWeight: '700', marginBottom: 4, letterSpacing: 0.1 },
   playerScore: { fontSize: 36, lineHeight: 44, fontWeight: '800', letterSpacing: -1 },
-  playerScoreLabel: { fontSize: 10, marginTop: 3, fontWeight: '600', letterSpacing: 0.5, textTransform: 'uppercase' },
+  playerScoreLabel: { fontSize: 10, marginTop: 3, fontWeight: '600', letterSpacing: 0.5 },
   vsDivider: { alignItems: 'center', paddingHorizontal: 16, overflow: 'visible' },
   vsText: { fontSize: 20, fontWeight: '800', letterSpacing: 2 },
   resultEmoji: { fontSize: 28, marginTop: 8, lineHeight: 36 },
@@ -451,9 +455,8 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     borderRadius: 14,
     alignItems: 'center',
-    borderWidth: 1,
   },
-  actionBtnText: { color: '#fff', fontSize: 14, fontWeight: '800', letterSpacing: 0.5, textTransform: 'uppercase' },
+  actionBtnText: { color: '#fff', fontSize: 14, fontWeight: '800', letterSpacing: 0.5 },
   declineBtnText: { fontSize: 14, fontWeight: '700', letterSpacing: 0.3 },
   pendingInfo: { alignItems: 'center', gap: 8, marginBottom: 20, paddingVertical: 12 },
   pendingText: { fontSize: 15, textAlign: 'center' },

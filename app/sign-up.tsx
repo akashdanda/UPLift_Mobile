@@ -11,14 +11,13 @@ import {
   TextInput,
   View,
 } from 'react-native'
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import AppleSignInButton from '@/components/social-auth-buttons/apple-sign-in-button'
 import GoogleSignInButton from '@/components/social-auth-buttons/google-sign-in-button'
 import { ThemedText } from '@/components/themed-text'
-import { ThemedView } from '@/components/themed-view'
 import { useAuthContext } from '@/hooks/use-auth-context'
-import { Colors } from '@/constants/theme'
+import { BrandViolet, Colors } from '@/constants/theme'
 import { useColorScheme } from '@/hooks/use-color-scheme'
 
 const MIN_PASSWORD_LENGTH = 6
@@ -28,6 +27,7 @@ export default function SignUpScreen() {
   const colorScheme = useColorScheme()
   const colors = Colors[colorScheme ?? 'light']
   const insets = useSafeAreaInsets()
+  const isDark = colorScheme === 'dark'
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -50,7 +50,6 @@ export default function SignUpScreen() {
       Alert.alert('Sign up failed', error.message)
       return
     }
-    // Supabase may require email confirmation; if so, no session yet
     Alert.alert(
       'Check your email',
       'We sent you a confirmation link. Sign in after confirming your email.',
@@ -58,206 +57,134 @@ export default function SignUpScreen() {
     )
   }
 
+  const inputSurface = {
+    backgroundColor: colors.card,
+    borderColor: colors.tabBarBorder,
+    borderWidth: StyleSheet.hairlineWidth,
+  }
+
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
+    <View style={[styles.root, { backgroundColor: colors.background }]}>
       <KeyboardAvoidingView
-        style={styles.container}
+        style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 60 : 0}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
       >
         <ScrollView
-          style={styles.scrollView}
+          style={styles.flex}
           contentContainerStyle={[
-            styles.scrollContent,
-            { paddingTop: 24, paddingBottom: insets.bottom + 32 },
+            styles.scroll,
+            {
+              paddingTop: insets.top + 20,
+              paddingBottom: Math.max(insets.bottom, 20) + 24,
+            },
           ]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-        <ThemedView style={styles.inner}>
-        <View style={styles.header}>
-          <ThemedText type="title" style={[styles.logo, { color: colors.text }]}>
-            Uplift
-          </ThemedText>
-          <ThemedText style={[styles.tagline, { color: colors.textMuted }]}>
-            Become your best self together
-          </ThemedText>
-        </View>
+          <View style={styles.brand}>
+            <ThemedText style={[styles.brandName, { color: colors.text }]}>UPLIFT</ThemedText>
+            <ThemedText style={[styles.logo, { color: colors.text }]}>Create account</ThemedText>
+          </View>
 
-        <ThemedText type="subtitle" style={[styles.sectionLabel, { color: colors.text }]}>
-          Create account
-        </ThemedText>
-        <View style={[styles.formCard, { backgroundColor: colors.card }]}>
-          <TextInput
-            style={[
-              styles.input,
-              {
-                backgroundColor: colors.background,
-                color: colors.text,
-                borderColor: colors.tabBarBorder,
-              },
+          <View style={styles.form}>
+            <TextInput
+              style={[styles.input, inputSurface, { color: colors.text }]}
+              placeholder="Email"
+              placeholderTextColor={colors.textMuted}
+              value={email}
+              onChangeText={setEmail}
+              autoCapitalize="none"
+              autoCorrect={false}
+              keyboardType="email-address"
+              editable={!loading}
+            />
+            <TextInput
+              style={[styles.input, inputSurface, { color: colors.text }]}
+              placeholder={`Password (min ${MIN_PASSWORD_LENGTH} chars)`}
+              placeholderTextColor={colors.textMuted}
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry
+              editable={!loading}
+            />
+          </View>
+
+          <Pressable
+            style={({ pressed }) => [
+              styles.primaryBtn,
+              { backgroundColor: BrandViolet.primary, opacity: pressed ? 0.88 : loading ? 0.7 : 1 },
             ]}
-            placeholder="Email"
-            placeholderTextColor={colors.textMuted}
-            value={email}
-            onChangeText={setEmail}
-            autoCapitalize="none"
-            autoCorrect={false}
-            keyboardType="email-address"
-            editable={!loading}
-          />
-          <TextInput
-            style={[
-              styles.input,
-              styles.inputLast,
-              {
-                backgroundColor: colors.background,
-                color: colors.text,
-                borderColor: colors.tabBarBorder,
-              },
-            ]}
-            placeholder={`Password (min ${MIN_PASSWORD_LENGTH} characters)`}
-            placeholderTextColor={colors.textMuted}
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry
-            editable={!loading}
-          />
-        </View>
-
-        <Pressable
-          style={({ pressed }) => [
-            styles.primaryButton,
-            { backgroundColor: colors.tint },
-            pressed && styles.buttonPressed,
-          ]}
-          onPress={handleSignUp}
-          disabled={loading}
-        >
-          {loading ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <ThemedText style={styles.primaryButtonText}>Sign up</ThemedText>
-          )}
-        </Pressable>
-
-        <View style={styles.orRow}>
-          <View style={[styles.orLine, { backgroundColor: colors.tabBarBorder }]} />
-          <ThemedText style={[styles.orText, { color: colors.textMuted }]}>or continue with</ThemedText>
-          <View style={[styles.orLine, { backgroundColor: colors.tabBarBorder }]} />
-        </View>
-
-        <AppleSignInButton />
-        <GoogleSignInButton />
-
-        <View style={styles.footer}>
-          <ThemedText style={{ color: colors.textMuted }}>Already have an account? </ThemedText>
-          <Pressable onPress={() => router.back()} disabled={loading}>
-            <ThemedText type="link" style={styles.link}>
-              Sign in
-            </ThemedText>
+            onPress={handleSignUp}
+            disabled={loading}
+          >
+            {loading ? (
+              <ActivityIndicator color="#FFFFFF" />
+            ) : (
+              <ThemedText style={styles.primaryBtnText}>Create account</ThemedText>
+            )}
           </Pressable>
-        </View>
-      </ThemedView>
+
+          <View style={styles.divider}>
+            <View style={[styles.dividerLine, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)' }]} />
+            <ThemedText style={[styles.dividerText, { color: colors.textMuted }]}>or</ThemedText>
+            <View style={[styles.dividerLine, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)' }]} />
+          </View>
+
+          <View style={styles.socialBtns}>
+            <AppleSignInButton />
+            <GoogleSignInButton />
+          </View>
+
+          <View style={styles.footer}>
+            <ThemedText style={[styles.footerText, { color: colors.textMuted }]}>
+              Already have an account?{' '}
+            </ThemedText>
+            <Pressable onPress={() => router.back()}>
+              <ThemedText style={[styles.footerLink, { color: colors.tint }]}>Sign in</ThemedText>
+            </Pressable>
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </View>
   )
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    flexGrow: 1,
+  root: { flex: 1 },
+  flex: { flex: 1 },
+  scroll: {
     paddingHorizontal: 24,
     maxWidth: 400,
     width: '100%',
     alignSelf: 'center',
+    flexGrow: 1,
   },
-  inner: {
-    paddingHorizontal: 0,
+  brand: {
+    marginBottom: 40,
+    paddingTop: 4,
   },
-  header: {
-    marginBottom: 32,
+  brandName: {
+    fontSize: 20,
+    fontWeight: '800',
+    letterSpacing: 4,
+    marginBottom: 8,
   },
   logo: {
-    fontSize: 34,
-    fontWeight: '800',
-    letterSpacing: 0.5,
-    marginBottom: 6,
+    fontSize: 32,
+    lineHeight: 40,
+    fontWeight: '700',
+    letterSpacing: -0.5,
   },
-  tagline: {
-    fontSize: 13,
-    fontWeight: '600',
-    letterSpacing: 0.3,
-    textTransform: 'uppercase',
-  },
-  sectionLabel: {
-    marginBottom: 12,
-    fontSize: 16,
-    fontWeight: '800',
-    letterSpacing: -0.2,
-  },
-  formCard: {
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 16,
-  },
-  input: {
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    fontSize: 16,
-    marginBottom: 12,
-  },
-  inputLast: {
-    marginBottom: 0,
-  },
-  primaryButton: {
-    borderRadius: 14,
-    paddingVertical: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 52,
-  },
-  buttonPressed: {
-    opacity: 0.9,
-  },
-  primaryButtonText: {
-    color: '#fff',
-    fontSize: 15,
-    fontWeight: '800',
-    letterSpacing: 0.5,
-    textTransform: 'uppercase',
-  },
-  orRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginVertical: 24,
-    gap: 12,
-  },
-  orLine: {
-    flex: 1,
-    height: 1,
-  },
-  orText: {
-    fontSize: 13,
-    textTransform: 'lowercase',
-  },
-  footer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 32,
-    flexWrap: 'wrap',
-  },
-  link: {
-    fontWeight: '600',
-  },
+  form: { gap: 12, marginBottom: 24 },
+  input: { borderRadius: 16, paddingHorizontal: 18, paddingVertical: 16, fontSize: 16, fontWeight: '400' },
+  primaryBtn: { borderRadius: 16, paddingVertical: 17, alignItems: 'center', justifyContent: 'center' },
+  primaryBtnText: { color: '#fff', fontSize: 16, fontWeight: '600', letterSpacing: 0.2 },
+  divider: { flexDirection: 'row', alignItems: 'center', gap: 16, marginVertical: 28 },
+  dividerLine: { flex: 1, height: StyleSheet.hairlineWidth },
+  dividerText: { fontSize: 13, fontWeight: '400' },
+  socialBtns: { gap: 10 },
+  footer: { flexDirection: 'row', justifyContent: 'center', marginTop: 40 },
+  footerText: { fontSize: 14 },
+  footerLink: { fontSize: 14, fontWeight: '600' },
 })

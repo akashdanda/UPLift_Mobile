@@ -14,14 +14,13 @@ export default function SettingsScreen() {
   const { profile, updateProfile, session } = useAuthContext()
   const colorScheme = useColorScheme()
   const colors = Colors[colorScheme ?? 'light']
+  const isDark = colorScheme === 'dark'
 
   const [notifications, setNotifications] = useState(profile?.notifications_enabled ?? true)
   const [updating, setUpdating] = useState(false)
 
   useEffect(() => {
-    if (profile?.notifications_enabled !== undefined) {
-      setNotifications(profile.notifications_enabled)
-    }
+    if (profile?.notifications_enabled !== undefined) setNotifications(profile.notifications_enabled)
   }, [profile?.notifications_enabled])
 
   const handleNotificationsChange = async (value: boolean) => {
@@ -32,72 +31,65 @@ export default function SettingsScreen() {
     setUpdating(false)
   }
 
+  const sep = isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)'
+
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['bottom']}>
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Profile Settings */}
-        <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.tabBarBorder }]}>
+      <ScrollView style={styles.flex} contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+        <ThemedText style={[styles.sectionLabel, { color: colors.textMuted }]}>Account</ThemedText>
+        <View style={[styles.card, { backgroundColor: isDark ? colors.card : colors.card }]}>
           <Pressable
-            style={[styles.row, styles.rowBorder, { borderBottomColor: colors.tabBarBorder }]}
+            style={({ pressed }) => [styles.row, pressed && { opacity: 0.6 }]}
             onPress={() => router.push('/edit-profile')}
           >
-            <View style={styles.rowLeft}>
-              <Ionicons name="person-outline" size={20} color={colors.text} />
-              <ThemedText style={[styles.rowLabel, { color: colors.text, marginLeft: 12 }]}>
-                Edit Profile
-              </ThemedText>
+            <Ionicons name="person-outline" size={20} color={colors.text} />
+            <View style={styles.rowText}>
+              <ThemedText style={[styles.rowLabel, { color: colors.text }]}>Edit profile</ThemedText>
+              <ThemedText style={[styles.rowHint, { color: colors.textMuted }]}>Name, photo, bio</ThemedText>
             </View>
-            <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+            <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
           </Pressable>
+
+          <View style={[styles.sep, { backgroundColor: sep }]} />
+
           <View style={styles.row}>
-            <View style={styles.rowLeft}>
-              <Ionicons name="notifications-outline" size={20} color={colors.text} />
-              <View style={styles.rowLabelContainer}>
-                <ThemedText style={[styles.rowLabel, { color: colors.text, marginLeft: 12 }]}>
-                  Notifications
-                </ThemedText>
-                <ThemedText style={[styles.rowHint, { color: colors.textMuted, marginLeft: 12, marginTop: 2 }]}>
-                  Get notified about challenges and group activity
-                </ThemedText>
-              </View>
+            <Ionicons name="notifications-outline" size={20} color={colors.text} />
+            <View style={styles.rowText}>
+              <ThemedText style={[styles.rowLabel, { color: colors.text }]}>Notifications</ThemedText>
+              <ThemedText style={[styles.rowHint, { color: colors.textMuted }]}>Challenges &amp; activity</ThemedText>
             </View>
             <Switch
               value={notifications}
               onValueChange={handleNotificationsChange}
               disabled={updating}
-              trackColor={{ false: colors.tabBarBorder, true: colors.tint + '60' }}
-              thumbColor={notifications ? colors.tint : colors.textMuted}
+              trackColor={{ false: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)', true: colors.tint + '50' }}
+              thumbColor={notifications ? colors.tint : isDark ? '#555' : '#ccc'}
             />
           </View>
+        </View>
+
+        <ThemedText style={[styles.sectionLabel, { color: colors.textMuted, marginTop: 32 }]}>Danger zone</ThemedText>
+        <View style={[styles.card, { backgroundColor: isDark ? colors.card : colors.card }]}>
           <Pressable
-            style={[styles.row, styles.rowBorder, { borderBottomColor: colors.tabBarBorder }]}
+            style={({ pressed }) => [styles.row, pressed && { opacity: 0.6 }]}
             onPress={() => {
               if (!session) return
               Alert.alert(
                 'Delete account',
-                'This will permanently delete your Uplift account and all associated data. This action cannot be undone.',
+                'This will permanently delete your account and all data. This cannot be undone.',
                 [
                   { text: 'Cancel', style: 'cancel' },
-                  {
-                    text: 'Delete account',
-                    style: 'destructive',
-                    onPress: () => router.push('/delete-account'),
-                  },
+                  { text: 'Delete', style: 'destructive', onPress: () => router.push('/delete-account') },
                 ],
               )
             }}
           >
-            <View style={styles.rowLeft}>
-              <Ionicons name="trash-outline" size={20} color="#EF4444" />
-              <ThemedText style={[styles.rowLabel, { color: '#EF4444', marginLeft: 12 }]}>
-                Delete account
-              </ThemedText>
+            <Ionicons name="trash-outline" size={20} color="#EF4444" />
+            <View style={styles.rowText}>
+              <ThemedText style={[styles.rowLabel, { color: '#EF4444' }]}>Delete account</ThemedText>
+              <ThemedText style={[styles.rowHint, { color: colors.textMuted }]}>Permanently remove everything</ThemedText>
             </View>
-            <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+            <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
           </Pressable>
         </View>
       </ScrollView>
@@ -107,32 +99,13 @@ export default function SettingsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  scrollView: { flex: 1 },
-  scrollContent: { padding: 24, paddingBottom: 40 },
-  card: {
-    borderRadius: 14,
-    borderWidth: 1,
-    overflow: 'hidden',
-    marginBottom: 12,
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 16,
-  },
-  rowBorder: {
-    borderBottomWidth: 1,
-  },
-  rowLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  rowLabelContainer: {
-    flex: 1,
-  },
-  rowLabel: { fontSize: 16 },
-  rowHint: { fontSize: 13 },
-  sectionTitle: { fontSize: 13, lineHeight: 20 },
+  flex: { flex: 1 },
+  scroll: { padding: 20, paddingBottom: 40 },
+  sectionLabel: { fontSize: 13, fontWeight: '500', letterSpacing: 0.2, marginBottom: 8, marginLeft: 4 },
+  card: { borderRadius: 16, overflow: 'hidden' },
+  row: { flexDirection: 'row', alignItems: 'center', padding: 16, gap: 14 },
+  sep: { height: 1, marginLeft: 50 },
+  rowText: { flex: 1, minWidth: 0 },
+  rowLabel: { fontSize: 15, fontWeight: '500' },
+  rowHint: { fontSize: 12, marginTop: 1 },
 })

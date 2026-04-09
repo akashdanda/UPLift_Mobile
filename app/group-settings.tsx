@@ -34,6 +34,7 @@ export default function GroupSettingsScreen() {
   const { session } = useAuthContext()
   const colorScheme = useColorScheme()
   const colors = Colors[colorScheme ?? 'light']
+  const isDark = colorScheme === 'dark'
 
   const [group, setGroup] = useState<GroupWithMeta | null>(null)
   const [loading, setLoading] = useState(true)
@@ -216,7 +217,7 @@ export default function GroupSettingsScreen() {
                 </View>
               </Pressable>
               <Pressable
-                style={[styles.changePhotoButton, { borderColor: colors.tabBarBorder }]}
+                style={[styles.changePhotoButton, {  }]}
                 onPress={handlePickImage}
                 disabled={uploadingPhoto}
               >
@@ -235,7 +236,7 @@ export default function GroupSettingsScreen() {
               Group Name *
             </ThemedText>
             <TextInput
-              style={[styles.input, { backgroundColor: colors.card, color: colors.text, borderColor: colors.tabBarBorder }]}
+              style={[styles.input, { backgroundColor: colors.card, color: colors.text }]}
               placeholder="Enter group name"
               placeholderTextColor={colors.textMuted}
               value={name}
@@ -252,7 +253,7 @@ export default function GroupSettingsScreen() {
               style={[
                 styles.input,
                 styles.textArea,
-                { backgroundColor: colors.card, color: colors.text, borderColor: colors.tabBarBorder },
+                { backgroundColor: colors.card, color: colors.text },
               ]}
               placeholder="Brief description of your group"
               placeholderTextColor={colors.textMuted}
@@ -269,7 +270,7 @@ export default function GroupSettingsScreen() {
               Location
             </ThemedText>
             <TextInput
-              style={[styles.input, { backgroundColor: colors.card, color: colors.text, borderColor: colors.tabBarBorder }]}
+              style={[styles.input, { backgroundColor: colors.card, color: colors.text }]}
               placeholder="e.g., New York, NY or Champaign, Illinois"
               placeholderTextColor={colors.textMuted}
               value={location}
@@ -283,7 +284,7 @@ export default function GroupSettingsScreen() {
               Tags
             </ThemedText>
             <TextInput
-              style={[styles.input, { backgroundColor: colors.card, color: colors.text, borderColor: colors.tabBarBorder }]}
+              style={[styles.input, { backgroundColor: colors.card, color: colors.text }]}
               placeholder="Running, Cycling, etc. (comma separated)"
               placeholderTextColor={colors.textMuted}
               value={tags}
@@ -305,15 +306,18 @@ export default function GroupSettingsScreen() {
                   Anyone can find and join this group
                 </ThemedText>
               </View>
-              <Switch value={isPublic} onValueChange={setIsPublic} trackColor={{ false: colors.tabBarBorder, true: colors.tint }} />
+              <Switch value={isPublic} onValueChange={setIsPublic} trackColor={{ false: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)', true: colors.tint }} />
             </View>
           </View>
 
           {/* Save Button */}
           <Pressable
-            style={[styles.saveButton, { backgroundColor: colors.tint }]}
             onPress={handleSave}
             disabled={saving || uploadingPhoto}
+            style={[
+              styles.saveButton,
+              { backgroundColor: colors.tint, shadowOpacity: isDark ? 0.3 : 0.15 },
+            ]}
           >
             {saving ? (
               <ActivityIndicator color="#fff" size="small" />
@@ -335,7 +339,7 @@ const styles = StyleSheet.create({
   title: { fontSize: 24, fontWeight: '800', marginBottom: 24, letterSpacing: -0.5 },
 
   section: { marginBottom: 28 },
-  sectionTitle: { fontSize: 13, fontWeight: '800', marginBottom: 14, letterSpacing: 0.5, textTransform: 'uppercase' },
+  sectionTitle: { fontSize: 13, fontWeight: '800', marginBottom: 14, letterSpacing: 0.5 },
 
   avatarSection: { alignItems: 'center', gap: 12 },
   avatarContainer: {
@@ -352,12 +356,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 10,
     borderRadius: 20,
-    borderWidth: 1,
   },
-  changePhotoText: { fontSize: 12, fontWeight: '700', letterSpacing: 0.3, textTransform: 'uppercase' },
+  changePhotoText: { fontSize: 12, fontWeight: '700', letterSpacing: 0.3 },
 
   input: {
-    borderWidth: 1,
     borderRadius: 14,
     paddingHorizontal: 16,
     paddingVertical: 12,
@@ -385,5 +387,5 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 8,
   },
-  saveButtonText: { color: '#fff', fontSize: 15, fontWeight: '800', letterSpacing: 0.5, textTransform: 'uppercase' },
+  saveButtonText: { color: '#fff', fontSize: 15, fontWeight: '800', letterSpacing: 0.5 },
 })

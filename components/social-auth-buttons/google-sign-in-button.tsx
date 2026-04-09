@@ -1,64 +1,70 @@
+import { Image } from 'expo-image'
 import { useState } from 'react'
-import { ActivityIndicator, Alert, Pressable, StyleSheet } from 'react-native'
+import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from 'react-native'
 
-import { ThemedText } from '@/components/themed-text'
 import { useAuthContext } from '@/hooks/use-auth-context'
-import { Colors } from '@/constants/theme'
-import { useColorScheme } from '@/hooks/use-color-scheme'
+
+/** Official multicolor “G” (Google brand assets). */
+const googleGMark = require('../../assets/images/googleg_standard_color_128dp.png')
+
+/** Google Identity branding — neutral outline button + full-color G. */
+const GOOGLE = {
+  surface: '#FFFFFF',
+  border: '#747775',
+  label: '#1F1F1F',
+  blue: '#4285F4',
+} as const
 
 export default function GoogleSignInButton() {
   const { signInWithGoogle } = useAuthContext()
-  const colorScheme = useColorScheme()
-  const colors = Colors[colorScheme ?? 'light']
   const [loading, setLoading] = useState(false)
 
   const handlePress = async () => {
     setLoading(true)
     const { error } = await signInWithGoogle()
     setLoading(false)
-    if (error) {
-      Alert.alert('Sign in with Google failed', error.message)
-    }
+    if (error) Alert.alert('Sign in with Google failed', error.message)
   }
 
   return (
     <Pressable
       style={({ pressed }) => [
-        styles.button,
+        styles.btn,
         {
-          backgroundColor: colors.card,
-          borderColor: colors.tabBarBorder,
+          backgroundColor: GOOGLE.surface,
+          borderColor: GOOGLE.border,
+          opacity: pressed ? 0.92 : 1,
         },
-        pressed && styles.buttonPressed,
       ]}
       onPress={handlePress}
       disabled={loading}
     >
       {loading ? (
-        <ActivityIndicator color={colors.text} />
+        <ActivityIndicator color={GOOGLE.blue} />
       ) : (
-        <ThemedText style={[styles.label, { color: colors.text }]}>
-          Continue with Google
-        </ThemedText>
+        <View style={styles.inner}>
+          <Image source={googleGMark} style={styles.gMark} contentFit="contain" accessibilityIgnoresInvertColors />
+          <Text style={styles.label}>Continue with Google</Text>
+        </View>
       )}
     </Pressable>
   )
 }
 
 const styles = StyleSheet.create({
-  button: {
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingVertical: 14,
+  btn: {
+    borderRadius: 16,
+    paddingVertical: 15,
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 52,
+    borderWidth: 1,
   },
-  buttonPressed: {
-    opacity: 0.9,
-  },
+  inner: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  gMark: { width: 18, height: 18 },
   label: {
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 15,
+    fontWeight: '500',
+    color: GOOGLE.label,
+    letterSpacing: 0.1,
   },
 })

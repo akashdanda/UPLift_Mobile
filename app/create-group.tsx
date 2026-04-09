@@ -28,6 +28,7 @@ export default function CreateGroupScreen() {
   const { session } = useAuthContext()
   const colorScheme = useColorScheme()
   const colors = Colors[colorScheme ?? 'light']
+  const isDark = colorScheme === 'dark'
 
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
@@ -164,7 +165,7 @@ export default function CreateGroupScreen() {
           <TextInput
             style={[
               styles.input,
-              { backgroundColor: colors.card, color: colors.text, borderColor: colors.tabBarBorder },
+              { backgroundColor: colors.card, color: colors.text },
             ]}
             placeholder="e.g. Morning Crew"
             placeholderTextColor={colors.textMuted}
@@ -177,7 +178,7 @@ export default function CreateGroupScreen() {
             style={[
               styles.input,
               styles.inputMultiline,
-              { backgroundColor: colors.card, color: colors.text, borderColor: colors.tabBarBorder },
+              { backgroundColor: colors.card, color: colors.text },
             ]}
             placeholder="Short description"
             placeholderTextColor={colors.textMuted}
@@ -194,7 +195,7 @@ export default function CreateGroupScreen() {
           <TextInput
             style={[
               styles.input,
-              { backgroundColor: colors.card, color: colors.text, borderColor: colors.tabBarBorder },
+              { backgroundColor: colors.card, color: colors.text },
             ]}
             placeholder="fitness, running, morning"
             placeholderTextColor={colors.textMuted}
@@ -206,7 +207,7 @@ export default function CreateGroupScreen() {
           <TextInput
             style={[
               styles.input,
-              { backgroundColor: colors.card, color: colors.text, borderColor: colors.tabBarBorder },
+              { backgroundColor: colors.card, color: colors.text },
             ]}
             placeholder="e.g., New York, NY or Champaign, Illinois"
             placeholderTextColor={colors.textMuted}
@@ -214,7 +215,7 @@ export default function CreateGroupScreen() {
             onChangeText={setLocation}
             editable={!saving}
           />
-          <View style={[styles.toggleRow, { borderColor: colors.tabBarBorder }]}>
+          <View style={[styles.toggleRow, {  }]}>
             <View style={styles.toggleInfo}>
               <ThemedText style={[styles.toggleLabel, { color: colors.text }]}>Public group</ThemedText>
               <ThemedText style={[styles.toggleHint, { color: colors.textMuted }]}>
@@ -224,14 +225,17 @@ export default function CreateGroupScreen() {
             <Switch
               value={isPublic}
               onValueChange={setIsPublic}
-              trackColor={{ true: colors.tint, false: colors.tabBarBorder }}
+              trackColor={{ true: colors.tint, false: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)' }}
             />
           </View>
 
           <Pressable
-            style={[styles.button, { backgroundColor: colors.tint }]}
             onPress={handleCreate}
             disabled={saving || uploadingPhoto}
+            style={[
+              styles.button,
+              { backgroundColor: colors.tint, shadowOpacity: isDark ? 0.3 : 0.15 },
+            ]}
           >
             {saving || uploadingPhoto ? (
               <ActivityIndicator color="#fff" />
@@ -266,7 +270,6 @@ const styles = StyleSheet.create({
   label: { fontSize: 14, marginBottom: 8 },
   hint: { fontSize: 12, marginBottom: 8, marginTop: -4 },
   input: {
-    borderWidth: 1,
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 14,

@@ -17,7 +17,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context'
 
 import { ThemedText } from '@/components/themed-text'
-import { Colors } from '@/constants/theme'
+import { BrandViolet, Colors } from '@/constants/theme'
 import { useAuthContext } from '@/hooks/use-auth-context'
 import { useColorScheme } from '@/hooks/use-color-scheme'
 import { getBuddySuggestions, type BuddySuggestion } from '@/lib/buddy-matching'
@@ -59,6 +59,7 @@ export default function FriendsScreen() {
   const { session, refreshProfile } = useAuthContext()
   const colorScheme = useColorScheme()
   const colors = Colors[colorScheme ?? 'light']
+  const isDark = colorScheme === 'dark'
 
   const [friends, setFriends] = useState<FriendWithProfile[]>([])
   const [pending, setPending] = useState<{ friendship: { id: string }; requester: ProfilePublic }[]>([])
@@ -299,7 +300,7 @@ export default function FriendsScreen() {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
       {/* Header */}
-      <View style={[styles.header, { borderBottomColor: colors.tabBarBorder }]}>
+      <View style={[styles.header, { borderBottomColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)' }]}>
         <View style={{ width: 36 }} />
         <ThemedText type="title" style={[styles.headerTitle, { color: colors.text }]}>
           Friends
@@ -311,7 +312,7 @@ export default function FriendsScreen() {
 
       {/* Search bar (collapsible) */}
       {showSearch && (
-        <View style={[styles.searchBar, { backgroundColor: colors.card, borderBottomColor: colors.tabBarBorder }]}>
+        <View style={[styles.searchBar, { backgroundColor: colors.card, borderBottomColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)' }]}>
           <View style={styles.searchInputRow}>
             <Ionicons name="search" size={18} color={colors.textMuted} />
             <TextInput
@@ -336,7 +337,7 @@ export default function FriendsScreen() {
               {searchResults.map((p) => (
                 <Pressable
                   key={p.id}
-                  style={[styles.searchResultRow, { borderBottomColor: colors.tabBarBorder }]}
+                  style={[styles.searchResultRow, { borderBottomColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)' }]}
                   onPress={() => { setShowSearch(false); router.push(`/friend-profile?id=${p.id}`) }}
                 >
                   <View style={[styles.avatarSm, { backgroundColor: colors.tint + '25' }]}>
@@ -359,7 +360,7 @@ export default function FriendsScreen() {
       )}
 
       {/* Tabs */}
-      <View style={[styles.tabRow, { borderBottomColor: colors.tabBarBorder }]}>
+      <View style={[styles.tabRow, { borderBottomColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)' }]}>
         {(['friends', 'challenges'] as const).map((tab) => (
           <Pressable
             key={tab}
@@ -383,7 +384,7 @@ export default function FriendsScreen() {
           <>
             {/* ── Pending Requests Banner ── */}
             {pending.length > 0 && (
-              <View style={[styles.pendingSection, { backgroundColor: colors.card, borderColor: colors.tint + '30' }]}>
+              <View style={[styles.pendingSection, { backgroundColor: colors.card }]}>
                 <View style={styles.pendingSectionHeader}>
                   <Ionicons name="person-add" size={18} color={colors.tint} />
                   <ThemedText style={[styles.pendingSectionTitle, { color: colors.text }]}>
@@ -394,7 +395,7 @@ export default function FriendsScreen() {
                   </View>
                 </View>
                 {pending.map(({ friendship, requester }) => (
-                  <View key={friendship.id} style={[styles.pendingRow, { borderTopColor: colors.tabBarBorder }]}>
+                  <View key={friendship.id} style={[styles.pendingRow, { borderTopColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)' }]}>
                     <Pressable
                       style={[styles.avatarSm, { backgroundColor: colors.tint + '25' }]}
                       onPress={() => router.push(`/friend-profile?id=${requester.id}`)}
@@ -421,7 +422,7 @@ export default function FriendsScreen() {
                         )}
                       </Pressable>
                       <Pressable
-                        style={[styles.declineBtn, { borderColor: colors.tabBarBorder }]}
+                        style={[styles.declineBtn, {  }]}
                         onPress={() => handleDecline(friendship.id)}
                       >
                         <Ionicons name="close" size={16} color={colors.textMuted} />
@@ -455,7 +456,7 @@ export default function FriendsScreen() {
                   {contactMatches.map((p) => (
                     <Pressable
                       key={`c-${p.id}`}
-                      style={[styles.suggestionCard, { backgroundColor: colors.card, borderColor: colors.tabBarBorder }]}
+                      style={[styles.suggestionCard, { backgroundColor: colors.card }]}
                       onPress={() => router.push(`/friend-profile?id=${p.id}`)}
                     >
                       <View style={[styles.suggestionAvatar, { backgroundColor: colors.tint + '20' }]}>
@@ -483,7 +484,7 @@ export default function FriendsScreen() {
                     return (
                       <Pressable
                         key={s.id}
-                        style={[styles.suggestionCard, { backgroundColor: colors.card, borderColor: colors.tabBarBorder }]}
+                        style={[styles.suggestionCard, { backgroundColor: colors.card }]}
                         onPress={() => router.push(`/friend-profile?id=${s.id}`)}
                       >
                         <View style={[styles.suggestionAvatar, { backgroundColor: colors.tint + '20' }]}>
@@ -516,7 +517,7 @@ export default function FriendsScreen() {
                 <ActivityIndicator size="small" color={colors.tint} />
               </View>
             ) : friends.length === 0 ? (
-              <View style={[styles.emptyState, { backgroundColor: colors.card, borderColor: colors.tabBarBorder }]}>
+              <View style={[styles.emptyState, { backgroundColor: colors.card }]}>
                 <Ionicons name="people-outline" size={40} color={colors.textMuted} style={{ marginBottom: 12 }} />
                 <ThemedText style={[styles.emptyTitle, { color: colors.text }]}>No friends yet</ThemedText>
                 <ThemedText style={[styles.emptySubtitle, { color: colors.textMuted }]}>
@@ -524,13 +525,13 @@ export default function FriendsScreen() {
                 </ThemedText>
               </View>
             ) : (
-              <View style={[styles.friendsList, { backgroundColor: colors.card, borderColor: colors.tabBarBorder }]}>
+              <View style={[styles.friendsList, { backgroundColor: colors.card }]}>
                 {friends.map((friend, i) => (
                   <Pressable
                     key={friend.id}
                     style={[
                       styles.friendRow,
-                      i < friends.length - 1 && { borderBottomColor: colors.tabBarBorder, borderBottomWidth: 1 },
+                      i < friends.length - 1 && { borderBottomColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)', borderBottomWidth: 1 },
                     ]}
                     onPress={() => router.push(`/friend-profile?id=${friend.id}`)}
                     onLongPress={() => handleUnfriend(friend)}
@@ -556,7 +557,7 @@ export default function FriendsScreen() {
           <>
             {/* ── Challenges Tab ── */}
             <Pressable
-              style={[styles.challengeBtn, { backgroundColor: colors.tint }]}
+              style={({ pressed }) => [styles.challengeBtn, { backgroundColor: colors.tint, opacity: pressed ? 0.85 : 1 }]}
               onPress={() => router.push('/create-duel')}
             >
               <Ionicons name="flash" size={18} color="#fff" />
@@ -564,7 +565,7 @@ export default function FriendsScreen() {
             </Pressable>
 
             {activeDuels.length > 0 ? (
-              <View style={[styles.friendsList, { backgroundColor: colors.card, borderColor: colors.tabBarBorder }]}>
+              <View style={[styles.friendsList, { backgroundColor: colors.card }]}>
                 {activeDuels.map((duel, i) => {
                   const iAmChallenger = duel.challenger_id === userId
                   const opName = iAmChallenger ? duel.opponent_display_name : duel.challenger_display_name
@@ -576,7 +577,7 @@ export default function FriendsScreen() {
                       key={duel.id}
                       style={[
                         styles.friendRow,
-                        i < activeDuels.length - 1 && { borderBottomColor: colors.tabBarBorder, borderBottomWidth: 1 },
+                        i < activeDuels.length - 1 && { borderBottomColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)', borderBottomWidth: 1 },
                       ]}
                       onPress={() => router.push(`/duel-detail?id=${duel.id}`)}
                     >
@@ -605,7 +606,7 @@ export default function FriendsScreen() {
                 })}
               </View>
             ) : (
-              <View style={[styles.emptyState, { backgroundColor: colors.card, borderColor: colors.tabBarBorder }]}>
+              <View style={[styles.emptyState, { backgroundColor: colors.card }]}>
                 <Ionicons name="flash-outline" size={40} color={colors.textMuted} style={{ marginBottom: 12 }} />
                 <ThemedText style={[styles.emptyTitle, { color: colors.text }]}>No active challenges</ThemedText>
                 <ThemedText style={[styles.emptySubtitle, { color: colors.textMuted }]}>Start one above!</ThemedText>
@@ -678,7 +679,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     letterSpacing: 0.4,
-    textTransform: 'uppercase',
   },
   badge: {
     width: 18,
@@ -695,7 +695,6 @@ const styles = StyleSheet.create({
 
   // Pending
   pendingSection: {
-    borderWidth: 1,
     borderRadius: 16,
     padding: 14,
     marginBottom: 20,
@@ -737,7 +736,6 @@ const styles = StyleSheet.create({
   suggestionCard: {
     width: SUGGESTION_CARD_W,
     borderRadius: 14,
-    borderWidth: 1,
     padding: 12,
     alignItems: 'center',
     gap: 6,
@@ -768,12 +766,12 @@ const styles = StyleSheet.create({
   suggestionMeta: { fontSize: 11, textAlign: 'center' },
 
   // Add / status
-  addBtn: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
+  addBtn: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', shadowColor: BrandViolet.primary, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.25, shadowRadius: 6, elevation: 4 },
   statusChip: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, borderWidth: 1 },
   statusChipText: { fontSize: 11, fontWeight: '600' },
 
   // Friends list
-  friendsList: { borderWidth: 1, borderRadius: 14, overflow: 'hidden', marginBottom: 20 },
+  friendsList: { borderRadius: 14, overflow: 'hidden', marginBottom: 20 },
   friendRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -800,7 +798,6 @@ const styles = StyleSheet.create({
   // Empty state
   centered: { paddingVertical: 16, alignItems: 'center' },
   emptyState: {
-    borderWidth: 1,
     borderRadius: 16,
     padding: 32,
     alignItems: 'center',
@@ -818,8 +815,13 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     borderRadius: 14,
     marginBottom: 16,
+    shadowColor: BrandViolet.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 8,
   },
-  challengeBtnText: { color: '#fff', fontSize: 14, fontWeight: '800', letterSpacing: 0.5, textTransform: 'uppercase' },
+  challengeBtnText: { color: '#fff', fontSize: 14, fontWeight: '800', letterSpacing: 0.5 },
   duelChip: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
   duelChipText: { fontSize: 12, fontWeight: '600' },
 })

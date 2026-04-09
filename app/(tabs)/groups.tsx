@@ -47,6 +47,7 @@ function getGroupInitials(name: string): string {
 export default function GroupsScreen() {
   const colorScheme = useColorScheme()
   const colors = Colors[colorScheme ?? 'light']
+  const isDark = colorScheme === 'dark'
   const { session, refreshProfile } = useAuthContext()
 
   const [activeTab, setActiveTab] = useState<Tab>('my')
@@ -191,12 +192,12 @@ export default function GroupsScreen() {
       {/* Join button */}
       {showJoin && !g._joined && (
         <Pressable
-          style={[styles.gridJoinBtn, { backgroundColor: colors.tint }]}
           onPress={(e) => {
             e.stopPropagation()
             handleJoin(g.id)
           }}
           disabled={actingId === g.id}
+          style={[styles.gridJoinBtn, { backgroundColor: colors.tint }]}
         >
           {actingId === g.id ? (
             <ActivityIndicator color="#fff" size="small" />
@@ -244,7 +245,7 @@ export default function GroupsScreen() {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
       {/* Top bar */}
-      <View style={[styles.topBar, { borderBottomColor: colors.tabBarBorder }]}>
+      <View style={[styles.topBar, { borderBottomColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)' }]}>
         <Pressable onPress={() => setShowSearch(!showSearch)} hitSlop={8}>
           <Ionicons name="search" size={24} color={colors.text} />
         </Pressable>
@@ -259,7 +260,7 @@ export default function GroupsScreen() {
       {/* Search bar (toggled) */}
       {showSearch && (
         <View style={[styles.searchContainer, { backgroundColor: colors.background }]}>
-          <View style={[styles.searchRow, { backgroundColor: colors.card }]}>
+          <View style={[styles.searchRow, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)' }]}>
             <Ionicons name="search" size={18} color={colors.textMuted} />
             <TextInput
               style={[styles.searchInput, { color: colors.text }]}
@@ -290,7 +291,7 @@ export default function GroupsScreen() {
       )}
 
       {/* Tabs */}
-      <View style={[styles.tabBar, { borderBottomColor: colors.tabBarBorder }]}>
+      <View style={[styles.tabBar, { borderBottomColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)' }]}>
         {(['my', 'discover'] as Tab[]).map((tab) => {
           const active = activeTab === tab
           const label = tab === 'my' ? 'My Groups' : 'Discover'
@@ -354,7 +355,7 @@ export default function GroupsScreen() {
               {pendingInvites.map((invite) => {
                 const isResponding = respondingInviteId === invite.id
                 return (
-                  <View key={invite.id} style={[styles.inviteCard, { backgroundColor: colors.card, borderColor: colors.tint + '20' }]}>
+                  <View key={invite.id} style={[styles.inviteCard, { backgroundColor: colors.card }]}>
                     <View style={styles.inviteCardTop}>
                       <View style={styles.inviteCardIcon}>
                         {invite.group_avatar_url ? (
@@ -378,16 +379,16 @@ export default function GroupsScreen() {
                     </View>
                     <View style={styles.inviteCardActions}>
                       <Pressable
-                        style={[styles.inviteDeclineBtn, { borderColor: colors.tabBarBorder }]}
+                        style={[styles.inviteDeclineBtn, {  }]}
                         onPress={() => handleDeclineInvite(invite.id)}
                         disabled={isResponding}
                       >
                         <ThemedText style={[styles.inviteDeclineBtnText, { color: colors.textMuted }]}>Decline</ThemedText>
                       </Pressable>
                       <Pressable
-                        style={[styles.inviteAcceptBtn, { backgroundColor: colors.tint }]}
                         onPress={() => handleAcceptInvite(invite.id)}
                         disabled={isResponding}
+                        style={[styles.inviteAcceptBtn, { backgroundColor: colors.tint }]}
                       >
                         {isResponding ? (
                           <ActivityIndicator size="small" color="#fff" />
@@ -420,8 +421,8 @@ export default function GroupsScreen() {
                   Join a group or create your own to get started
                 </ThemedText>
                 <Pressable
-                  style={[styles.emptyCreateBtn, { backgroundColor: colors.tint }]}
                   onPress={() => router.push('/create-group')}
+                  style={[styles.emptyCreateBtn, { backgroundColor: colors.tint, alignItems: 'center' }]}
                 >
                   <ThemedText style={styles.emptyCreateBtnText}>Create Group</ThemedText>
                 </Pressable>
@@ -506,12 +507,12 @@ const styles = StyleSheet.create({
     borderBottomColor: 'transparent',
   },
   tabActive: {},
-  tabLabel: { fontSize: 13, fontWeight: '600', letterSpacing: 0.3, textTransform: 'uppercase' },
+  tabLabel: { fontSize: 13, fontWeight: '600', letterSpacing: 0.3 },
   tabLabelActive: { fontWeight: '800' },
 
   // Sections
   section: { padding: CARD_PADDING },
-  sectionTitle: { fontSize: 16, fontWeight: '800', marginBottom: 16, letterSpacing: -0.2, textTransform: 'uppercase' },
+  sectionTitle: { fontSize: 16, fontWeight: '800', marginBottom: 16, letterSpacing: -0.2 },
 
   // Grid
   grid: {
@@ -526,7 +527,7 @@ const styles = StyleSheet.create({
     padding: 14,
     overflow: 'hidden',
     flexDirection: 'column',
-  },
+    },
   gridAvatarWrap: { marginBottom: 12 },
   gridAvatar: {
     width: 56,
@@ -559,13 +560,13 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
     borderRadius: 6,
   },
-  visibilityText: { fontSize: 9, fontWeight: '700', letterSpacing: 0.5, textTransform: 'uppercase' },
+  visibilityText: { fontSize: 9, fontWeight: '700', letterSpacing: 0.5 },
   gridJoinBtn: {
     paddingVertical: 10,
     borderRadius: 12,
     alignItems: 'center',
-  },
-  gridJoinBtnText: { color: '#fff', fontWeight: '800', fontSize: 13, letterSpacing: 0.5, textTransform: 'uppercase' },
+    },
+  gridJoinBtnText: { color: '#fff', fontWeight: '800', fontSize: 13, letterSpacing: 0.5 },
 
   // My groups list
   myGroupsList: { gap: 8 },
@@ -602,7 +603,7 @@ const styles = StyleSheet.create({
     gap: 8,
     marginBottom: 16,
   },
-  discoverTitle: { fontSize: 16, fontWeight: '800', letterSpacing: -0.2, textTransform: 'uppercase' },
+  discoverTitle: { fontSize: 16, fontWeight: '800', letterSpacing: -0.2 },
 
   // Loading / empty
   loadingRow: { paddingVertical: 40, alignItems: 'center' },
@@ -618,13 +619,12 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderRadius: 12,
   },
-  emptyCreateBtnText: { color: '#fff', fontWeight: '800', fontSize: 13, letterSpacing: 0.5, textTransform: 'uppercase' },
+  emptyCreateBtnText: { color: '#fff', fontWeight: '800', fontSize: 13, letterSpacing: 0.5 },
 
   // Group invites
   invitesList: { gap: 10 },
   inviteCard: {
     borderRadius: 16,
-    borderWidth: 1,
     padding: 14,
   },
   inviteCardTop: {

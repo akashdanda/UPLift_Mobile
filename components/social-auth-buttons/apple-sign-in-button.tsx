@@ -1,65 +1,50 @@
+import { Ionicons } from '@expo/vector-icons'
 import { useState } from 'react'
-import { ActivityIndicator, Alert, Pressable, StyleSheet } from 'react-native'
+import { ActivityIndicator, Alert, Pressable, StyleSheet, View } from 'react-native'
 
 import { ThemedText } from '@/components/themed-text'
-import { Colors } from '@/constants/theme'
 import { useAuthContext } from '@/hooks/use-auth-context'
 import { useColorScheme } from '@/hooks/use-color-scheme'
 
 export default function AppleSignInButton() {
   const { signInWithApple } = useAuthContext()
   const colorScheme = useColorScheme()
-  const colors = Colors[colorScheme ?? 'light']
+  const isDark = colorScheme === 'dark'
   const [loading, setLoading] = useState(false)
 
   const handlePress = async () => {
     setLoading(true)
     const { error } = await signInWithApple()
     setLoading(false)
-    if (error) {
-      Alert.alert('Sign in with Apple failed', error.message)
-    }
+    if (error) Alert.alert('Sign in with Apple failed', error.message)
   }
 
   return (
     <Pressable
       style={({ pressed }) => [
-        styles.button,
-        {
-          backgroundColor: '#000',
-          borderColor: '#000',
-        },
-        pressed && styles.buttonPressed,
+        styles.btn,
+        { backgroundColor: isDark ? '#fff' : '#000' },
+        pressed && { opacity: 0.8 },
       ]}
       onPress={handlePress}
       disabled={loading}
     >
       {loading ? (
-        <ActivityIndicator color="#fff" />
+        <ActivityIndicator color={isDark ? '#000' : '#fff'} />
       ) : (
-        <ThemedText style={styles.label}>Sign in with Apple</ThemedText>
+        <View style={styles.inner}>
+          <Ionicons name="logo-apple" size={18} color={isDark ? '#000' : '#fff'} />
+          <ThemedText style={[styles.label, { color: isDark ? '#000' : '#fff' }]}>
+            Continue with Apple
+          </ThemedText>
+        </View>
       )}
     </Pressable>
   )
 }
 
 const styles = StyleSheet.create({
-  button: {
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 52,
-    marginBottom: 12,
-  },
-  buttonPressed: {
-    opacity: 0.9,
-  },
-  label: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#fff',
-  },
+  btn: { borderRadius: 16, paddingVertical: 15, alignItems: 'center', justifyContent: 'center' },
+  inner: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  label: { fontSize: 15, fontWeight: '500' },
 })
-

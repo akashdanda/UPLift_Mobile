@@ -1,3 +1,4 @@
+import { Ionicons } from '@expo/vector-icons'
 import { router } from 'expo-router'
 import { useState } from 'react'
 import {
@@ -14,8 +15,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import { ThemedText } from '@/components/themed-text'
-import { ThemedView } from '@/components/themed-view'
-import { Colors } from '@/constants/theme'
+import { BrandViolet, Colors } from '@/constants/theme'
 import { useAuthContext } from '@/hooks/use-auth-context'
 import { useColorScheme } from '@/hooks/use-color-scheme'
 
@@ -45,95 +45,87 @@ export default function ForgotPasswordScreen() {
     setSent(true)
   }
 
+  const inputSurface = {
+    backgroundColor: colors.card,
+    borderColor: colors.tabBarBorder,
+    borderWidth: StyleSheet.hairlineWidth,
+  }
+
+  const cardSurface = {
+    backgroundColor: colors.card,
+    borderColor: colors.tabBarBorder,
+    borderWidth: StyleSheet.hairlineWidth,
+  }
+
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
+    <SafeAreaView style={[styles.root, { backgroundColor: colors.background }]} edges={['top', 'bottom']}>
       <KeyboardAvoidingView
-        style={styles.container}
+        style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 60 : 0}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
       >
         <ScrollView
-          style={styles.scrollView}
-          contentContainerStyle={[
-            styles.scrollContent,
-            { paddingTop: 24, paddingBottom: insets.bottom + 32 },
-          ]}
+          style={styles.flex}
+          contentContainerStyle={[styles.scroll, { paddingBottom: Math.max(insets.bottom, 20) + 16 }]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          <ThemedView style={styles.inner}>
-            <View style={styles.header}>
-              <ThemedText type="title" style={[styles.logo, { color: colors.text }]}>
-                Uplift
-              </ThemedText>
-              <ThemedText style={[styles.tagline, { color: colors.textMuted }]}>
-                Your fitness community
-              </ThemedText>
-            </View>
-
-            <ThemedText type="subtitle" style={[styles.sectionLabel, { color: colors.text }]}>
-              Reset password
+          <View style={styles.brand}>
+            <ThemedText style={[styles.logo, { color: colors.text }]}>Reset password</ThemedText>
+            <ThemedText style={[styles.tagline, { color: colors.textMuted }]}>
+              {sent ? 'Check your inbox for a reset link' : "We'll send you a link to reset it"}
             </ThemedText>
+          </View>
 
-            {sent ? (
-              <View style={[styles.formCard, { backgroundColor: colors.card }]}>
-                <ThemedText style={[styles.successText, { color: colors.text }]}>
-                  Check your email for a password reset link. If you don&apos;t see it, check your spam folder.
-                </ThemedText>
-              </View>
-            ) : (
-              <>
-                <ThemedText style={[styles.description, { color: colors.textMuted }]}>
-                  Enter the email associated with your account and we&apos;ll send you a link to reset your password.
-                </ThemedText>
-                <View style={[styles.formCard, { backgroundColor: colors.card }]}>
-                  <TextInput
-                    style={[
-                      styles.input,
-                      styles.inputLast,
-                      {
-                        backgroundColor: colors.background,
-                        color: colors.text,
-                        borderColor: colors.tabBarBorder,
-                      },
-                    ]}
-                    placeholder="Email"
-                    placeholderTextColor={colors.textMuted}
-                    value={email}
-                    onChangeText={setEmail}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    keyboardType="email-address"
-                    editable={!loading}
-                  />
-                </View>
-
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.primaryButton,
-                    { backgroundColor: colors.tint },
-                    pressed && styles.buttonPressed,
-                  ]}
-                  onPress={handleReset}
-                  disabled={loading}
-                >
-                  {loading ? (
-                    <ActivityIndicator color="#fff" />
-                  ) : (
-                    <ThemedText style={styles.primaryButtonText}>Send reset link</ThemedText>
-                  )}
-                </Pressable>
-              </>
-            )}
-
-            <View style={styles.footer}>
-              <Pressable onPress={() => router.back()} disabled={loading}>
-                <ThemedText type="link" style={styles.link}>
-                  Back to sign in
-                </ThemedText>
-              </Pressable>
+          {sent ? (
+            <View style={[styles.successCard, cardSurface]}>
+              <Ionicons name="checkmark-circle" size={28} color="#22C55E" />
+              <ThemedText style={[styles.successText, { color: colors.textMuted }]}>
+                If an account exists with that email, you'll receive a password reset link. Check spam if you don't see it.
+              </ThemedText>
             </View>
-          </ThemedView>
+          ) : (
+            <>
+              <View style={styles.form}>
+                <TextInput
+                  style={[styles.input, inputSurface, { color: colors.text }]}
+                  placeholder="Email"
+                  placeholderTextColor={colors.textMuted}
+                  value={email}
+                  onChangeText={setEmail}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  keyboardType="email-address"
+                  editable={!loading}
+                />
+              </View>
+
+              <Pressable
+                style={({ pressed }) => [
+                  styles.primaryBtn,
+                  { backgroundColor: BrandViolet.primary, opacity: pressed ? 0.88 : loading ? 0.7 : 1 },
+                ]}
+                onPress={handleReset}
+                disabled={loading}
+              >
+                {loading ? (
+                  <ActivityIndicator color="#FFFFFF" />
+                ) : (
+                  <ThemedText style={styles.primaryBtnText}>Send reset link</ThemedText>
+                )}
+              </Pressable>
+            </>
+          )}
+
+          <View style={styles.footer}>
+            <Pressable
+              onPress={() => router.back()}
+              style={({ pressed }) => [styles.backBtn, pressed && { opacity: 0.6 }]}
+            >
+              <Ionicons name="arrow-back" size={15} color={colors.tint} />
+              <ThemedText style={[styles.backText, { color: colors.tint }]}>Back to sign in</ThemedText>
+            </Pressable>
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -141,94 +133,26 @@ export default function ForgotPasswordScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    flexGrow: 1,
+  root: { flex: 1 },
+  flex: { flex: 1 },
+  scroll: {
     paddingHorizontal: 24,
+    paddingTop: 20,
     maxWidth: 400,
     width: '100%',
     alignSelf: 'center',
+    flexGrow: 1,
   },
-  inner: {
-    paddingHorizontal: 0,
-  },
-  header: {
-    marginBottom: 32,
-  },
-  logo: {
-    fontSize: 34,
-    fontWeight: '800',
-    letterSpacing: 0.5,
-    marginBottom: 6,
-  },
-  tagline: {
-    fontSize: 13,
-    fontWeight: '600',
-    letterSpacing: 0.3,
-    textTransform: 'uppercase',
-  },
-  sectionLabel: {
-    marginBottom: 12,
-    fontSize: 16,
-    fontWeight: '800',
-    letterSpacing: -0.2,
-  },
-  description: {
-    fontSize: 14,
-    lineHeight: 20,
-    marginBottom: 16,
-  },
-  formCard: {
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 16,
-  },
-  input: {
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    fontSize: 16,
-    marginBottom: 12,
-  },
-  inputLast: {
-    marginBottom: 0,
-  },
-  successText: {
-    fontSize: 15,
-    lineHeight: 22,
-    textAlign: 'center',
-  },
-  primaryButton: {
-    borderRadius: 14,
-    paddingVertical: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 52,
-  },
-  buttonPressed: {
-    opacity: 0.9,
-  },
-  primaryButtonText: {
-    color: '#fff',
-    fontSize: 15,
-    fontWeight: '800',
-    letterSpacing: 0.5,
-    textTransform: 'uppercase',
-  },
-  footer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 32,
-    flexWrap: 'wrap',
-  },
-  link: {
-    fontWeight: '600',
-  },
+  brand: { marginBottom: 40 },
+  logo: { fontSize: 38, fontWeight: '700', letterSpacing: -1 },
+  tagline: { fontSize: 15, fontWeight: '400', marginTop: 4, lineHeight: 22 },
+  form: { gap: 12, marginBottom: 24 },
+  input: { borderRadius: 16, paddingHorizontal: 18, paddingVertical: 16, fontSize: 16, fontWeight: '400' },
+  primaryBtn: { borderRadius: 16, paddingVertical: 17, alignItems: 'center', justifyContent: 'center' },
+  primaryBtnText: { color: '#fff', fontSize: 16, fontWeight: '600', letterSpacing: 0.2 },
+  successCard: { borderRadius: 16, padding: 24, flexDirection: 'row', gap: 14, alignItems: 'flex-start' },
+  successText: { flex: 1, fontSize: 14, lineHeight: 21 },
+  footer: { alignItems: 'center', marginTop: 40 },
+  backBtn: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  backText: { fontSize: 14, fontWeight: '500' },
 })

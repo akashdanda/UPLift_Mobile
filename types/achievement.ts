@@ -64,7 +64,7 @@ export const ACHIEVEMENT_CATEGORIES: Record<
   { label: string; icon: string; color: string }
 > = {
   consistency: { label: 'Consistency', icon: '⚡', color: '#EF4444' },
-  social: { label: 'Social', icon: '🤝', color: '#8B5CF6' },
+  social: { label: 'Social', icon: '🤝', color: '#6C52D6' },
   competitive: { label: 'Competitive', icon: '👑', color: '#EAB308' },
   time: { label: 'Time-Based', icon: '🌅', color: '#F97316' },
   type: { label: 'Workout Type', icon: '🦾', color: '#3B82F6' },

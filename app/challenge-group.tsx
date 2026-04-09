@@ -23,6 +23,7 @@ export default function ChallengeGroupScreen() {
   const { session } = useAuthContext()
   const colorScheme = useColorScheme()
   const colors = Colors[colorScheme ?? 'light']
+  const isDark = colorScheme === 'dark'
 
   const [searchResults, setSearchResults] = useState<
     Array<{ id: string; name: string; avatar_url: string | null; member_count: number }>
@@ -124,7 +125,7 @@ export default function ChallengeGroupScreen() {
         </ThemedText>
 
         {/* Search */}
-        <View style={[styles.searchRow, { backgroundColor: colors.card }]}>
+        <View style={[styles.searchRow, { backgroundColor: colors.card, shadowOpacity: isDark ? 0.12 : 0.06, }]}>
           <Ionicons name="search" size={18} color={colors.textMuted} />
           <TextInput
             style={[styles.searchInput, { color: colors.text }]}
@@ -176,7 +177,7 @@ export default function ChallengeGroupScreen() {
             {searchResults.map((group) => (
               <Pressable
                 key={group.id}
-                style={[styles.groupCard, { backgroundColor: colors.card, borderColor: colors.tabBarBorder }]}
+                style={[styles.groupCard, { backgroundColor: colors.card, shadowOpacity: isDark ? 0.12 : 0.06, }]}
                 onPress={() => handleChallenge(group.id)}
                 disabled={challengingId === group.id}
               >
@@ -244,7 +245,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     padding: 16,
     borderRadius: 16,
-    borderWidth: 1,
   },
   groupCardContent: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
   groupAvatar: {

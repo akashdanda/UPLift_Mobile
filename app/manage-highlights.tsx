@@ -44,6 +44,7 @@ export default function ManageHighlightsScreen() {
   const { session } = useAuthContext()
   const colorScheme = useColorScheme()
   const colors = Colors[colorScheme ?? 'light']
+  const isDark = colorScheme === 'dark'
 
   const [list, setList] = useState<HighlightForProfile[]>([])
   const [detail, setDetail] = useState<HighlightWithWorkouts | null>(null)
@@ -219,7 +220,7 @@ export default function ManageHighlightsScreen() {
   if (highlightId && detail) {
     return (
       <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['bottom']}>
-        <View style={[styles.header, { borderBottomColor: colors.tabBarBorder }]}>
+        <View style={[styles.header, { borderBottomColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)' }]}>
           <Pressable onPress={() => router.back()} hitSlop={12}>
             <Ionicons name="chevron-back" size={24} color={colors.text} />
           </Pressable>
@@ -229,12 +230,12 @@ export default function ManageHighlightsScreen() {
           <View style={{ width: 32 }} />
         </View>
         <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-          <View style={[styles.nameRow, { borderBottomColor: colors.tabBarBorder }]}>
+          <View style={[styles.nameRow, { borderBottomColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)' }]}>
             <ThemedText style={[styles.label, { color: colors.textMuted }]}>Name</ThemedText>
             <TextInput
               style={[
                 styles.nameInput,
-                { backgroundColor: colors.cardElevated, color: colors.text, borderColor: colors.tabBarBorder },
+                { backgroundColor: colors.cardElevated, color: colors.text },
               ]}
               value={editingName}
               onChangeText={setEditingName}
@@ -244,7 +245,7 @@ export default function ManageHighlightsScreen() {
             />
           </View>
           {/* Cover section - camera roll or select from below */}
-          <View style={[styles.coverSection, { borderBottomColor: colors.tabBarBorder }]}>
+          <View style={[styles.coverSection, { borderBottomColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)' }]}>
             <ThemedText style={[styles.label, { color: colors.textMuted }]}>Cover photo</ThemedText>
             <ThemedText style={[styles.coverHint, { color: colors.textMuted }]}>
               Choose from your camera roll or tap a photo below to set as cover.
@@ -253,7 +254,7 @@ export default function ManageHighlightsScreen() {
               <Pressable
                 onPress={handleChooseCoverFromCameraRoll}
                 disabled={uploadingCover}
-                style={[styles.coverPreviewCircle, { borderColor: colors.tabBarBorder }]}
+                style={[styles.coverPreviewCircle, {  }]}
               >
                 {uploadingCover ? (
                   <ActivityIndicator size="small" color={colors.tint} />
@@ -341,7 +342,7 @@ export default function ManageHighlightsScreen() {
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['bottom']}>
-      <View style={[styles.header, { borderBottomColor: colors.tabBarBorder }]}>
+      <View style={[styles.header, { borderBottomColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)' }]}>
         <Pressable onPress={() => router.back()} hitSlop={12}>
           <Ionicons name="chevron-back" size={24} color={colors.text} />
         </Pressable>
@@ -356,7 +357,7 @@ export default function ManageHighlightsScreen() {
         </ThemedText>
         <Pressable
           onPress={handleCreateNew}
-          style={[styles.newHighlightCard, { backgroundColor: colors.card, borderColor: colors.tabBarBorder }]}
+          style={[styles.newHighlightCard, { backgroundColor: colors.card, shadowOpacity: isDark ? 0.15 : 0.08, }]}
         >
           <View style={[styles.newHighlightCircle, { backgroundColor: colors.cardElevated }]}>
             <Ionicons name="add" size={32} color={colors.textMuted} />
@@ -367,7 +368,7 @@ export default function ManageHighlightsScreen() {
           {list.map((h) => (
             <View
               key={h.id}
-              style={[styles.highlightRow, { backgroundColor: colors.card, borderColor: colors.tabBarBorder }]}
+              style={[styles.highlightRow, { backgroundColor: colors.card, shadowOpacity: isDark ? 0.12 : 0.06, }]}
             >
               <Pressable
                 onPress={() => router.push({ pathname: '/manage-highlights', params: { highlightId: h.id } })}
@@ -443,7 +444,6 @@ const styles = StyleSheet.create({
   },
   label: { fontSize: 12, marginBottom: 6 },
   nameInput: {
-    borderWidth: 1,
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 10,
@@ -459,7 +459,6 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 14,
     borderRadius: 10,
-    borderWidth: 1,
   },
   addButtonText: { fontSize: 15 },
   coverSection: { paddingVertical: 16, borderBottomWidth: StyleSheet.hairlineWidth },
@@ -486,7 +485,6 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 14,
     borderRadius: 10,
-    borderWidth: 1,
   },
   chooseFromRollBtnText: { fontSize: 15 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: GAP },
@@ -528,7 +526,6 @@ const styles = StyleSheet.create({
   deleteButton: {
     marginTop: 32,
     paddingVertical: 14,
-    borderWidth: 1,
     borderRadius: 10,
     alignItems: 'center',
   },
@@ -539,7 +536,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 14,
     borderRadius: 12,
-    borderWidth: 1,
     marginBottom: 16,
   },
   newHighlightCircle: {
@@ -557,7 +553,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 12,
     borderRadius: 12,
-    borderWidth: 1,
     gap: 8,
   },
   highlightRowContent: {

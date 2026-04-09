@@ -11,17 +11,18 @@ import { RequiredUpdateGate } from '@/components/required-update-gate'
 import { useAuthContext } from '@/hooks/use-auth-context'
 import { useColorScheme } from '@/hooks/use-color-scheme'
 import AuthProvider from '@/providers/auth-provider'
+import { BrandViolet } from '@/constants/theme'
 
 const UpliftDark: Theme = {
   ...DarkTheme,
   colors: {
     ...DarkTheme.colors,
-    primary: '#A78BFA',
+    primary: BrandViolet.primaryOnDark,
     background: '#08060D',
     card: '#0E0B14',
     text: '#E8E4F0',
-    border: 'rgba(167,139,250,0.10)',
-    notification: '#A78BFA',
+    border: 'rgba(255,255,255,0.06)',
+    notification: BrandViolet.primaryOnDark,
   },
 }
 
@@ -29,12 +30,12 @@ const UpliftLight: Theme = {
   ...DefaultTheme,
   colors: {
     ...DefaultTheme.colors,
-    primary: '#7C3AED',
+    primary: BrandViolet.primary,
     background: '#FAF9FC',
     card: '#FFFFFF',
     text: '#1A1025',
-    border: 'rgba(124,58,237,0.08)',
-    notification: '#7C3AED',
+    border: 'rgba(0,0,0,0.04)',
+    notification: BrandViolet.primary,
   },
 }
 
@@ -96,6 +97,7 @@ function RootNavigator() {
         <Stack.Screen name="settings" options={{ title: 'Settings', headerBackTitle: 'Profile' }} />
       </Stack.Protected>
       <Stack.Protected guard={!isLoggedIn}>
+        <Stack.Screen name="onboarding" options={{ headerShown: false }} />
         <Stack.Screen name="login" options={{ headerShown: false }} />
         <Stack.Screen name="sign-up" options={{ headerShown: false }} />
       </Stack.Protected>

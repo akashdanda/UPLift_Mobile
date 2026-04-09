@@ -55,6 +55,7 @@ export default function FriendProfileScreen() {
   const router = useRouter()
   const colorScheme = useColorScheme()
   const colors = Colors[colorScheme ?? 'light']
+  const isDark = colorScheme === 'dark'
 
   const [profile, setProfile] = useState<Profile | null>(null)
   const [loading, setLoading] = useState(true)
@@ -259,13 +260,9 @@ export default function FriendProfileScreen() {
               style={[
                 styles.avatarRing,
                 {
-                  borderColor: friendLevel?.level.color ?? colors.tint,
+                  borderColor: (friendLevel?.level.color ?? colors.tint) + '50',
                   shadowColor: friendLevel?.level.color ?? colors.tint,
-                  shadowOpacity: 0.4,
-                  shadowRadius: 10,
-                  shadowOffset: { width: 0, height: 0 },
-                  elevation: 6,
-                },
+                  },
               ]}
             >
               <View style={[styles.avatarWrap, { backgroundColor: colors.tint + '25' }]}>
@@ -356,7 +353,7 @@ export default function FriendProfileScreen() {
               )}
               {isFriend && (
                 <Pressable
-                  style={[styles.reportButton, { borderColor: colors.tabBarBorder }]}
+                  style={[styles.reportButton, { borderColor: (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)') }]}
                   disabled={nudgeLoading}
                   onPress={async () => {
                     if (!session || !id) return
@@ -366,7 +363,12 @@ export default function FriendProfileScreen() {
                         body: { target_user_id: id },
                       })
                       if (error) {
-                        Alert.alert('Couldn’t send nudge', error.message || 'Please try again.')
+                        const msg = error.message || ''
+                        if (msg.includes('non-2xx') || msg.includes('FunctionsHttpError') || msg.includes('Failed to send')) {
+                          Alert.alert('Nudge unavailable', 'This feature is temporarily offline. Try again later.')
+                        } else {
+                          Alert.alert('Couldn’t send nudge', msg || 'Please try again.')
+                        }
                         return
                       }
 
@@ -410,7 +412,7 @@ export default function FriendProfileScreen() {
                 <Pressable
                   key={h.id}
                   onPress={() => router.push({ pathname: '/highlight-detail', params: { id: h.id } })}
-                  style={[styles.highlightCircleWrap, { borderColor: colors.tabBarBorder }]}
+                  style={[styles.highlightCircleWrap, { borderColor: (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)') }]}
                 >
                   <View style={[styles.highlightCircle, { backgroundColor: colors.cardElevated, overflow: 'hidden' }]}>
                     {h.cover_image_url ? (
@@ -433,7 +435,7 @@ export default function FriendProfileScreen() {
           <ThemedText type="subtitle" style={[styles.sectionTitle, { color: colors.text }]}>
             Activity
           </ThemedText>
-          <View style={[styles.calendarCard, { backgroundColor: colors.card, borderColor: colors.tabBarBorder }]}>
+          <View style={[styles.calendarCard, { backgroundColor: colors.card, borderColor: (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)') }]}>
             <ThemedText style={[styles.calendarMonthLabel, { color: colors.text }]}>
               {monthLabel}
             </ThemedText>
@@ -559,7 +561,7 @@ export default function FriendProfileScreen() {
             Achievements
           </ThemedText>
           {achievements.length === 0 ? (
-            <View style={[styles.badgesContainer, { backgroundColor: colors.card, borderColor: colors.tabBarBorder }]}>
+            <View style={[styles.badgesContainer, { backgroundColor: colors.card, borderColor: (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)') }]}>
               <ThemedText style={[styles.emptyBadgesText, { color: colors.textMuted }]}>
                 No achievements yet.
               </ThemedText>
@@ -583,12 +585,11 @@ export default function FriendProfileScreen() {
                         backgroundColor: colors.card,
                         borderColor: ach.unlocked
                           ? catMeta?.color ?? colors.tint
-                          : colors.tabBarBorder,
+                          : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)'),
                         borderWidth: ach.unlocked ? 1.5 : 1,
                         shadowColor: ach.unlocked ? catMeta?.color ?? colors.tint : 'transparent',
                         shadowOpacity: ach.unlocked ? 0.3 : 0,
                         shadowRadius: ach.unlocked ? 8 : 0,
-                        shadowOffset: { width: 0, height: 2 },
                         elevation: ach.unlocked ? 4 : 0,
                       },
                     ]}
@@ -721,7 +722,7 @@ export default function FriendProfileScreen() {
                       </View>
                     )}
                     <Pressable
-                      style={[styles.achievementDetailClose, { borderColor: colors.tabBarBorder }]}
+                      style={[styles.achievementDetailClose, { borderColor: (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)') }]}
                       onPress={() => setSelectedAchievement(null)}
                     >
                       <ThemedText style={[styles.achievementDetailCloseText, { color: colors.text }]}>
@@ -821,7 +822,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   levelEmoji: { fontSize: 14 },
-  levelTitle: { fontSize: 11, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 1.5 },
+  levelTitle: { fontSize: 11, fontWeight: '800', letterSpacing: 1.5 },
   displayName: {
     marginBottom: 4,
     textAlign: 'center',
@@ -858,7 +859,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     borderRadius: 14,
     alignItems: 'center',
-  },
+    },
   challengeButtonText: {
     color: '#fff',
     fontSize: 14,
@@ -874,7 +875,6 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 16,
     borderRadius: 14,
-    borderWidth: 1,
   },
   reportButtonText: {
     fontSize: 14,
@@ -901,7 +901,6 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
   },
   statValue: {
     fontSize: 20,
@@ -913,7 +912,6 @@ const styles = StyleSheet.create({
     fontSize: 9,
     fontWeight: '600',
     letterSpacing: 0.3,
-    textTransform: 'uppercase',
     textAlign: 'center',
   },
   highlightsSection: { marginBottom: 20 },
@@ -932,7 +930,6 @@ const styles = StyleSheet.create({
   // Calendar styles
   calendarCard: {
     borderRadius: 14,
-    borderWidth: 1,
     padding: 16,
   },
   calendarMonthLabel: {
@@ -941,7 +938,6 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     textAlign: 'center',
     letterSpacing: 0.3,
-    textTransform: 'uppercase',
   },
   calendarWeekRow: {
     flexDirection: 'row',
@@ -1007,7 +1003,6 @@ const styles = StyleSheet.create({
   // Badges / Achievements
   badgesContainer: {
     borderRadius: 14,
-    borderWidth: 1,
     padding: 20,
     minHeight: 100,
     alignItems: 'center',
@@ -1024,7 +1019,6 @@ const styles = StyleSheet.create({
     padding: 12,
     borderRadius: 16,
     alignItems: 'center',
-    borderWidth: 1,
   },
   achievementIconWrap: {
     width: 48,
@@ -1046,7 +1040,7 @@ const styles = StyleSheet.create({
   achievementDetailInner: { width: '100%', borderRadius: 24, padding: 28, alignItems: 'center' },
   achievementDetailIconWrap: { width: 72, height: 72, borderRadius: 36, alignItems: 'center', justifyContent: 'center', marginBottom: 12, overflow: 'visible' },
   achievementDetailIcon: { fontSize: 38, lineHeight: 48 },
-  achievementDetailCategory: { fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 4 },
+  achievementDetailCategory: { fontSize: 12, fontWeight: '700', letterSpacing: 1.5, marginBottom: 4 },
   achievementDetailName: { fontSize: 22, fontWeight: '800', textAlign: 'center', marginBottom: 8 },
   achievementDetailDesc: { fontSize: 14, textAlign: 'center', lineHeight: 20, marginBottom: 20 },
   achievementDetailProgressSection: { width: '100%', marginBottom: 20 },
@@ -1055,7 +1049,7 @@ const styles = StyleSheet.create({
   achievementDetailProgressText: { fontSize: 13, textAlign: 'center', fontWeight: '600' },
   achievementDetailUnlocked: { paddingVertical: 8, paddingHorizontal: 20, borderRadius: 12, marginBottom: 20 },
   achievementDetailUnlockedText: { fontSize: 14, fontWeight: '700' },
-  achievementDetailClose: { paddingVertical: 12, paddingHorizontal: 24, borderRadius: 12, borderWidth: 1 },
+  achievementDetailClose: { paddingVertical: 12, paddingHorizontal: 24, borderRadius: 12},
   achievementDetailCloseText: { fontSize: 15, fontWeight: '600' },
   // Photo zoom modal
   modalOverlay: {

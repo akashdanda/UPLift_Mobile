@@ -2,6 +2,8 @@ import Ionicons from '@expo/vector-icons/Ionicons'
 import { LinearGradient } from 'expo-linear-gradient'
 import { StyleSheet, View } from 'react-native'
 
+import { BrandViolet } from '@/constants/theme'
+
 type IoniconsName = React.ComponentProps<typeof Ionicons>['name']
 
 type BadgeDef = {
@@ -13,10 +15,10 @@ const BADGE_MAP: Record<string, BadgeDef> = {
   no_days_off:        { icon: 'flash',              colors: ['#3B82F6', '#1D4ED8'] },
   grind_season:       { icon: 'flame',              colors: ['#F97316', '#DC2626'] },
   monthly_warrior:    { icon: 'shield-checkmark',   colors: ['#14B8A6', '#0D9488'] },
-  iron_habit:         { icon: 'barbell',            colors: ['#6366F1', '#4338CA'] },
-  hype_man:           { icon: 'megaphone',          colors: ['#A855F7', '#7C3AED'] },
+  iron_habit:         { icon: 'barbell',            colors: [BrandViolet.mid, BrandViolet.deep] },
+  hype_man:           { icon: 'megaphone',          colors: [BrandViolet.highlight, BrandViolet.deep] },
   recruiter:          { icon: 'people',             colors: ['#F59E0B', '#D97706'] },
-  pack_leader:        { icon: 'paw',               colors: ['#6366F1', '#4F46E5'] },
+  pack_leader:        { icon: 'paw',               colors: [BrandViolet.highlight, BrandViolet.mid] },
   founding_100:       { icon: 'diamond',            colors: ['#06B6D4', '#0891B2'] },
   top_leaderboard:    { icon: 'trophy',             colors: ['#EAB308', '#CA8A04'] },
   comeback_kid:       { icon: 'refresh',            colors: ['#22C55E', '#16A34A'] },
@@ -24,12 +26,12 @@ const BADGE_MAP: Record<string, BadgeDef> = {
   comment_king:       { icon: 'chatbubbles',        colors: ['#06B6D4', '#0E7490'] },
   react_machine:      { icon: 'sparkles',           colors: ['#EC4899', '#DB2777'] },
   early_bird:         { icon: 'sunny',              colors: ['#F59E0B', '#EA580C'] },
-  night_owl:          { icon: 'moon',               colors: ['#6366F1', '#312E81'] },
+  night_owl:          { icon: 'moon',               colors: [BrandViolet.mid, BrandViolet.shadow] },
   weekend_grinder:    { icon: 'calendar',           colors: ['#F97316', '#C2410C'] },
   lunch_break_lifter: { icon: 'time',               colors: ['#EAB308', '#A16207'] },
   iron_addict:        { icon: 'barbell',            colors: ['#EF4444', '#991B1B'] },
   cardio_queen:       { icon: 'heart',              colors: ['#EC4899', '#BE185D'] },
-  rest_master:        { icon: 'leaf',               colors: ['#A78BFA', '#7C3AED'] },
+  rest_master:        { icon: 'leaf',               colors: [BrandViolet.highlight, BrandViolet.primary] },
   first_workout:      { icon: 'rocket',             colors: ['#22C55E', '#15803D'] },
   century_club:       { icon: 'star',               colors: ['#3B82F6', '#1E40AF'] },
   year_one:           { icon: 'ribbon',             colors: ['#F59E0B', '#B45309'] },

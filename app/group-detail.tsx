@@ -39,18 +39,18 @@ import {
 } from '@/lib/competitions'
 import { getFriends, type FriendWithProfile } from '@/lib/friends'
 import {
+  addFeedComment,
   createGroupFeedPost,
   createGroupPoll,
   deleteGroupFeedPost,
-  getGroupFeedPosts,
   getCommentsForPosts,
+  getGroupFeedPosts,
   getPollOptions,
   getReactionsForPosts,
   getUserPollVote,
   toggleFeedReaction,
   togglePinPost,
   voteOnPoll,
-  addFeedComment,
 } from '@/lib/group-feed'
 import { uploadGroupImage } from '@/lib/group-upload'
 import {
@@ -138,6 +138,7 @@ export default function GroupDetailScreen() {
   const { session, refreshProfile } = useAuthContext()
   const colorScheme = useColorScheme()
   const colors = Colors[colorScheme ?? 'light']
+  const isDark = colorScheme === 'dark'
   const safeInsets = useSafeAreaInsets()
 
   const [group, setGroup] = useState<GroupWithMeta | null>(null)
@@ -814,7 +815,7 @@ export default function GroupDetailScreen() {
             horizontal
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.actionsScroll}
-            style={[styles.actionsContainer, { borderBottomColor: colors.tabBarBorder }]}
+            style={[styles.actionsContainer, { borderBottomColor: (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)') }]}
           >
             {actionButtons.map((btn) => {
               const isActive =
@@ -1037,7 +1038,7 @@ export default function GroupDetailScreen() {
                   onPress={() => setComposeVisible(true)}
                   style={({ pressed }) => [
                     styles.feedComposeBtn,
-                    { backgroundColor: pressed ? colors.tint + '15' : colors.cardElevated, borderColor: colors.tabBarBorder },
+                    { backgroundColor: pressed ? colors.tint + '15' : colors.cardElevated, borderColor: (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)') },
                   ]}
                 >
                   <Ionicons name="pencil" size={16} color={colors.textMuted} />
@@ -1096,7 +1097,7 @@ export default function GroupDetailScreen() {
               <ThemedText type="subtitle" style={[styles.contentSectionTitle, { color: colors.text }]}>
                 Group Chat
               </ThemedText>
-              <View style={[styles.chatContainer, { backgroundColor: colors.card, borderColor: colors.tabBarBorder }]}>
+              <View style={[styles.chatContainer, { backgroundColor: colors.card, borderColor: (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)') }]}>
                 <ScrollView
                   ref={chatScrollRef}
                   style={styles.chatMessagesList}
@@ -1141,11 +1142,11 @@ export default function GroupDetailScreen() {
                     })
                   )}
                 </ScrollView>
-                <View style={[styles.chatInputRow, { borderTopColor: colors.tabBarBorder }]}>
+                <View style={[styles.chatInputRow, { borderTopColor: (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)') }]}>
                   <TextInput
                     style={[
                       styles.chatInput,
-                      { backgroundColor: colors.background, color: colors.text, borderColor: colors.tabBarBorder },
+                      { backgroundColor: colors.background, color: colors.text, borderColor: (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)') },
                     ]}
                     placeholder="Type a message..."
                     placeholderTextColor={colors.textMuted}
@@ -1178,7 +1179,7 @@ export default function GroupDetailScreen() {
 
               {/* Matchmaking queue status */}
               {isStaff && (
-                <View style={[styles.competitionCard, { backgroundColor: colors.card, borderColor: colors.tabBarBorder }]}>
+                <View style={[styles.competitionCard, { backgroundColor: colors.card, borderColor: (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)') }]}>
                   <ThemedText type="defaultSemiBold" style={[styles.competitionCardTitle, { color: colors.text }]}>
                     Matchmaking
                   </ThemedText>
@@ -1227,7 +1228,7 @@ export default function GroupDetailScreen() {
                     </ThemedText>
                   </Pressable>
                   <Pressable
-                    style={[styles.competitionButtonSecondary, { borderColor: colors.tabBarBorder }]}
+                    style={[styles.competitionButtonSecondary, { borderColor: (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)') }]}
                     onPress={() => router.push(`/challenge-group?groupId=${id}`)}
                   >
                     <ThemedText style={[styles.competitionButtonTextSecondary, { color: colors.text }]}>
@@ -1254,7 +1255,7 @@ export default function GroupDetailScreen() {
                     return (
                       <Pressable
                         key={comp.id}
-                        style={[styles.competitionItem, { backgroundColor: colors.card, borderColor: colors.tabBarBorder }]}
+                        style={[styles.competitionItem, { backgroundColor: colors.card, borderColor: (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)') }]}
                         onPress={() => router.push(`/competition-detail?id=${comp.id}`)}
                       >
                         <View style={styles.competitionHeader}>
@@ -1388,7 +1389,7 @@ export default function GroupDetailScreen() {
                         styles.composeTypeBtn,
                         {
                           backgroundColor: active ? colors.tint + '15' : colors.cardElevated,
-                          borderColor: active ? colors.tint + '40' : colors.tabBarBorder,
+                          borderColor: active ? colors.tint + '40' : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)'),
                           opacity: pressed ? 0.85 : 1,
                         },
                       ]}
@@ -1410,7 +1411,7 @@ export default function GroupDetailScreen() {
                 placeholderTextColor={colors.textMuted + '90'}
                 style={[
                   styles.composeInput,
-                  { backgroundColor: colors.cardElevated, borderColor: colors.tabBarBorder, color: colors.text },
+                  { backgroundColor: colors.cardElevated, borderColor: (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)'), color: colors.text },
                 ]}
                 multiline
                 maxLength={1000}
@@ -1425,7 +1426,7 @@ export default function GroupDetailScreen() {
                       styles.composeImageBtn,
                       {
                         backgroundColor: pressed ? colors.tint + '10' : colors.cardElevated,
-                        borderColor: colors.tabBarBorder,
+                        borderColor: (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)'),
                       },
                     ]}
                   >
@@ -1468,7 +1469,7 @@ export default function GroupDetailScreen() {
                         placeholderTextColor={colors.textMuted + '90'}
                         style={[
                           styles.pollOptionInput,
-                          { backgroundColor: colors.cardElevated, borderColor: colors.tabBarBorder, color: colors.text },
+                          { backgroundColor: colors.cardElevated, borderColor: (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)'), color: colors.text },
                         ]}
                       />
                       {pollOptions.length > 2 && (
@@ -1484,7 +1485,7 @@ export default function GroupDetailScreen() {
                   ))}
                   <Pressable
                     onPress={() => setPollOptions((prev) => [...prev, ''])}
-                    style={[styles.pollAddOptionBtn, { borderColor: colors.tabBarBorder }]}
+                    style={[styles.pollAddOptionBtn, { borderColor: (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)') }]}
                   >
                     <Ionicons name="add" size={18} color={colors.textMuted} />
                     <ThemedText style={[styles.pollAddOptionText, { color: colors.textMuted }]}>Add option</ThemedText>
@@ -1603,7 +1604,7 @@ export default function GroupDetailScreen() {
                   const isPending = invitePendingIds.has(friend.id)
                   const isSending = inviteSendingId === friend.id
                   return (
-                    <View style={[styles.inviteRow, { borderBottomColor: colors.tabBarBorder }]}>
+                    <View style={[styles.inviteRow, { borderBottomColor: (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)') }]}>
                       <View style={styles.inviteRowLeft}>
                         {friend.avatar_url ? (
                           <Image source={{ uri: friend.avatar_url }} style={styles.inviteAvatar} />
@@ -1739,11 +1740,6 @@ const styles = StyleSheet.create({
     paddingVertical: 18,
     paddingHorizontal: 24,
     borderRadius: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
     position: 'relative',
   },
   competeButtonText: {
@@ -1751,7 +1747,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '800',
     letterSpacing: 1,
-    textTransform: 'uppercase',
   },
   competeButtonActiveIndicator: {
     position: 'absolute',
@@ -1783,11 +1778,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginBottom: 6,
   },
-  actionBtnLabel: { fontSize: 10, fontWeight: '700', letterSpacing: 0.3, textTransform: 'uppercase' },
+  actionBtnLabel: { fontSize: 10, fontWeight: '700', letterSpacing: 0.3 },
 
   // Tab content
   tabContent: { paddingHorizontal: 20, paddingTop: 16 },
-  contentSectionTitle: { fontSize: 14, fontWeight: '800', marginBottom: 14, letterSpacing: 0.5, textTransform: 'uppercase' },
+  contentSectionTitle: { fontSize: 14, fontWeight: '800', marginBottom: 14, letterSpacing: 0.5 },
 
   // Overview
   aboutSection: { marginBottom: 20 },
@@ -1800,7 +1795,7 @@ const styles = StyleSheet.create({
   // Member preview
   membersPreview: { marginBottom: 20 },
   memberPreviewHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  seeAllLink: { fontSize: 12, fontWeight: '700', letterSpacing: 0.3, textTransform: 'uppercase' },
+  seeAllLink: { fontSize: 12, fontWeight: '700', letterSpacing: 0.3 },
   memberAvatarsRow: { flexDirection: 'row', gap: 8 },
   memberAvatarPreviewWrap: {},
   memberAvatarPreview: {
@@ -1843,12 +1838,11 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     borderRadius: 8,
   },
-  roleBadgeText: { fontSize: 9, fontWeight: '800', letterSpacing: 0.5, textTransform: 'uppercase' },
+  roleBadgeText: { fontSize: 9, fontWeight: '800', letterSpacing: 0.5 },
 
   // Chat
   chatContainer: {
     borderRadius: 16,
-    borderWidth: 1,
     height: 420,
     overflow: 'hidden',
   },
@@ -1881,7 +1875,6 @@ const styles = StyleSheet.create({
   },
   chatInput: {
     flex: 1,
-    borderWidth: 1,
     borderRadius: 20,
     paddingHorizontal: 16,
     paddingVertical: 10,
@@ -1910,7 +1903,6 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 12,
     borderRadius: 14,
-    borderWidth: 1,
   },
   feedComposeBtnText: { fontSize: 13, fontWeight: '600' },
   feedCard: { borderRadius: 16, borderWidth: 1, padding: 14, overflow: 'hidden' },
@@ -1926,7 +1918,7 @@ const styles = StyleSheet.create({
   feedAuthorInitial: { fontSize: 15, fontWeight: '800' },
   feedAuthorName: { fontSize: 15, fontWeight: '700' },
   feedRoleBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 },
-  feedRoleBadgeText: { fontSize: 10, fontWeight: '800', letterSpacing: 0.2, textTransform: 'uppercase' },
+  feedRoleBadgeText: { fontSize: 10, fontWeight: '800', letterSpacing: 0.2 },
   feedPostTime: { fontSize: 11, fontWeight: '600', marginTop: 2 },
   feedPostContent: { fontSize: 14, lineHeight: 20, marginTop: 4 },
   feedPostImageWrap: { marginTop: 10, borderRadius: 14, overflow: 'hidden' },
@@ -1980,7 +1972,6 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
     paddingHorizontal: 10,
     borderRadius: 999,
-    borderWidth: 1,
   },
   feedReactionEmoji: { fontSize: 14, fontWeight: '700' },
   feedReactionCount: { fontSize: 12, fontWeight: '800' },
@@ -2013,7 +2004,6 @@ const styles = StyleSheet.create({
   },
   feedCommentInput: {
     flex: 1,
-    borderWidth: 1,
     borderRadius: 16,
     paddingHorizontal: 14,
     paddingVertical: 10,
@@ -2043,7 +2033,6 @@ const styles = StyleSheet.create({
     gap: 6,
     paddingVertical: 10,
     borderRadius: 14,
-    borderWidth: 1,
   },
   composeTypeText: { fontSize: 12, fontWeight: '800', letterSpacing: 0.2 },
   composeInput: { borderWidth: 1, borderRadius: 16, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, minHeight: 90 },
@@ -2053,7 +2042,7 @@ const styles = StyleSheet.create({
   composeThumbWrap: { width: 64, height: 64, borderRadius: 14, overflow: 'hidden' },
   composeThumb: { width: '100%', height: '100%' },
   composeThumbRemove: { position: 'absolute', top: 6, right: 6, width: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  composeSubmitBtn: { marginTop: 14, borderRadius: 16, paddingVertical: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  composeSubmitBtn: { marginTop: 14, borderRadius: 16, paddingVertical: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, },
   composeSubmitText: { color: '#fff', fontSize: 14, fontWeight: '800', letterSpacing: 0.2 },
 
   // Poll compose
@@ -2069,7 +2058,6 @@ const styles = StyleSheet.create({
   // Competitions
   competitionCard: {
     borderRadius: 16,
-    borderWidth: 1,
     padding: 16,
     marginBottom: 20,
   },
@@ -2082,20 +2070,18 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: 'center',
     marginBottom: 8,
-  },
-  competitionButtonText: { color: '#fff', fontWeight: '800', fontSize: 13, letterSpacing: 0.5, textTransform: 'uppercase' },
+    },
+  competitionButtonText: { color: '#fff', fontWeight: '800', fontSize: 13, letterSpacing: 0.5 },
   competitionButtonSecondary: {
     paddingVertical: 12,
     borderRadius: 12,
-    borderWidth: 1,
     alignItems: 'center',
   },
   competitionButtonTextSecondary: { fontSize: 13, fontWeight: '700', letterSpacing: 0.3 },
   competitionsList: { marginTop: 8 },
-  competitionSectionTitle: { fontSize: 13, fontWeight: '800', marginBottom: 12, letterSpacing: 0.5, textTransform: 'uppercase' },
+  competitionSectionTitle: { fontSize: 13, fontWeight: '800', marginBottom: 12, letterSpacing: 0.5 },
   competitionItem: {
     borderRadius: 16,
-    borderWidth: 1,
     padding: 16,
     marginBottom: 12,
   },
@@ -2116,7 +2102,7 @@ const styles = StyleSheet.create({
   },
   competitionOpponentInitials: { fontSize: 16, fontWeight: '700' },
   competitionOpponentName: { fontSize: 15, fontWeight: '700', marginBottom: 2, letterSpacing: 0.1 },
-  competitionType: { fontSize: 11, fontWeight: '600', letterSpacing: 0.2, textTransform: 'uppercase' },
+  competitionType: { fontSize: 11, fontWeight: '600', letterSpacing: 0.2 },
   competitionScoreRow: {
     flexDirection: 'row',
     gap: 12,
@@ -2127,15 +2113,15 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     backgroundColor: 'rgba(0,0,0,0.02)',
   },
-  competitionScoreLabel: { fontSize: 10, fontWeight: '700', marginBottom: 4, letterSpacing: 0.5, textTransform: 'uppercase' },
+  competitionScoreLabel: { fontSize: 10, fontWeight: '700', marginBottom: 4, letterSpacing: 0.5 },
   competitionScoreValue: { fontSize: 24, fontWeight: '800', letterSpacing: -0.5 },
   competitionPendingActions: { marginTop: 12 },
   competitionAcceptBtn: {
     paddingVertical: 10,
     borderRadius: 12,
     alignItems: 'center',
-  },
-  competitionAcceptBtnText: { color: '#fff', fontWeight: '800', fontSize: 12, letterSpacing: 0.5, textTransform: 'uppercase' },
+    },
+  competitionAcceptBtnText: { color: '#fff', fontWeight: '800', fontSize: 12, letterSpacing: 0.5 },
 
   // Invite modal
   inviteOverlay: {
@@ -2151,7 +2137,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     zIndex: 1,
     ...Platform.select({
-      android: { elevation: 12 },
+      android: { },
     }),
   },
   inviteSheetHeader: {
@@ -2268,6 +2254,8 @@ function FeedPostCard({
   handleDeletePost,
   onPressFeedImage,
 }: FeedPostCardProps) {
+  const colorScheme = useColorScheme()
+  const isDark = colorScheme === 'dark'
   const isPoll = post.post_type === 'poll'
   const cached = pollCache[post.id]
   const commentsVisible = openComments.has(post.id)
@@ -2316,7 +2304,7 @@ function FeedPostCard({
   }
 
   return (
-    <View style={[styles.feedCard, { backgroundColor: colors.card, borderColor: colors.tabBarBorder }]}>
+    <View style={[styles.feedCard, { backgroundColor: colors.card, borderColor: (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)') }]}>
       <View style={styles.feedAuthorRow}>
         {post.avatar_url ? (
           <Image source={{ uri: post.avatar_url }} style={styles.feedAuthorAvatar} />
@@ -2418,7 +2406,7 @@ function FeedPostCard({
         </View>
       )}
 
-      <View style={[styles.feedMetaRow, { borderTopColor: colors.tabBarBorder }]}>
+      <View style={[styles.feedMetaRow, { borderTopColor: (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)') }]}>
         <View style={styles.feedReactionsRow}>
           {emojis.map((e) => {
             const c = counts[e] ?? 0
@@ -2431,7 +2419,7 @@ function FeedPostCard({
                   styles.feedReactionPill,
                   {
                     backgroundColor: active ? colors.tint + '18' : colors.cardElevated,
-                    borderColor: active ? colors.tint + '55' : colors.tabBarBorder,
+                    borderColor: active ? colors.tint + '55' : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)'),
                   },
                   pressed && { opacity: 0.7 },
                 ]}
@@ -2494,9 +2482,9 @@ function FeedPostCard({
             </View>
           )}
 
-          <View style={[styles.feedCommentComposerRow, { borderTopColor: colors.tabBarBorder }]}>
+          <View style={[styles.feedCommentComposerRow, { borderTopColor: (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)') }]}>
             <TextInput
-              style={[styles.feedCommentInput, { backgroundColor: colors.background, color: colors.text, borderColor: colors.tabBarBorder }]}
+              style={[styles.feedCommentInput, { backgroundColor: colors.background, color: colors.text, borderColor: (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)') }]}
               placeholder="Write a comment…"
               placeholderTextColor={colors.textMuted}
               value={draft}

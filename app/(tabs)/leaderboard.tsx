@@ -1,5 +1,6 @@
 import Ionicons from '@expo/vector-icons/Ionicons'
 import { Image } from 'expo-image'
+
 import { useFocusEffect } from '@react-navigation/native'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -43,6 +44,7 @@ function getInitials(displayName: string): string {
 export default function LeaderboardScreen() {
   const colorScheme = useColorScheme()
   const colors = Colors[colorScheme ?? 'light']
+  const isDark = colorScheme === 'dark'
   const { session } = useAuthContext()
   const router = useRouter()
   const params = useLocalSearchParams<{ scope?: string }>()
@@ -125,7 +127,7 @@ export default function LeaderboardScreen() {
   const showPointsInfo = useCallback(() => {
     Alert.alert(
       'How Points Work',
-      `All points are based on this month's activity only.\n\n💪 Each workout: +${LEADERBOARD_POINTS.perWorkout} pts\n🏆 Competition win: +${LEADERBOARD_POINTS.perCompetitionWin} pts\n👥 Friend added: +${LEADERBOARD_POINTS.perFriend} pts\n📁 Group joined: +${LEADERBOARD_POINTS.perGroup} pt`,
+      `All Points are based on this month's activity only.\n\n💪 Each workout: +${LEADERBOARD_POINTS.perWorkout} Points\n🏆 Competition win: +${LEADERBOARD_POINTS.perCompetitionWin} Points\n👥 Friend added: +${LEADERBOARD_POINTS.perFriend} Points\n📁 Group joined: +${LEADERBOARD_POINTS.perGroup} Point`,
       [{ text: 'OK' }]
     )
   }, [])
@@ -157,7 +159,7 @@ export default function LeaderboardScreen() {
               <Ionicons name="information-circle-outline" size={20} color={colors.textMuted} />
             </Pressable>
           </View>
-          <View style={[styles.tabs, { backgroundColor: colors.card, borderColor: colors.tabBarBorder }]}>
+          <View style={[styles.tabs, { backgroundColor: isDark ? colors.cardElevated : colors.card }]}>
             {(['friends', 'groups', 'global'] as const).map((s) => (
               <Pressable
                 key={s}
@@ -214,12 +216,20 @@ export default function LeaderboardScreen() {
         </ThemedView>
 
         {session && (
-          <ThemedView style={[styles.myCard, { backgroundColor: colors.tint + '18', borderColor: colors.tint + '40' }]}>
+          <View
+            style={[
+              styles.myCard,
+              {
+                borderColor: colors.tint + '30',
+                backgroundColor: colors.tint + '12',
+              },
+            ]}
+          >
             <ThemedText type="defaultSemiBold" style={[styles.myCardTitle, { color: colors.text }]}>
               Your score
             </ThemedText>
-            <ThemedText type="title" style={[styles.myPoints, { color: colors.tint }]}>
-              {myPoints} pts
+            <ThemedText type="title" style={[styles.myPoints, { color: '#FFFFFF' }]}>
+              {myPoints} Points
             </ThemedText>
             {myRow ? (
               <View>
@@ -244,8 +254,8 @@ export default function LeaderboardScreen() {
                   )}
                 </View>
                 {myRow.rank > 1 && rows.length > 0 && rows[0].points > myPoints && (
-                  <ThemedText style={[styles.gapText, { color: colors.textMuted }]}>
-                    {rows[0].points - myPoints} pts behind #{1}
+                  <ThemedText style={[styles.gapText, { color: '#FFFFFF' }]}>
+                    {rows[0].points - myPoints} Points behind #{1}
                   </ThemedText>
                 )}
               </View>
@@ -254,7 +264,7 @@ export default function LeaderboardScreen() {
                 No activity this month yet — log a workout to get on the board
               </ThemedText>
             )}
-          </ThemedView>
+          </View>
         )}
 
         <ThemedView style={styles.section}>
@@ -266,7 +276,7 @@ export default function LeaderboardScreen() {
               <ActivityIndicator size="large" color={colors.tint} />
             </View>
           ) : rows.length === 0 ? (
-            <ThemedView style={[styles.emptyCard, { backgroundColor: colors.card, borderColor: colors.tabBarBorder }]}>
+            <ThemedView style={[styles.emptyCard, { backgroundColor: colors.card }]}>
               <ThemedText style={[styles.emptyText, { color: colors.textMuted }]}>
                 {scope === 'friends'
                   ? 'Add friends to see how you rank among them.'
@@ -293,8 +303,7 @@ export default function LeaderboardScreen() {
                     }}
                     style={({ pressed }) => [
                       styles.row,
-                      { backgroundColor: colors.card, borderColor: colors.tabBarBorder },
-                      row.rank <= 3 && { backgroundColor: colors.tint + '12', borderColor: colors.tint + '30' },
+                      { backgroundColor: colors.tint + '12', borderColor: colors.tint + '30' },
                       isMe && { borderColor: colors.tint, borderWidth: 2 },
                       pressed && { opacity: 0.7 },
                     ]}
@@ -344,7 +353,7 @@ export default function LeaderboardScreen() {
                         {rowLevel ? `${rowLevel.level.title} · ` : ''}{row.workouts_count} workouts · {row.streak} streak
                       </ThemedText>
                     </View>
-                    <ThemedText type="defaultSemiBold" style={[styles.points, { color: colors.tint }]}>
+                    <ThemedText type="defaultSemiBold" style={[styles.points, { color: '#FFFFFF' }]}>
                       {row.points}
                     </ThemedText>
                   </Pressable>
@@ -365,7 +374,7 @@ const styles = StyleSheet.create({
   header: { marginBottom: 24 },
   title: { marginBottom: 4 },
   headerRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  subtitle: { fontSize: 13, flex: 1, letterSpacing: 0.2, textTransform: 'uppercase', fontWeight: '600' },
+  subtitle: { fontSize: 13, flex: 1, letterSpacing: 0.2, fontWeight: '600' },
   infoButton: {
     width: 30,
     height: 30,
@@ -379,17 +388,15 @@ const styles = StyleSheet.create({
     marginTop: 16,
     padding: 3,
     borderRadius: 14,
-    borderWidth: 1,
   },
   tab: {
     flex: 1,
     paddingVertical: 10,
     paddingHorizontal: 12,
     borderRadius: 11,
-    borderWidth: 1,
     alignItems: 'center',
   },
-  tabLabel: { fontSize: 12, fontWeight: '700', letterSpacing: 0.3, textTransform: 'uppercase' },
+  tabLabel: { fontSize: 12, fontWeight: '700', letterSpacing: 0.3 },
   groupChipsContainer: {
     marginTop: 12,
     paddingHorizontal: 2,
@@ -399,7 +406,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 7,
     borderRadius: 999,
-    borderWidth: 1,
     marginRight: 8,
   },
   groupChipLabel: {
@@ -410,16 +416,15 @@ const styles = StyleSheet.create({
   myCard: {
     padding: 20,
     borderRadius: 16,
-    borderWidth: 0,
     marginBottom: 24,
   },
-  myCardTitle: { fontSize: 11, fontWeight: '700', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 },
+  myCardTitle: { fontSize: 11, fontWeight: '700', letterSpacing: 1, marginBottom: 6 },
   myPoints: { fontSize: 32, fontWeight: '800', letterSpacing: -1 },
   myRank: { fontSize: 12, marginTop: 6, fontWeight: '600', letterSpacing: 0.2 },
   section: { marginBottom: 28 },
   sectionTitle: { marginBottom: 14 },
   loadingRow: { paddingVertical: 32, alignItems: 'center' },
-  emptyCard: { padding: 28, borderRadius: 16, borderWidth: 1 },
+  emptyCard: { padding: 28, borderRadius: 16 },
   emptyText: { textAlign: 'center', lineHeight: 22, letterSpacing: 0.1 },
   list: { gap: 8 },
   row: {
@@ -427,7 +432,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 14,
     borderRadius: 14,
-    borderWidth: 0,
   },
   rank: { width: 32, fontSize: 14, fontWeight: '800', letterSpacing: -0.3 },
   avatarRing: {
@@ -460,7 +464,7 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   badgeEmoji: { fontSize: 12 },
-  statsLine: { fontSize: 10, marginTop: 3, fontWeight: '600', letterSpacing: 0.3, textTransform: 'uppercase' },
+  statsLine: { fontSize: 10, marginTop: 3, fontWeight: '600', letterSpacing: 0.3 },
   points: { fontSize: 16, fontWeight: '800', marginLeft: 8, letterSpacing: -0.3 },
   rankRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   rankMovement: { flexDirection: 'row', alignItems: 'center', gap: 2 },

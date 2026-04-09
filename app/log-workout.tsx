@@ -95,6 +95,7 @@ export default function LogWorkoutScreen() {
   const { session, profile, refreshProfile } = useAuthContext()
   const colorScheme = useColorScheme()
   const colors = Colors[colorScheme ?? 'light']
+  const isDark = colorScheme === 'dark'
 
   const [todayWorkout, setTodayWorkout] = useState<Workout | null>(null)
   const [loading, setLoading] = useState(true)
@@ -351,7 +352,7 @@ export default function LogWorkoutScreen() {
             <ThemedText style={[styles.doneHint, { color: colors.textMuted }]}>
               You can post one workout per day. Come back tomorrow for the next one.
             </ThemedText>
-            <View style={[styles.imageWrap, { backgroundColor: colors.card }]}>
+            <View style={[styles.imageWrap, { backgroundColor: colors.card, shadowOpacity: isDark ? 0.2 : 0.1, }]}>
               {todayWorkout.secondary_image_url ? (
                 <BeRealPreview
                   primaryUri={todayWorkout.image_url}
@@ -383,8 +384,11 @@ export default function LogWorkoutScreen() {
             </ThemedText>
 
             <Pressable
-              style={[styles.primaryButton, { backgroundColor: colors.tint }]}
               onPress={handleTakePhoto}
+              style={[
+                styles.primaryButton,
+                { backgroundColor: colors.tint, shadowOpacity: isDark ? 0.3 : 0.15 },
+              ]}
             >
               <ThemedText style={styles.primaryButtonText}>Take photo</ThemedText>
             </Pressable>
@@ -394,7 +398,7 @@ export default function LogWorkoutScreen() {
             <ThemedText type="subtitle" style={[styles.formTitle, { color: colors.text }]}>
               Add a caption (optional)
             </ThemedText>
-            <View style={[styles.imageWrap, { backgroundColor: colors.card }]}>
+            <View style={[styles.imageWrap, { backgroundColor: colors.card, shadowOpacity: isDark ? 0.2 : 0.1, }]}>
               {pendingSecondaryUri ? (
                 <BeRealPreview primaryUri={pendingPhotoUri!} secondaryUri={pendingSecondaryUri!} />
               ) : (
@@ -403,7 +407,7 @@ export default function LogWorkoutScreen() {
             </View>
             <View style={styles.retakeRow}>
               <Pressable
-                style={[styles.retakeButton, { borderColor: colors.tabBarBorder }]}
+                style={[styles.retakeButton, {  }]}
                 onPress={() => { setPendingPhotoUri(null); setPendingSecondaryUri(null); }}
                 disabled={uploading}
               >
@@ -418,7 +422,7 @@ export default function LogWorkoutScreen() {
                   key={t.value}
                   style={[
                     styles.workoutTypeChip,
-                    { borderColor: colors.tabBarBorder, backgroundColor: colors.card },
+                    {  backgroundColor: colors.card },
                     workoutType === t.value && { borderColor: colors.tint, backgroundColor: colors.tint + '18' },
                   ]}
                   onPress={() => setWorkoutType(t.value as WorkoutType)}
@@ -444,7 +448,7 @@ export default function LogWorkoutScreen() {
             <TextInput
               style={[
                 styles.input,
-                { backgroundColor: colors.card, color: colors.text, borderColor: colors.tabBarBorder },
+                { backgroundColor: colors.card, color: colors.text },
               ]}
               placeholder="What did you do?"
               placeholderTextColor={colors.textMuted}
@@ -459,7 +463,7 @@ export default function LogWorkoutScreen() {
               <Pressable
                 style={[
                   styles.visibilityChip,
-                  { borderColor: colors.tabBarBorder, backgroundColor: colors.card },
+                  {  backgroundColor: colors.card },
                   visibility === 'friends' && { borderColor: colors.tint, backgroundColor: colors.tint + '18' },
                 ]}
                 onPress={() => setVisibility('friends')}
@@ -475,7 +479,7 @@ export default function LogWorkoutScreen() {
               <Pressable
                 style={[
                   styles.visibilityChip,
-                  { borderColor: colors.tabBarBorder, backgroundColor: colors.card },
+                  {  backgroundColor: colors.card },
                   visibility === 'public' && { borderColor: colors.tint, backgroundColor: colors.tint + '18' },
                 ]}
                 onPress={() => setVisibility('public')}
@@ -492,7 +496,7 @@ export default function LogWorkoutScreen() {
 
             {/* Tag friends */}
             <Pressable
-              style={[styles.tagToggle, { borderColor: colors.tabBarBorder, backgroundColor: colors.card }]}
+              style={[styles.tagToggle, {  backgroundColor: colors.card }]}
               onPress={() => setShowTagPicker(!showTagPicker)}
               disabled={uploading}
             >
@@ -506,7 +510,7 @@ export default function LogWorkoutScreen() {
             </Pressable>
 
             {showTagPicker && (
-              <View style={[styles.tagList, { borderColor: colors.tabBarBorder, backgroundColor: colors.card }]}>
+              <View style={[styles.tagList, {  backgroundColor: colors.card }]}>
                 {friends.length === 0 ? (
                   <ThemedText style={[styles.tagEmptyHint, { color: colors.textMuted }]}>
                     Add friends first to tag them
@@ -523,7 +527,7 @@ export default function LogWorkoutScreen() {
                       return (
                         <Pressable
                           key={friend.id}
-                          style={[styles.tagRow, { borderBottomColor: colors.tabBarBorder }]}
+                          style={[styles.tagRow, { borderBottomColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)' }]}
                           onPress={() => {
                             setTaggedFriends((prev) => {
                               const next = new Set(prev)
@@ -559,9 +563,12 @@ export default function LogWorkoutScreen() {
             )}
 
             <Pressable
-              style={[styles.primaryButton, { backgroundColor: colors.tint }]}
               onPress={handlePost}
               disabled={uploading}
+              style={[
+                styles.primaryButton,
+                { backgroundColor: colors.tint, shadowOpacity: isDark ? 0.3 : 0.15 },
+              ]}
             >
               {uploading ? (
                 <ActivityIndicator color="#fff" />
@@ -646,7 +653,7 @@ const styles = StyleSheet.create({
   doneTypeRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 16 },
   doneTypeEmoji: { fontSize: 18 },
   caption: { flex: 1, marginBottom: 24, textAlign: 'center' },
-  backButton: { paddingVertical: 14, paddingHorizontal: 24, borderRadius: 12, borderWidth: 1 },
+  backButton: { paddingVertical: 14, paddingHorizontal: 24, borderRadius: 12},
   backButtonText: { fontSize: 16, fontWeight: '600' },
   formSection: {},
   formTitle: { marginBottom: 8 },
@@ -657,10 +664,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     marginBottom: 20,
     borderRadius: 8,
-    borderWidth: 1,
   },
   retakeButtonText: { fontSize: 14 },
-  label: { fontSize: 12, fontWeight: '700', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 8 },
+  label: { fontSize: 12, fontWeight: '700', letterSpacing: 0.5, marginBottom: 8 },
   workoutTypeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 8 },
   workoutTypeChip: {
     flexDirection: 'row',
@@ -676,7 +682,6 @@ const styles = StyleSheet.create({
   workoutTypeLabel: { fontSize: 13, fontWeight: '600', flex: 1 },
   restHint: { fontSize: 12, marginBottom: 16, lineHeight: 18 },
   input: {
-    borderWidth: 1,
     borderRadius: 14,
     paddingHorizontal: 16,
     paddingVertical: 14,
@@ -688,7 +693,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    borderWidth: 1,
     borderRadius: 12,
     paddingHorizontal: 14,
     paddingVertical: 12,
@@ -696,7 +700,6 @@ const styles = StyleSheet.create({
   },
   tagToggleText: { flex: 1, fontSize: 15 },
   tagList: {
-    borderWidth: 1,
     borderRadius: 12,
     overflow: 'hidden',
     marginBottom: 16,
@@ -750,5 +753,5 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     minHeight: 52,
   },
-  primaryButtonText: { color: '#fff', fontSize: 15, fontWeight: '800', letterSpacing: 0.5, textTransform: 'uppercase' },
+  primaryButtonText: { color: '#fff', fontSize: 15, fontWeight: '800', letterSpacing: 0.5 },
 })

@@ -60,6 +60,7 @@
     "eas-cli": "^13.4.2",
     "eslint": "^9.25.0",
     "eslint-config-expo": "~10.0.0",
+    "supabase": "^2.89.0",
     "typescript": "~5.9.2"
   },
   "private": true

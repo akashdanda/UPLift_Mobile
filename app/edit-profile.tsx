@@ -15,6 +15,7 @@ import {
   View,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
+import { Ionicons } from '@expo/vector-icons'
 
 import { ThemedText } from '@/components/themed-text'
 import { useAuthContext } from '@/hooks/use-auth-context'
@@ -67,6 +68,7 @@ export default function EditProfileScreen() {
   const { session, profile, updateProfile } = useAuthContext()
   const colorScheme = useColorScheme()
   const colors = Colors[colorScheme ?? 'light']
+  const isDark = (colorScheme ?? 'light') === 'dark'
 
   const [displayName, setDisplayName] = useState('')
   const [fullName, setFullName] = useState('')
@@ -77,14 +79,14 @@ export default function EditProfileScreen() {
   const [uploadingPhoto, setUploadingPhoto] = useState(false)
   const [canChangeDisplayName, setCanChangeDisplayName] = useState(true)
   const [nextChangeDate, setNextChangeDate] = useState<string | null>(null)
-  // Show new photo immediately after upload (before profile refetch)
   const [localAvatarUrl, setLocalAvatarUrl] = useState<string | null>(null)
-  // When remote image fails to load, show initials instead of blank
   const [avatarLoadError, setAvatarLoadError] = useState(false)
 
   const avatarUrl = localAvatarUrl ?? getAvatarUrl(profile, session)
   const showAvatarImage = avatarUrl && !avatarLoadError
   const initials = getInitials(displayName || getInitialDisplayName(session, profile), session?.user?.email)
+
+  const inputBorderColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)'
 
   useEffect(() => {
     setDisplayName(getInitialDisplayName(session, profile))
@@ -95,7 +97,6 @@ export default function EditProfileScreen() {
     setLocalAvatarUrl(null)
     setAvatarLoadError(false)
     
-    // Check if display_name can be changed
     const checkDisplayNameLimit = async () => {
       if (!session) return
       try {
@@ -121,7 +122,6 @@ export default function EditProfileScreen() {
     void checkDisplayNameLimit()
   }, [session, profile])
 
-  // Reset load error when URL changes so we try again
   useEffect(() => {
     setAvatarLoadError(false)
   }, [avatarUrl])
@@ -159,7 +159,7 @@ export default function EditProfileScreen() {
     const rawPhone = phoneInput.trim()
     const normalized = rawPhone ? normalizePhoneE164(rawPhone) : null
     if (discoverableByPhone && !normalized) {
-      Alert.alert('Phone number', 'Add a valid phone number or turn off “Findable by phone”.')
+      Alert.alert('Phone number', 'Add a valid phone number or turn off "Findable by phone".')
       return
     }
     setSaving(true)
@@ -191,11 +191,19 @@ export default function EditProfileScreen() {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
+          {/* Avatar */}
           <View style={styles.avatarSection}>
             <Pressable
               onPress={handleChangePhoto}
               disabled={uploadingPhoto}
-              style={[styles.avatarWrap, { backgroundColor: colors.tint + '25' }]}
+              style={[
+                styles.avatarWrap,
+                {
+                  backgroundColor: colors.tint + '25',
+                  borderWidth: 3,
+                  borderColor: colors.tint + '40',
+                },
+              ]}
             >
               {uploadingPhoto ? (
                 <ActivityIndicator color={colors.tint} size="large" />
@@ -216,68 +224,102 @@ export default function EditProfileScreen() {
             </Pressable>
           </View>
 
+          {/* Display Name */}
           <View style={styles.section}>
             <View style={styles.labelRow}>
-              <ThemedText style={[styles.label, { color: colors.textMuted }]}>Display name</ThemedText>
+              <ThemedText style={[styles.label, { color: colors.textMuted }]}>DISPLAY NAME</ThemedText>
               {!canChangeDisplayName && nextChangeDate && (
                 <ThemedText style={[styles.limitHint, { color: colors.warm }]}>
                   Can change on {nextChangeDate}
                 </ThemedText>
               )}
             </View>
-            <TextInput
+            <View
               style={[
-                styles.input,
+                styles.inputRow,
                 {
                   backgroundColor: colors.card,
-                  color: colors.text,
-                  borderColor: colors.tabBarBorder,
+                  borderColor: inputBorderColor,
                   opacity: canChangeDisplayName ? 1 : 0.6,
                 },
               ]}
-              placeholder="How you appear in the app"
-              placeholderTextColor={colors.textMuted}
-              value={displayName}
-              onChangeText={setDisplayName}
-              editable={!saving && canChangeDisplayName}
-            />
+            >
+              <Ionicons
+                name="person-outline"
+                size={18}
+                color={colors.textMuted}
+                style={styles.inputIcon}
+              />
+              <TextInput
+                style={[styles.inputInner, { color: colors.text }]}
+                placeholder="How you appear in the app"
+                placeholderTextColor={colors.textMuted}
+                value={displayName}
+                onChangeText={setDisplayName}
+                editable={!saving && canChangeDisplayName}
+              />
+            </View>
             {!canChangeDisplayName && (
               <ThemedText style={[styles.hint, { color: colors.textMuted }]}>
                 Display name can only be changed once per month
               </ThemedText>
             )}
           </View>
+
+          {/* Full Name */}
           <View style={styles.section}>
-            <ThemedText style={[styles.label, { color: colors.textMuted }]}>Full name</ThemedText>
-            <TextInput
+            <ThemedText style={[styles.label, { color: colors.textMuted }]}>FULL NAME</ThemedText>
+            <View
               style={[
-                styles.input,
-                { backgroundColor: colors.card, color: colors.text, borderColor: colors.tabBarBorder },
+                styles.inputRow,
+                { backgroundColor: colors.card, borderColor: inputBorderColor },
               ]}
-              placeholder="Optional"
-              placeholderTextColor={colors.textMuted}
-              value={fullName}
-              onChangeText={setFullName}
-              editable={!saving}
-            />
+            >
+              <Ionicons
+                name="text-outline"
+                size={18}
+                color={colors.textMuted}
+                style={styles.inputIcon}
+              />
+              <TextInput
+                style={[styles.inputInner, { color: colors.text }]}
+                placeholder="Optional"
+                placeholderTextColor={colors.textMuted}
+                value={fullName}
+                onChangeText={setFullName}
+                editable={!saving}
+              />
+            </View>
           </View>
+
+          {/* Phone */}
           <View style={styles.section}>
-            <ThemedText style={[styles.label, { color: colors.textMuted }]}>Phone (optional)</ThemedText>
+            <ThemedText style={[styles.label, { color: colors.textMuted }]}>PHONE (OPTIONAL)</ThemedText>
             <ThemedText style={[styles.hint, { color: colors.textMuted, marginBottom: 8 }]}>
               Used only to let friends find you when they sync contacts. Save as digits; we store E.164 (e.g. +1…).
             </ThemedText>
-            <TextInput
+            <View
               style={[
-                styles.input,
-                { backgroundColor: colors.card, color: colors.text, borderColor: colors.tabBarBorder },
+                styles.inputRow,
+                { backgroundColor: colors.card, borderColor: inputBorderColor },
               ]}
-              placeholder="+1 or digits only"
-              placeholderTextColor={colors.textMuted}
-              value={phoneInput}
-              onChangeText={setPhoneInput}
-              editable={!saving}
-              keyboardType="phone-pad"
-            />
+            >
+              <Ionicons
+                name="call-outline"
+                size={18}
+                color={colors.textMuted}
+                style={styles.inputIcon}
+              />
+              <TextInput
+                style={[styles.inputInner, { color: colors.text }]}
+                placeholder="+1 or digits only"
+                placeholderTextColor={colors.textMuted}
+                value={phoneInput}
+                onChangeText={setPhoneInput}
+                editable={!saving}
+                keyboardType="phone-pad"
+              />
+            </View>
             <View style={styles.switchRow}>
               <View style={{ flex: 1, paddingRight: 12 }}>
                 <ThemedText style={[styles.label, { color: colors.textMuted, marginBottom: 4 }]}>
@@ -297,33 +339,45 @@ export default function EditProfileScreen() {
             </View>
           </View>
 
+          {/* Bio */}
           <View style={styles.section}>
-            <ThemedText style={[styles.label, { color: colors.textMuted }]}>Bio</ThemedText>
-            <TextInput
+            <ThemedText style={[styles.label, { color: colors.textMuted }]}>BIO</ThemedText>
+            <View
               style={[
-                styles.input,
-                styles.textArea,
-                { backgroundColor: colors.card, color: colors.text, borderColor: colors.tabBarBorder },
+                styles.inputRow,
+                styles.textAreaRow,
+                { backgroundColor: colors.card, borderColor: inputBorderColor },
               ]}
-              placeholder="Tell us about yourself..."
-              placeholderTextColor={colors.textMuted}
-              value={bio}
-              onChangeText={setBio}
-              editable={!saving}
-              multiline
-              numberOfLines={4}
-              textAlignVertical="top"
-            />
+            >
+              <Ionicons
+                name="create-outline"
+                size={18}
+                color={colors.textMuted}
+                style={[styles.inputIcon, { marginTop: 2 }]}
+              />
+              <TextInput
+                style={[styles.inputInner, styles.textArea, { color: colors.text }]}
+                placeholder="Tell us about yourself..."
+                placeholderTextColor={colors.textMuted}
+                value={bio}
+                onChangeText={setBio}
+                editable={!saving}
+                multiline
+                numberOfLines={4}
+                textAlignVertical="top"
+              />
+            </View>
           </View>
 
+          {/* Save Button */}
           <Pressable
+            onPress={handleSave}
+            disabled={saving}
             style={({ pressed }) => [
               styles.button,
               { backgroundColor: colors.tint },
               pressed && styles.buttonPressed,
             ]}
-            onPress={handleSave}
-            disabled={saving}
           >
             {saving ? (
               <ActivityIndicator color="#fff" />
@@ -362,7 +416,12 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginBottom: 8,
   },
-  label: { fontSize: 14 },
+  label: {
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 1,
+    marginBottom: 8,
+  },
   limitHint: { fontSize: 12, fontWeight: '600' },
   hint: { fontSize: 12, marginTop: 6 },
   switchRow: {
@@ -371,25 +430,35 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginTop: 14,
   },
-  input: {
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
+  inputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 14,
+    paddingHorizontal: 14,
+  },
+  inputIcon: {
+    marginRight: 10,
+  },
+  inputInner: {
+    flex: 1,
     fontSize: 16,
+    paddingVertical: 14,
+  },
+  textAreaRow: {
+    alignItems: 'flex-start',
   },
   textArea: {
     minHeight: 100,
     paddingTop: 14,
   },
   button: {
-    borderRadius: 14,
+    borderRadius: 16,
     paddingVertical: 16,
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: 52,
     marginTop: 16,
-  },
+    },
   buttonPressed: { opacity: 0.9 },
   buttonText: { color: '#fff', fontSize: 17, fontWeight: '600' },
 })

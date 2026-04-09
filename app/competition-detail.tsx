@@ -41,6 +41,7 @@ export default function CompetitionDetailScreen() {
   const { session } = useAuthContext()
   const colorScheme = useColorScheme()
   const colors = Colors[colorScheme ?? 'light']
+  const isDark = colorScheme === 'dark'
 
   const [competition, setCompetition] = useState<CompetitionWithGroups | null>(null)
   const [contributions, setContributions] = useState<CompetitionContributionWithProfile[]>([])
@@ -173,7 +174,7 @@ export default function CompetitionDetailScreen() {
 
         {/* Status banner */}
         {competition.status === 'pending' && (
-          <View style={[styles.statusBanner, { backgroundColor: colors.warm + '20' }]}>
+          <View style={[styles.statusBanner, { backgroundColor: colors.warm + '20', shadowOpacity: isDark ? 0.12 : 0.06, }]}>
             <Ionicons name="time-outline" size={20} color={colors.warm} />
             <ThemedText style={[styles.statusText, { color: colors.warm }]}>
               Waiting for acceptance...
@@ -191,7 +192,7 @@ export default function CompetitionDetailScreen() {
         )}
 
         {/* Score comparison */}
-        <View style={[styles.scoreCard, { backgroundColor: colors.card, borderColor: colors.tabBarBorder }]}>
+        <View style={[styles.scoreCard, { backgroundColor: colors.card, shadowOpacity: isDark ? 0.15 : 0.08, }]}>
           {/* Group 1 */}
           <View style={styles.scoreGroupRow}>
             {myGroup.avatar_url ? (
@@ -219,7 +220,7 @@ export default function CompetitionDetailScreen() {
           </View>
 
           {/* VS divider */}
-          <View style={[styles.vsDivider, { borderTopColor: colors.tabBarBorder }]}>
+          <View style={[styles.vsDivider, { borderTopColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)' }]}>
             <View style={[styles.vsBadge, { backgroundColor: colors.cardElevated }]}>
               <ThemedText style={[styles.vsText, { color: colors.textMuted }]}>VS</ThemedText>
             </View>
@@ -256,9 +257,12 @@ export default function CompetitionDetailScreen() {
         {canAccept && (
           <View style={styles.actionsRow}>
             <Pressable
-              style={[styles.actionButton, { backgroundColor: colors.tint }]}
               onPress={handleAccept}
               disabled={acting}
+              style={[
+                styles.actionButton,
+                { backgroundColor: colors.tint, shadowOpacity: isDark ? 0.3 : 0.15 },
+              ]}
             >
               {acting ? (
                 <ActivityIndicator color="#fff" size="small" />
@@ -267,7 +271,7 @@ export default function CompetitionDetailScreen() {
               )}
             </Pressable>
             <Pressable
-              style={[styles.actionButton, styles.actionButtonSecondary, { borderColor: colors.tabBarBorder }]}
+              style={[styles.actionButton, styles.actionButtonSecondary, {  }]}
               onPress={handleCancel}
               disabled={acting}
             >
@@ -278,7 +282,7 @@ export default function CompetitionDetailScreen() {
 
         {canCancel && !canAccept && (
           <Pressable
-            style={[styles.actionButton, styles.actionButtonSecondary, { borderColor: colors.tabBarBorder }]}
+            style={[styles.actionButton, styles.actionButtonSecondary, {  }]}
             onPress={handleCancel}
             disabled={acting}
           >
@@ -367,7 +371,7 @@ export default function CompetitionDetailScreen() {
               </View>
 
               {/* Divider */}
-              <View style={[styles.colDivider, { backgroundColor: colors.tabBarBorder }]} />
+              <View style={[styles.colDivider, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)' }]} />
 
               {/* Group 2 column */}
               <View style={styles.leaderboardCol}>
@@ -464,10 +468,9 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     marginBottom: 16,
   },
-  statusText: { fontSize: 12, fontWeight: '700', letterSpacing: 0.3, textTransform: 'uppercase' },
+  statusText: { fontSize: 12, fontWeight: '700', letterSpacing: 0.3 },
   scoreCard: {
     borderRadius: 16,
-    borderWidth: 1,
     padding: 20,
     marginBottom: 16,
     overflow: 'visible',
@@ -511,12 +514,11 @@ const styles = StyleSheet.create({
   },
   actionButtonSecondary: {
     backgroundColor: 'transparent',
-    borderWidth: 1,
   },
-  actionButtonText: { color: '#fff', fontWeight: '800', fontSize: 14, letterSpacing: 0.5, textTransform: 'uppercase' },
+  actionButtonText: { color: '#fff', fontWeight: '800', fontSize: 14, letterSpacing: 0.5 },
   actionButtonTextSecondary: { fontSize: 14, fontWeight: '700', letterSpacing: 0.3 },
   leaderboardSection: { marginTop: 8 },
-  sectionTitle: { fontSize: 16, fontWeight: '800', marginBottom: 16, letterSpacing: 0.5, textTransform: 'uppercase' },
+  sectionTitle: { fontSize: 16, fontWeight: '800', marginBottom: 16, letterSpacing: 0.5 },
   leaderboardColumns: {
     flexDirection: 'row',
     alignItems: 'flex-start',

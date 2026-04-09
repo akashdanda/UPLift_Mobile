@@ -42,6 +42,7 @@ export default function CreateDuelScreen() {
   const { friendId } = useLocalSearchParams<{ friendId?: string }>()
   const colorScheme = useColorScheme()
   const colors = Colors[colorScheme ?? 'light']
+  const isDark = colorScheme === 'dark'
 
   const [friends, setFriends] = useState<FriendWithProfile[]>([])
   const [loading, setLoading] = useState(true)
@@ -138,7 +139,7 @@ export default function CreateDuelScreen() {
                     key={friend.id}
                     style={[
                       styles.friendChip,
-                      { backgroundColor: colors.card, borderColor: isSelected ? colors.tint : colors.tabBarBorder },
+                      { backgroundColor: colors.card, borderColor: isSelected ? colors.tint : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)') },
                       isSelected && { borderWidth: 2 },
                     ]}
                     onPress={() => setSelectedFriend(friend.id)}
@@ -179,7 +180,7 @@ export default function CreateDuelScreen() {
                 styles.typeCard,
                 {
                   backgroundColor: colors.card,
-                  borderColor: duelType === 'workout_count' ? colors.tint : colors.tabBarBorder,
+                  borderColor: duelType === 'workout_count' ? colors.tint : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)'),
                   borderWidth: duelType === 'workout_count' ? 2 : 1,
                 },
               ]}
@@ -198,7 +199,7 @@ export default function CreateDuelScreen() {
                 styles.typeCard,
                 {
                   backgroundColor: colors.card,
-                  borderColor: duelType === 'streak' ? colors.tint : colors.tabBarBorder,
+                  borderColor: duelType === 'streak' ? colors.tint : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)'),
                   borderWidth: duelType === 'streak' ? 2 : 1,
                 },
               ]}
@@ -228,7 +229,7 @@ export default function CreateDuelScreen() {
                   styles.durationPill,
                   {
                     backgroundColor: duration === opt.value ? colors.tint : colors.card,
-                    borderColor: duration === opt.value ? colors.tint : colors.tabBarBorder,
+                    borderColor: duration === opt.value ? colors.tint : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)'),
                   },
                 ]}
                 onPress={() => setDuration(opt.value)}
@@ -248,7 +249,7 @@ export default function CreateDuelScreen() {
 
         {/* Preview */}
         {selectedProfile && (
-          <View style={[styles.previewCard, { backgroundColor: colors.card, borderColor: colors.tint + '30' }]}>
+          <View style={[styles.previewCard, { backgroundColor: colors.card, borderColor: colors.tint + '30', shadowOpacity: isDark ? 0.15 : 0.08, }]}>
             <Text style={styles.previewEmoji}>🏆</Text>
             <ThemedText type="defaultSemiBold" style={[styles.previewTitle, { color: colors.text }]}>
               You vs {selectedProfile.display_name || 'Friend'}
@@ -270,15 +271,17 @@ export default function CreateDuelScreen() {
 
         {/* Submit */}
         <Pressable
+          onPress={handleCreate}
+          disabled={!selectedFriend || submitting || !!existingDuelStatus || checkingDuel}
           style={[
             styles.submitButton,
             {
               backgroundColor:
                 selectedFriend && !existingDuelStatus ? colors.tint : colors.tint + '50',
+              shadowOpacity: selectedFriend && !existingDuelStatus ? (isDark ? 0.3 : 0.15) : 0,
+              elevation: selectedFriend && !existingDuelStatus ? 4 : 0,
             },
           ]}
-          onPress={handleCreate}
-          disabled={!selectedFriend || submitting || !!existingDuelStatus || checkingDuel}
         >
           {submitting ? (
             <ActivityIndicator color="#fff" />
@@ -301,7 +304,7 @@ const styles = StyleSheet.create({
   title: { marginBottom: 6 },
   subtitle: { fontSize: 14, lineHeight: 21, letterSpacing: 0.1 },
   section: { marginBottom: 28 },
-  sectionTitle: { marginBottom: 12, fontSize: 13, fontWeight: '800', letterSpacing: 0.5, textTransform: 'uppercase' },
+  sectionTitle: { marginBottom: 12, fontSize: 13, fontWeight: '800', letterSpacing: 0.5 },
   friendScroll: { gap: 10, paddingVertical: 4 },
   friendChip: {
     flexDirection: 'row',
@@ -309,7 +312,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
     borderRadius: 14,
-    borderWidth: 1,
     gap: 8,
   },
   chipAvatar: {
@@ -338,13 +340,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     paddingVertical: 10,
     borderRadius: 20,
-    borderWidth: 1,
   },
   durationText: { fontSize: 13, fontWeight: '700', letterSpacing: 0.2 },
   previewCard: {
     padding: 20,
     borderRadius: 16,
-    borderWidth: 1,
     alignItems: 'center',
     marginBottom: 24,
   },
@@ -358,7 +358,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     minHeight: 52,
   },
-  submitText: { color: '#fff', fontSize: 15, fontWeight: '800', letterSpacing: 0.5, textTransform: 'uppercase' },
+  submitText: { color: '#fff', fontSize: 15, fontWeight: '800', letterSpacing: 0.5 },
   emptyText: { fontSize: 13, padding: 12, letterSpacing: 0.1 },
   existingDuelWarning: {
     marginTop: 12,

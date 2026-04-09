@@ -19,7 +19,7 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window')
 // ──────────────────────────────────────────────
 // Confetti particle
 // ──────────────────────────────────────────────
-const CONFETTI_COLORS = ['#EAB308', '#EF4444', '#3B82F6', '#22C55E', '#A855F7', '#F97316', '#EC4899']
+const CONFETTI_COLORS = ['#EAB308', '#EF4444', '#3B82F6', '#22C55E', '#9E91FF', '#F97316', '#EC4899']
 const PARTICLE_COUNT = 50
 
 function ConfettiParticle({ index, active }: { index: number; active: boolean }) {

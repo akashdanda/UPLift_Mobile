@@ -1,6 +1,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons'
 import { useFocusEffect } from '@react-navigation/native'
 import { Image } from 'expo-image'
+
 import { router } from 'expo-router'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ActivityIndicator, Dimensions, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native'
@@ -75,6 +76,7 @@ export default function ProfileScreen() {
   const { session, profile } = useAuthContext()
   const colorScheme = useColorScheme()
   const colors = Colors[colorScheme ?? 'light']
+  const isDark = colorScheme === 'dark'
 
   const avatarUrl = getAvatarUrl(profile, session)
   const [avatarLoadError, setAvatarLoadError] = useState(false)
@@ -315,12 +317,12 @@ export default function ProfileScreen() {
               style={[
                 styles.avatarRing,
                 {
-                  borderColor: userLevel?.level.color ?? colors.tint,
+                  borderColor: colors.tint + '30',
                   shadowColor: userLevel?.level.color ?? colors.tint,
-                  shadowOpacity: 0.4,
-                  shadowRadius: 10,
+                  shadowOpacity: 0.08,
+                  shadowRadius: 6,
                   shadowOffset: { width: 0, height: 0 },
-                  elevation: 6,
+                  elevation: 2,
                 },
               ]}
             >
@@ -380,7 +382,7 @@ export default function ProfileScreen() {
                   </ThemedText>
                 )}
               </View>
-              <View style={[styles.xpBarOuter, { backgroundColor: colors.cardElevated }]}>
+              <View style={[styles.xpBarOuter, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)' }]}>
                 <View
                   style={[
                     styles.xpBarInner,
@@ -438,7 +440,7 @@ export default function ProfileScreen() {
           <ThemedText type="subtitle" style={[styles.sectionTitle, { color: colors.text }]}>
             Activity
           </ThemedText>
-          <View style={[styles.calendarCard, { backgroundColor: colors.card, borderColor: colors.tabBarBorder }]}>
+          <View style={[styles.calendarCard, { backgroundColor: colors.card }]}>
             <View style={styles.calendarHeaderRow}>
               <Pressable
                 onPress={() => handleChangeMonth(-1)}
@@ -588,7 +590,7 @@ export default function ProfileScreen() {
                         backgroundColor: colors.card,
                         borderColor: ach.unlocked
                           ? catMeta?.color ?? colors.tint
-                          : colors.tabBarBorder,
+                          : isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
                         borderWidth: ach.unlocked ? 1.5 : 1,
                         shadowColor: ach.unlocked ? catMeta?.color ?? colors.tint : 'transparent',
                         shadowOpacity: ach.unlocked ? 0.3 : 0,
@@ -815,7 +817,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   levelEmoji: { fontSize: 14 },
-  levelTitle: { fontSize: 11, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 1.5 },
+  levelTitle: { fontSize: 11, fontWeight: '800', letterSpacing: 1.5 },
   displayName: { fontSize: 22, fontWeight: '800', textAlign: 'center', marginBottom: 4, letterSpacing: -0.3 },
   specialBadge: {
     flexDirection: 'row',
@@ -839,7 +841,7 @@ const styles = StyleSheet.create({
   },
   xpSection: { width: '100%', marginTop: 14, paddingHorizontal: 20 },
   xpLabelRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 },
-  xpLabel: { fontSize: 10, fontWeight: '700', letterSpacing: 0.8, textTransform: 'uppercase' },
+  xpLabel: { fontSize: 10, fontWeight: '700', letterSpacing: 0.8 },
   xpBarOuter: { width: '100%', height: 5, borderRadius: 3, overflow: 'hidden' },
   xpBarInner: { height: '100%', borderRadius: 3 },
 
@@ -854,7 +856,7 @@ const styles = StyleSheet.create({
     overflow: 'visible',
   },
   statValue: { fontSize: 22, lineHeight: 28, fontWeight: '800', letterSpacing: -0.5 },
-  statLabel: { marginTop: 2, fontSize: 9, fontWeight: '600', letterSpacing: 0, textTransform: 'uppercase', opacity: 0.6, textAlign: 'center' },
+  statLabel: { marginTop: 2, fontSize: 9, fontWeight: '600', letterSpacing: 0, opacity: 0.6, textAlign: 'center' },
 
   highlightsSection: { marginBottom: 24 },
   highlightsScroll: { paddingHorizontal: 4, gap: 14, paddingRight: 20 },
@@ -873,7 +875,6 @@ const styles = StyleSheet.create({
   sectionTitle: { marginBottom: 14 },
   badgesContainer: {
     borderRadius: 14,
-    borderWidth: 1,
     padding: 20,
     minHeight: 100,
     alignItems: 'center',
@@ -889,7 +890,6 @@ const styles = StyleSheet.create({
     padding: 12,
     borderRadius: 14,
     alignItems: 'center',
-    borderWidth: 1,
   },
   achievementIconWrap: {
     width: 48,
@@ -946,7 +946,7 @@ const styles = StyleSheet.create({
   },
   achievementDetailIcon: { fontSize: 38, lineHeight: 48 },
   achievementDetailIconImg: { width: 72, height: 72, borderRadius: 36 },
-  achievementDetailCategory: { fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 4 },
+  achievementDetailCategory: { fontSize: 12, fontWeight: '700', letterSpacing: 1.5, marginBottom: 4 },
   achievementDetailName: { fontSize: 22, fontWeight: '800', textAlign: 'center', marginBottom: 8 },
   achievementDetailDesc: { fontSize: 14, textAlign: 'center', lineHeight: 20, marginBottom: 20 },
   achievementDetailProgressSection: { width: '100%', marginBottom: 20 },
@@ -955,7 +955,7 @@ const styles = StyleSheet.create({
   achievementDetailProgressText: { fontSize: 13, textAlign: 'center', fontWeight: '600' },
   achievementDetailUnlocked: { paddingVertical: 8, paddingHorizontal: 20, borderRadius: 12, marginBottom: 20 },
   achievementDetailUnlockedText: { fontSize: 14, fontWeight: '700' },
-  achievementDetailClose: { paddingVertical: 12, paddingHorizontal: 24, borderRadius: 12, borderWidth: 1 },
+  achievementDetailClose: { paddingVertical: 12, paddingHorizontal: 24, borderRadius: 12 },
   achievementDetailCloseText: { fontSize: 15, fontWeight: '600' },
 
   menuCard: { borderRadius: 14, overflow: 'hidden', marginBottom: 28 },
@@ -965,7 +965,6 @@ const styles = StyleSheet.create({
 
   calendarCard: {
     borderRadius: 14,
-    borderWidth: 1,
     padding: 16,
   },
   calendarHeaderRow: {
@@ -979,7 +978,6 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     textAlign: 'center',
     letterSpacing: 0.3,
-    textTransform: 'uppercase',
   },
   calendarWeekRow: {
     flexDirection: 'row',
@@ -992,7 +990,6 @@ const styles = StyleSheet.create({
     width: 24,
     textAlign: 'center',
     letterSpacing: 0.3,
-    textTransform: 'uppercase',
   },
   calendarGrid: {
     flexDirection: 'row',

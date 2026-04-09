@@ -4,6 +4,11 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send'
 
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+}
+
 type Payload = {
   target_user_id: string
 }
@@ -20,59 +25,57 @@ function getBearerToken(req: Request): string | null {
   return m?.[1] ?? null
 }
 
+function json(body: Record<string, unknown>, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    status,
+  })
+}
+
 Deno.serve(async (req: Request) => {
-  if (req.method !== 'POST') return new Response('Method not allowed', { status: 405 })
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders })
+  }
+
+  if (req.method !== 'POST') {
+    return json({ sent: 0, reason: 'Method not allowed' })
+  }
 
   try {
     const token = getBearerToken(req)
     if (!token) {
-      return new Response(JSON.stringify({ sent: 0, reason: 'Unauthorized' }), {
-        headers: { 'Content-Type': 'application/json' },
-        status: 200,
-      })
+      return json({ sent: 0, reason: 'Unauthorized' })
     }
 
     const { target_user_id } = (await req.json()) as Payload
     if (!target_user_id) {
-      return new Response(JSON.stringify({ sent: 0, reason: 'Invalid payload' }), {
-        headers: { 'Content-Type': 'application/json' },
-        status: 200,
-      })
+      return json({ sent: 0, reason: 'Invalid payload' })
     }
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
     const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
 
     if (!supabaseUrl || !serviceKey) {
-      return new Response(JSON.stringify({ sent: 0, reason: 'Server misconfigured' }), {
-        headers: { 'Content-Type': 'application/json' },
-        status: 500,
-      })
+      return json({ sent: 0, reason: 'Server misconfigured' })
     }
 
-    // Service client: use service role to validate caller identity from JWT.
-    // (Edge Functions reliably have SUPABASE_SERVICE_ROLE_KEY; SUPABASE_ANON_KEY may not be present.)
-    const supabase = createClient(supabaseUrl, serviceKey, {
+    // User client: only used to verify caller identity from JWT
+    const userClient = createClient(supabaseUrl, serviceKey, {
       global: { headers: { Authorization: `Bearer ${token}` } },
     })
+    // Service client: bypasses RLS for all DB operations
+    const supabase = createClient(supabaseUrl, serviceKey)
 
-    const { data: userRes } = await supabase.auth.getUser()
+    const { data: userRes } = await userClient.auth.getUser()
     const fromUserId = userRes?.user?.id
     if (!fromUserId) {
-      return new Response(JSON.stringify({ sent: 0, reason: 'Unauthorized' }), {
-        headers: { 'Content-Type': 'application/json' },
-        status: 200,
-      })
+      return json({ sent: 0, reason: 'Unauthorized' })
     }
 
     if (fromUserId === target_user_id) {
-      return new Response(JSON.stringify({ sent: 0, reason: 'Cannot nudge self' }), {
-        headers: { 'Content-Type': 'application/json' },
-        status: 200,
-      })
+      return json({ sent: 0, reason: 'Cannot nudge self' })
     }
 
-    // Only allow nudging friends.
     const { data: friendship } = await supabase
       .from('friendships')
       .select('id')
@@ -83,13 +86,9 @@ Deno.serve(async (req: Request) => {
       .maybeSingle()
 
     if (!friendship) {
-      return new Response(JSON.stringify({ sent: 0, reason: 'Not friends' }), {
-        headers: { 'Content-Type': 'application/json' },
-        status: 200,
-      })
+      return json({ sent: 0, reason: 'Not friends' })
     }
 
-    // Only nudge if they haven't logged a workout today (UTC), matching daily reminders behavior.
     const today = getTodayUTC()
     const { data: workoutToday } = await supabase
       .from('workouts')
@@ -100,14 +99,9 @@ Deno.serve(async (req: Request) => {
       .maybeSingle()
 
     if (workoutToday) {
-      return new Response(JSON.stringify({ sent: 0, reason: 'Already worked out today' }), {
-        headers: { 'Content-Type': 'application/json' },
-        status: 200,
-      })
+      return json({ sent: 0, reason: 'Already worked out today' })
     }
 
-    // Rate limit: 1 per day (UTC) per sender→receiver.
-    // If unique index hits, return 200 and do not send again.
     const { error: insertError } = await supabase.from('workout_nudges').insert({
       from_user_id: fromUserId,
       to_user_id: target_user_id,
@@ -115,10 +109,7 @@ Deno.serve(async (req: Request) => {
     if (insertError) {
       const msg = String(insertError.message ?? '')
       const isDuplicate = msg.includes('workout_nudges_unique_daily') || msg.toLowerCase().includes('duplicate')
-      return new Response(JSON.stringify({ sent: 0, reason: isDuplicate ? 'Already nudged today' : msg }), {
-        headers: { 'Content-Type': 'application/json' },
-        status: 200,
-      })
+      return json({ sent: 0, reason: isDuplicate ? 'Already nudged today' : msg })
     }
 
     const [{ data: fromProfile }, { data: toProfile }] = await Promise.all([
@@ -131,10 +122,7 @@ Deno.serve(async (req: Request) => {
     const enabled = (toProfile as { notifications_enabled?: boolean } | null)?.notifications_enabled ?? true
 
     if (!tokenTo || !enabled) {
-      return new Response(JSON.stringify({ sent: 0, reason: 'No token or notifications disabled' }), {
-        headers: { 'Content-Type': 'application/json' },
-        status: 200,
-      })
+      return json({ sent: 0, reason: 'No token or notifications disabled' })
     }
 
     const message = {
@@ -152,21 +140,11 @@ Deno.serve(async (req: Request) => {
 
     if (!res.ok) {
       const text = await res.text()
-      return new Response(JSON.stringify({ sent: 0, reason: text }), {
-        headers: { 'Content-Type': 'application/json' },
-        status: 200,
-      })
+      return json({ sent: 0, reason: text })
     }
 
-    return new Response(JSON.stringify({ sent: 1 }), {
-      headers: { 'Content-Type': 'application/json' },
-      status: 200,
-    })
+    return json({ sent: 1 })
   } catch (e) {
-    return new Response(JSON.stringify({ sent: 0, reason: String(e) }), {
-      headers: { 'Content-Type': 'application/json' },
-      status: 200,
-    })
+    return json({ sent: 0, reason: String(e) })
   }
 })
-
