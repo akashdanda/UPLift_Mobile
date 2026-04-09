@@ -4,6 +4,7 @@ import { type Href, useLocalSearchParams, useRouter } from 'expo-router'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   ActivityIndicator,
+  Alert,
   Dimensions,
   Modal,
   Pressable,
@@ -27,11 +28,12 @@ import { getSpecialBadge } from '@/constants/special-badges'
 import { Colors } from '@/constants/theme'
 import { useAuthContext } from '@/hooks/use-auth-context'
 import { useColorScheme } from '@/hooks/use-color-scheme'
+import { AchievementBadge } from '@/components/achievement-badge'
 import { getUserAchievements } from '@/lib/achievements'
 import { getHighlightsForProfile } from '@/lib/highlights'
 import { getUserLevel } from '@/lib/levels'
 import { supabase } from '@/lib/supabase'
-import { getFriendshipStatus } from '@/lib/friends'
+import { acceptFriendRequestByUserId, getFriendshipStatus, sendFriendRequest } from '@/lib/friends'
 import { ACHIEVEMENT_CATEGORIES, type UserAchievementWithDetails } from '@/types/achievement'
 import type { HighlightForProfile } from '@/types/highlight'
 import type { UserLevel } from '@/types/level'
@@ -64,7 +66,10 @@ export default function FriendProfileScreen() {
   const [selectedAchievement, setSelectedAchievement] = useState<UserAchievementWithDetails | null>(null)
   const [friendLevel, setFriendLevel] = useState<UserLevel | null>(null)
   const [reportModalVisible, setReportModalVisible] = useState(false)
-  const [isFriend, setIsFriend] = useState(false)
+  const [friendStatus, setFriendStatus] = useState<'none' | 'pending_sent' | 'pending_received' | 'friends'>('none')
+  const [friendActionLoading, setFriendActionLoading] = useState(false)
+  const [nudgeLoading, setNudgeLoading] = useState(false)
+  const isFriend = friendStatus === 'friends'
 
   // Calendar calculations
   const today = useMemo(() => new Date(), [])
@@ -156,16 +161,11 @@ export default function FriendProfileScreen() {
     getUserLevel(id).then(setFriendLevel).catch(() => {})
   }, [id])
 
-  // Check friendship status so we only show the challenge button for friends
   useEffect(() => {
     if (!session || !id) return
     getFriendshipStatus(session.user.id, id as string)
-      .then((status) => {
-        setIsFriend(status === 'friends')
-      })
-      .catch(() => {
-        setIsFriend(false)
-      })
+      .then(setFriendStatus)
+      .catch(() => setFriendStatus('none'))
   }, [session, id])
 
   useEffect(() => {
@@ -244,6 +244,16 @@ export default function FriendProfileScreen() {
       >
         {/* Header: Avatar, Name, Bio */}
         <ThemedView style={styles.header}>
+          {/* Report flag — top right corner */}
+          {session && id !== session.user.id && (
+            <Pressable
+              style={styles.reportFlag}
+              onPress={() => setReportModalVisible(true)}
+              hitSlop={12}
+            >
+              <Ionicons name="flag-outline" size={20} color={colors.textMuted} />
+            </Pressable>
+          )}
           <Pressable onPress={handleOpenModal} disabled={!showAvatarImage}>
             <View
               style={[
@@ -298,21 +308,92 @@ export default function FriendProfileScreen() {
           {/* Action buttons */}
           {session && id !== session.user.id && (
             <View style={styles.actionButtonsRow}>
+              {friendStatus === 'none' && (
+                <Pressable
+                  style={[styles.challengeButton, { backgroundColor: colors.tint }]}
+                  disabled={friendActionLoading}
+                  onPress={async () => {
+                    setFriendActionLoading(true)
+                    const { error } = await sendFriendRequest(session.user.id, id as string)
+                    if (!error) setFriendStatus('pending_sent')
+                    setFriendActionLoading(false)
+                  }}
+                >
+                  <ThemedText style={styles.challengeButtonText}>
+                    {friendActionLoading ? 'Sending...' : 'Add Friend'}
+                  </ThemedText>
+                </Pressable>
+              )}
+              {friendStatus === 'pending_sent' && (
+                <View style={[styles.reportButton, { borderColor: colors.textMuted }]}>
+                  <Ionicons name="time-outline" size={16} color={colors.textMuted} />
+                  <ThemedText style={[styles.reportButtonText, { color: colors.textMuted }]}>Request Sent</ThemedText>
+                </View>
+              )}
+              {friendStatus === 'pending_received' && (
+                <Pressable
+                  style={[styles.challengeButton, { backgroundColor: '#22C55E' }]}
+                  disabled={friendActionLoading}
+                  onPress={async () => {
+                    setFriendActionLoading(true)
+                    const { error } = await acceptFriendRequestByUserId(session.user.id, id as string)
+                    if (!error) setFriendStatus('friends')
+                    setFriendActionLoading(false)
+                  }}
+                >
+                  <ThemedText style={styles.challengeButtonText}>Accept Request</ThemedText>
+                </Pressable>
+              )}
               {isFriend && (
                 <Pressable
                   style={[styles.challengeButton, { backgroundColor: colors.tint }]}
                   onPress={() => router.push(`/create-duel?friendId=${id}` as Href)}
                 >
-                  <ThemedText style={styles.challengeButtonText}>Challenge</ThemedText>
+                  <ThemedText style={styles.challengeButtonText} numberOfLines={1}>
+                    Challenge
+                  </ThemedText>
                 </Pressable>
               )}
-              <Pressable
-                style={[styles.reportButton, { borderColor: colors.textMuted }]}
-                onPress={() => setReportModalVisible(true)}
-              >
-                <Ionicons name="flag-outline" size={16} color={colors.textMuted} />
-                <ThemedText style={[styles.reportButtonText, { color: colors.textMuted }]}>Report</ThemedText>
-              </Pressable>
+              {isFriend && (
+                <Pressable
+                  style={[styles.reportButton, { borderColor: colors.tabBarBorder }]}
+                  disabled={nudgeLoading}
+                  onPress={async () => {
+                    if (!session || !id) return
+                    setNudgeLoading(true)
+                    try {
+                      const { data, error } = await supabase.functions.invoke('send-workout-nudge', {
+                        body: { target_user_id: id },
+                      })
+                      if (error) {
+                        Alert.alert('Couldn’t send nudge', error.message || 'Please try again.')
+                        return
+                      }
+
+                      if (data?.sent === 1) {
+                        Alert.alert('Nudge sent', 'They’ll get a reminder to log a workout.')
+                      } else if (data?.reason === 'Already worked out today') {
+                        Alert.alert('No need to nudge', 'They already logged a workout today.')
+                      } else if (data?.reason === 'Already nudged today') {
+                        Alert.alert('Already nudged', 'You can nudge them again tomorrow.')
+                      } else if (data?.reason === 'Not friends') {
+                        Alert.alert('Nudge unavailable', 'You can only nudge friends.')
+                      } else {
+                        Alert.alert('Couldn’t send nudge', String(data?.reason ?? 'Please try again.'))
+                      }
+                    } catch (e) {
+                      Alert.alert('Couldn’t send nudge', e instanceof Error ? e.message : 'Please try again.')
+                    } finally {
+                      setNudgeLoading(false)
+                    }
+                  }}
+                >
+                  <Ionicons name="notifications-outline" size={16} color={colors.text} />
+                  <ThemedText style={[styles.reportButtonText, { color: colors.text }]} numberOfLines={1}>
+                    {nudgeLoading ? 'Nudging…' : 'Nudge'}
+                  </ThemedText>
+                </Pressable>
+              )}
             </View>
           )}
         </ThemedView>
@@ -512,19 +593,7 @@ export default function FriendProfileScreen() {
                       },
                     ]}
                   >
-                    <View
-                      style={[
-                        styles.achievementIconWrap,
-                        {
-                          backgroundColor: ach.unlocked
-                            ? (catMeta?.color ?? colors.tint) + '20'
-                            : colors.cardElevated,
-                          opacity: ach.unlocked ? 1 : 0.5,
-                        },
-                      ]}
-                    >
-                      <ThemedText style={styles.achievementIcon}>{ach.icon}</ThemedText>
-                    </View>
+                    <AchievementBadge achievementKey={ach.key} size={48} locked={!ach.unlocked} />
                     <ThemedText
                       style={[
                         styles.achievementName,
@@ -614,9 +683,7 @@ export default function FriendProfileScreen() {
                         { backgroundColor: (catMeta?.color ?? colors.tint) + '15' },
                       ]}
                     >
-                      <ThemedText style={styles.achievementDetailIcon}>
-                        {selectedAchievement.icon}
-                      </ThemedText>
+                      <AchievementBadge achievementKey={selectedAchievement.key} size={72} locked={!selectedAchievement.unlocked} />
                     </View>
                     <ThemedText style={[styles.achievementDetailCategory, { color: catMeta?.color ?? colors.tint }]}>
                       {catMeta?.label ?? selectedAchievement.category}
@@ -702,6 +769,13 @@ const styles = StyleSheet.create({
   header: {
     alignItems: 'center',
     marginBottom: 28,
+    position: 'relative',
+  },
+  reportFlag: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    padding: 4,
   },
   avatarRing: {
     width: 96,
@@ -775,13 +849,13 @@ const styles = StyleSheet.create({
   },
   actionButtonsRow: {
     flexDirection: 'row',
-    gap: 12,
+    gap: 10,
     marginTop: 14,
   },
   challengeButton: {
     flex: 1,
     paddingVertical: 12,
-    paddingHorizontal: 28,
+    paddingHorizontal: 20,
     borderRadius: 14,
     alignItems: 'center',
   },
@@ -789,23 +863,23 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 14,
     fontWeight: '800',
-    letterSpacing: 0.5,
-    textTransform: 'uppercase',
+    letterSpacing: 0.3,
   },
   reportButton: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
     paddingVertical: 12,
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
     borderRadius: 14,
     borderWidth: 1,
   },
   reportButtonText: {
     fontSize: 14,
     fontWeight: '700',
-    letterSpacing: 0.3,
+    letterSpacing: 0.2,
   },
   section: {
     marginBottom: 24,

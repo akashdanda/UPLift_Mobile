@@ -94,6 +94,19 @@ export async function acceptFriendRequest(friendshipId: string, addresseeId: str
   return { error: error ?? null }
 }
 
+/** Accept a pending friend request by the requester's user ID */
+export async function acceptFriendRequestByUserId(currentUserId: string, requesterId: string): Promise<{ error: Error | null }> {
+  const { data, error: fetchError } = await supabase
+    .from('friendships')
+    .select('id')
+    .eq('requester_id', requesterId)
+    .eq('addressee_id', currentUserId)
+    .eq('status', 'pending')
+    .maybeSingle()
+  if (fetchError || !data) return { error: new Error('No pending request found') }
+  return acceptFriendRequest(data.id, currentUserId)
+}
+
 /** Decline or unfriend: delete the friendship row */
 export async function removeFriendship(friendshipId: string, userId: string): Promise<{ error: Error | null }> {
   const { data } = await supabase

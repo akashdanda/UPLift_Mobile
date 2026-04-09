@@ -6,6 +6,7 @@ import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, View } fro
 import { SafeAreaView } from 'react-native-safe-area-context'
 
 import { ThemedText } from '@/components/themed-text'
+import { AchievementBadge } from '@/components/achievement-badge'
 import { Colors } from '@/constants/theme'
 import { useAuthContext } from '@/hooks/use-auth-context'
 import { useColorScheme } from '@/hooks/use-color-scheme'
@@ -69,6 +70,7 @@ function NotificationItem({
       case 'achievement':
         return {
           icon: notification.achievement_icon || '🏆',
+          achievementKey: notification.achievement_key,
           title: `Achievement unlocked: ${notification.achievement_name || 'Achievement'}`,
           subtitle: 'Great work!',
         }
@@ -144,7 +146,11 @@ function NotificationItem({
       </View>
       <View style={styles.notificationContent}>
         <View style={styles.notificationHeader}>
-          <ThemedText style={styles.notificationIcon}>{content.icon}</ThemedText>
+          {content.achievementKey ? (
+            <AchievementBadge achievementKey={content.achievementKey} size={22} />
+          ) : (
+            <ThemedText style={styles.notificationIcon}>{content.icon}</ThemedText>
+          )}
           <ThemedText style={[styles.notificationTitle, { color: colors.text }]} numberOfLines={2}>
             {content.title}
           </ThemedText>
@@ -507,6 +513,11 @@ const styles = StyleSheet.create({
   },
   notificationIcon: {
     fontSize: 18,
+  },
+  notificationIconImg: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
   },
   notificationTitle: {
     flex: 1,

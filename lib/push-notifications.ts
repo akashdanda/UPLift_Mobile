@@ -156,3 +156,26 @@ export async function pushGroupInvite(targetUserId: string, inviterUserId: strin
 export async function pushFirstFriendWorkout(targetUserId: string, friendName: string): Promise<void> {
   await sendEventPush(targetUserId, `${friendName} just logged a workout. Your turn!`)
 }
+
+/** Push when someone sends you a duel challenge. */
+export async function pushDuelChallenge(targetUserId: string, challengerUserId: string): Promise<void> {
+  const name = await getDisplayName(challengerUserId)
+  await sendEventPush(targetUserId, `${name} challenged you to a duel! 🥊`)
+}
+
+/** Push when someone accepts your duel challenge. */
+export async function pushDuelAccepted(targetUserId: string, accepterUserId: string): Promise<void> {
+  const name = await getDisplayName(accepterUserId)
+  await sendEventPush(targetUserId, `${name} accepted your challenge. Game on! 💪`)
+}
+
+/** Push when someone declines your duel challenge. */
+export async function pushDuelDeclined(targetUserId: string, declinerUserId: string): Promise<void> {
+  const name = await getDisplayName(declinerUserId)
+  await sendEventPush(targetUserId, `${name} declined your challenge.`)
+}
+
+/** Push when user unlocks an achievement. */
+export async function pushAchievementUnlocked(targetUserId: string, achievementName: string): Promise<void> {
+  await sendEventPush(targetUserId, `You unlocked "${achievementName}"! 🏆`)
+}

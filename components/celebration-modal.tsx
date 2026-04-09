@@ -11,6 +11,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated'
 
+import { AchievementBadge } from '@/components/achievement-badge'
 import { ThemedText } from '@/components/themed-text'
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window')
@@ -118,6 +119,7 @@ function ConfettiParticle({ index, active }: { index: number; active: boolean })
 type Props = {
   visible: boolean
   icon: string
+  achievementKey?: string
   title: string
   description: string
   onDismiss: () => void
@@ -128,6 +130,7 @@ type Props = {
 export function CelebrationModal({
   visible,
   icon,
+  achievementKey,
   title,
   description,
   onDismiss,
@@ -191,7 +194,11 @@ export function CelebrationModal({
         <Animated.View style={[styles.card, cardStyle]}>
           <Pressable onPress={(e) => e.stopPropagation()} style={styles.cardInner}>
             <Animated.View style={[styles.iconWrap, iconStyle]}>
-              <ThemedText style={styles.icon}>{icon}</ThemedText>
+              {achievementKey ? (
+                <AchievementBadge achievementKey={achievementKey} size={72} />
+              ) : (
+                <ThemedText style={styles.icon}>{icon}</ThemedText>
+              )}
             </Animated.View>
 
             <ThemedText style={styles.celebTitle}>Achievement Unlocked!</ThemedText>
@@ -251,6 +258,11 @@ const styles = StyleSheet.create({
   },
   icon: {
     fontSize: 44,
+  },
+  iconImage: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
   },
   celebTitle: {
     fontSize: 14,

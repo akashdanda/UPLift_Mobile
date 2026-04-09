@@ -35,7 +35,7 @@ import { addWorkoutTags } from '@/lib/tags'
 import { uploadWorkoutImage } from '@/lib/workout-upload'
 import { ACHIEVEMENT_CATEGORIES, type UserAchievementWithDetails } from '@/types/achievement'
 import type { UserLevel } from '@/types/level'
-import { WORKOUT_TYPES, type Workout, type WorkoutType } from '@/types/workout'
+import { WORKOUT_TYPES, type Workout, type WorkoutType, type WorkoutVisibility } from '@/types/workout'
 
 function BeRealPreview({ primaryUri, secondaryUri }: { primaryUri: string; secondaryUri: string }) {
   const [frontImage, setFrontImage] = useState<'primary' | 'secondary'>('primary')
@@ -117,6 +117,9 @@ export default function LogWorkoutScreen() {
   // Workout type (cardio, strength, sport, rest)
   const [workoutType, setWorkoutType] = useState<WorkoutType>('strength')
   const [restCountThisWeek, setRestCountThisWeek] = useState(0)
+
+  // Post visibility
+  const [visibility, setVisibility] = useState<WorkoutVisibility>('friends')
 
   // Friend tagging
   const [friends, setFriends] = useState<FriendWithProfile[]>([])
@@ -222,6 +225,7 @@ export default function LogWorkoutScreen() {
         secondary_image_url: secondaryUrl,
         workout_type: workoutType,
         caption: caption.trim() || null,
+        visibility,
       })
       .select()
       .single()
@@ -259,6 +263,7 @@ export default function LogWorkoutScreen() {
       secondary_image_url: secondaryUrl ?? null,
       workout_type: workoutType,
       caption: caption.trim() || null,
+      visibility,
       created_at: new Date().toISOString(),
     })
     if (workoutType === 'rest') setRestCountThisWeek((c) => c + 1)
@@ -447,6 +452,43 @@ export default function LogWorkoutScreen() {
               onChangeText={setCaption}
               editable={!uploading}
             />
+
+            {/* Visibility toggle */}
+            <ThemedText style={[styles.label, { color: colors.textMuted }]}>Who can see this</ThemedText>
+            <View style={styles.visibilityRow}>
+              <Pressable
+                style={[
+                  styles.visibilityChip,
+                  { borderColor: colors.tabBarBorder, backgroundColor: colors.card },
+                  visibility === 'friends' && { borderColor: colors.tint, backgroundColor: colors.tint + '18' },
+                ]}
+                onPress={() => setVisibility('friends')}
+                disabled={uploading}
+              >
+                <Ionicons name="people" size={18} color={visibility === 'friends' ? colors.tint : colors.textMuted} />
+                <ThemedText
+                  style={[styles.visibilityLabel, { color: visibility === 'friends' ? colors.tint : colors.text }]}
+                >
+                  Friends
+                </ThemedText>
+              </Pressable>
+              <Pressable
+                style={[
+                  styles.visibilityChip,
+                  { borderColor: colors.tabBarBorder, backgroundColor: colors.card },
+                  visibility === 'public' && { borderColor: colors.tint, backgroundColor: colors.tint + '18' },
+                ]}
+                onPress={() => setVisibility('public')}
+                disabled={uploading}
+              >
+                <Ionicons name="globe" size={18} color={visibility === 'public' ? colors.tint : colors.textMuted} />
+                <ThemedText
+                  style={[styles.visibilityLabel, { color: visibility === 'public' ? colors.tint : colors.text }]}
+                >
+                  Public
+                </ThemedText>
+              </Pressable>
+            </View>
 
             {/* Tag friends */}
             <Pressable
@@ -685,6 +727,22 @@ const styles = StyleSheet.create({
   tagInitials: { fontSize: 13, fontWeight: '600' },
   tagName: { flex: 1, fontSize: 15 },
   tagEmptyHint: { padding: 14, fontSize: 14, textAlign: 'center' },
+  visibilityRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 20,
+  },
+  visibilityChip: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 2,
+  },
+  visibilityLabel: { fontSize: 14, fontWeight: '700' },
   primaryButton: {
     borderRadius: 14,
     paddingVertical: 16,

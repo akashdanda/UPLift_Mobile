@@ -1,3 +1,4 @@
+import { pushDuelAccepted, pushDuelChallenge, pushDuelDeclined } from '@/lib/push-notifications'
 import { supabase } from '@/lib/supabase';
 import type { Duel, DuelStatus, DuelType, DuelWithProfiles } from '@/types/duel';
 
@@ -68,6 +69,7 @@ export async function createDuel(
     .single()
 
   if (error) return { duel: null, error }
+  try { await pushDuelChallenge(opponentId, challengerId) } catch { /* best-effort */ }
   return { duel: data as Duel, error: null }
 }
 
@@ -101,6 +103,9 @@ export async function acceptDuel(
     })
     .eq('id', duelId)
 
+  if (!error) {
+    try { await pushDuelAccepted((duel as Duel).challenger_id, userId) } catch { /* best-effort */ }
+  }
   return { error: error ?? null }
 }
 
@@ -126,6 +131,9 @@ export async function declineDuel(
     .update({ status: 'declined', updated_at: new Date().toISOString() })
     .eq('id', duelId)
 
+  if (!error) {
+    try { await pushDuelDeclined((duel as Duel).challenger_id, userId) } catch { /* best-effort */ }
+  }
   return { error: error ?? null }
 }
 

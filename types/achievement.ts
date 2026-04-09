@@ -2,7 +2,7 @@
 // Achievement types
 // ──────────────────────────────────────────────
 
-export type AchievementCategory = 'consistency' | 'volume' | 'competitive' | 'social' | 'goals'
+export type AchievementCategory = 'consistency' | 'social' | 'competitive' | 'time' | 'type' | 'milestones'
 
 export type Achievement = {
   id: string
@@ -39,6 +39,7 @@ export type AchievementFeedPost = {
   avatar_url?: string | null
   achievement_name?: string | null
   achievement_icon?: string | null
+  achievement_key?: string | null
 }
 
 export type StreakFreeze = {
@@ -62,9 +63,10 @@ export const ACHIEVEMENT_CATEGORIES: Record<
   AchievementCategory,
   { label: string; icon: string; color: string }
 > = {
-  consistency: { label: 'Consistency', icon: '🔥', color: '#EF4444' },
-  volume: { label: 'Volume', icon: '💪', color: '#3B82F6' },
-  competitive: { label: 'Competitive', icon: '🏆', color: '#EAB308' },
-  social: { label: 'Social', icon: '👥', color: '#8B5CF6' },
-  goals: { label: 'Goals', icon: '🎯', color: '#10B981' },
+  consistency: { label: 'Consistency', icon: '⚡', color: '#EF4444' },
+  social: { label: 'Social', icon: '🤝', color: '#8B5CF6' },
+  competitive: { label: 'Competitive', icon: '👑', color: '#EAB308' },
+  time: { label: 'Time-Based', icon: '🌅', color: '#F97316' },
+  type: { label: 'Workout Type', icon: '🦾', color: '#3B82F6' },
+  milestones: { label: 'Milestones', icon: '🚀', color: '#10B981' },
 }

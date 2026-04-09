@@ -34,6 +34,7 @@ export type Notification = {
   achievement_id?: string
   achievement_name?: string
   achievement_icon?: string
+  achievement_key?: string
   // Competition notifications
   competition_id?: string
   competition_group_name?: string
@@ -220,11 +221,11 @@ export async function getNotifications(userId: string, limit = 50): Promise<Noti
     const achievementIds = [...new Set(recentAchievements.map((ua) => ua.achievement_id))]
     const { data: achievements } = await supabase
       .from('achievements')
-      .select('id, name, icon')
+      .select('id, name, icon, key')
       .in('id', achievementIds)
 
     const achievementMap = new Map(
-      (achievements ?? []).map((a: { id: string; name: string; icon: string }) => [a.id, a])
+      (achievements ?? []).map((a: { id: string; name: string; icon: string; key: string }) => [a.id, a])
     )
 
     for (const ua of recentAchievements) {
@@ -236,6 +237,7 @@ export async function getNotifications(userId: string, limit = 50): Promise<Noti
         achievement_id: ua.achievement_id,
         achievement_name: achievement?.name ?? null,
         achievement_icon: achievement?.icon ?? null,
+        achievement_key: achievement?.key ?? null,
       })
     }
   }

@@ -27,6 +27,7 @@ import {
   getUserAchievements,
   markAchievementNotified,
 } from '@/lib/achievements'
+import { AchievementBadge } from '@/components/achievement-badge'
 import { getHighlightsForProfile } from '@/lib/highlights'
 import { getUserLevel } from '@/lib/levels'
 import { supabase } from '@/lib/supabase'
@@ -597,19 +598,7 @@ export default function ProfileScreen() {
                       },
                     ]}
                   >
-                    <View
-                      style={[
-                        styles.achievementIconWrap,
-                        {
-                          backgroundColor: ach.unlocked
-                            ? (catMeta?.color ?? colors.tint) + '20'
-                            : colors.cardElevated,
-                          opacity: ach.unlocked ? 1 : 0.5,
-                        },
-                      ]}
-                    >
-                      <ThemedText style={styles.achievementIcon}>{ach.icon}</ThemedText>
-                    </View>
+                    <AchievementBadge achievementKey={ach.key} size={48} locked={!ach.unlocked} />
                     <ThemedText
                       style={[
                         styles.achievementName,
@@ -712,15 +701,8 @@ export default function ProfileScreen() {
                 )
                 return (
                   <View style={[styles.achievementDetailInner, { backgroundColor: colors.card }]}>
-                    <View
-                      style={[
-                        styles.achievementDetailIconWrap,
-                        { backgroundColor: (catMeta?.color ?? colors.tint) + '15' },
-                      ]}
-                    >
-                      <ThemedText style={styles.achievementDetailIcon}>
-                        {selectedAchievement.icon}
-                      </ThemedText>
+                    <View style={{ marginBottom: 12 }}>
+                      <AchievementBadge achievementKey={selectedAchievement.key} size={72} locked={!selectedAchievement.unlocked} />
                     </View>
                     <ThemedText style={[styles.achievementDetailCategory, { color: catMeta?.color ?? colors.tint }]}>
                       {catMeta?.label ?? selectedAchievement.category}
@@ -780,6 +762,7 @@ export default function ProfileScreen() {
         <CelebrationModal
           visible={showCelebration}
           icon={currentCelebration.icon}
+          achievementKey={currentCelebration.key}
           title={currentCelebration.name}
           description={currentCelebration.description}
           onDismiss={handleDismissCelebration}
@@ -918,6 +901,7 @@ const styles = StyleSheet.create({
     overflow: 'visible',
   },
   achievementIcon: { fontSize: 26, lineHeight: 34 },
+  achievementIconImg: { width: 48, height: 48, borderRadius: 24 },
   achievementName: { fontSize: 11, fontWeight: '700', textAlign: 'center', marginBottom: 8, lineHeight: 15, letterSpacing: 0.2, paddingHorizontal: 4 },
   progressBarOuter: {
     width: '100%',
@@ -961,6 +945,7 @@ const styles = StyleSheet.create({
     overflow: 'visible',
   },
   achievementDetailIcon: { fontSize: 38, lineHeight: 48 },
+  achievementDetailIconImg: { width: 72, height: 72, borderRadius: 36 },
   achievementDetailCategory: { fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 4 },
   achievementDetailName: { fontSize: 22, fontWeight: '800', textAlign: 'center', marginBottom: 8 },
   achievementDetailDesc: { fontSize: 14, textAlign: 'center', lineHeight: 20, marginBottom: 20 },

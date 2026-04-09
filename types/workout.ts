@@ -7,6 +7,8 @@ export const WORKOUT_TYPES = [
 
 export type WorkoutType = (typeof WORKOUT_TYPES)[number]['value']
 
+export type WorkoutVisibility = 'friends' | 'public'
+
 export type Workout = {
   id: string
   user_id: string
@@ -17,5 +19,7 @@ export type Workout = {
   /** cardio | strength | sport | rest. Default strength. */
   workout_type?: WorkoutType | null
   caption: string | null
+  /** 'friends' = only friends see it, 'public' = visible on global feed. Default 'friends'. */
+  visibility: WorkoutVisibility
   created_at: string
 }

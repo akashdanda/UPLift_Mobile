@@ -1,3 +1,4 @@
+import { pushAchievementUnlocked } from '@/lib/push-notifications'
 import { supabase } from '@/lib/supabase'
 import type {
   Achievement,
@@ -127,63 +128,79 @@ export async function checkAndUpdateAchievements(
 
   if (!profile) return []
 
-  // Get social stats
-  const [reactionsRes, commentsRes] = await Promise.all([
-    supabase
-      .from('workout_reactions')
-      .select('id', { count: 'exact', head: true })
-      .in(
-        'workout_id',
-        (await supabase.from('workouts').select('id').eq('user_id', userId)).data?.map(
-          (w: any) => w.id
-        ) ?? []
-      ),
-    supabase
-      .from('workout_comments')
-      .select('id', { count: 'exact', head: true })
-      .neq('user_id', userId)
-      .in(
-        'workout_id',
-        (await supabase.from('workouts').select('id').eq('user_id', userId)).data?.map(
-          (w: any) => w.id
-        ) ?? []
-      ),
+  // Fetch workouts with metadata for type/time-based achievements
+  const { data: allWorkouts } = await supabase
+    .from('workouts')
+    .select('id, workout_type, created_at')
+    .eq('user_id', userId)
+
+  const workouts = (allWorkouts ?? []) as { id: string; workout_type: string | null; created_at: string }[]
+  const workoutIds = workouts.map((w) => w.id)
+
+  // Social stats
+  const [reactionsReceivedRes, commentsReceivedRes, reactionsGivenRes] = await Promise.all([
+    workoutIds.length > 0
+      ? supabase.from('workout_reactions').select('id', { count: 'exact', head: true }).in('workout_id', workoutIds)
+      : Promise.resolve({ count: 0 }),
+    workoutIds.length > 0
+      ? supabase.from('workout_comments').select('id', { count: 'exact', head: true }).neq('user_id', userId).in('workout_id', workoutIds)
+      : Promise.resolve({ count: 0 }),
+    supabase.from('workout_reactions').select('id', { count: 'exact', head: true }).eq('user_id', userId),
   ])
 
-  const stats = {
+  // Workout type counts
+  let strengthCount = 0
+  let cardioCount = 0
+  let restCount = 0
+  let earlyCount = 0
+  let lateCount = 0
+  let lunchCount = 0
+
+  for (const w of workouts) {
+    const wt = w.workout_type ?? 'strength'
+    if (wt === 'strength') strengthCount++
+    else if (wt === 'cardio') cardioCount++
+    else if (wt === 'rest') restCount++
+
+    const hour = new Date(w.created_at).getHours()
+    if (hour < 8) earlyCount++
+    if (hour >= 22) lateCount++
+    if (hour === 12) lunchCount++
+  }
+
+  // Account age in days
+  const createdAt = profile.created_at ? new Date(profile.created_at) : new Date()
+  const accountAgeDays = Math.floor((Date.now() - createdAt.getTime()) / (1000 * 60 * 60 * 24))
+
+  const stats: Record<string, number> = {
     streak: profile.streak ?? 0,
     workouts_count: profile.workouts_count ?? 0,
     friends_count: profile.friends_count ?? 0,
-    reactions_received: reactionsRes.count ?? 0,
-    comments_received: commentsRes.count ?? 0,
+    reactions_received: (reactionsReceivedRes as any).count ?? 0,
+    comments_received: (commentsReceivedRes as any).count ?? 0,
+    reactions_given: (reactionsGivenRes as any).count ?? 0,
+    strength_count: strengthCount,
+    cardio_count: cardioCount,
+    rest_count: restCount,
+    early_workouts: earlyCount,
+    late_workouts: lateCount,
+    lunch_workouts: lunchCount,
+    account_age_days: accountAgeDays,
   }
 
   const existingMap = new Map(existingRows.map(r => [r.achievement_id, r]))
   const newlyUnlocked: UserAchievementWithDetails[] = []
 
+  // Types that can't be computed client-side yet — skip gracefully
+  const skipTypes = new Set([
+    'weekly_goal_streak', 'group_10_members', 'founding_user',
+    'first_in_group', 'comeback_win', 'win_streak', 'weekend_streak',
+  ])
+
   for (const ach of achievements) {
-    // Compute progress
-    let progress = 0
-    switch (ach.requirement_type) {
-      case 'streak':
-        progress = stats.streak
-        break
-      case 'workouts_count':
-        progress = stats.workouts_count
-        break
-      case 'friends_count':
-        progress = stats.friends_count
-        break
-      case 'reactions_received':
-        progress = stats.reactions_received
-        break
-      case 'comments_received':
-        progress = stats.comments_received
-        break
-      // competitive + goals types are handled separately
-      default:
-        continue
-    }
+    if (skipTypes.has(ach.requirement_type)) continue
+
+    const progress = stats[ach.requirement_type] ?? 0
 
     const existing = existingMap.get(ach.id)
     const isUnlocked = progress >= ach.requirement_value
@@ -228,6 +245,7 @@ export async function checkAndUpdateAchievements(
         unlocked_at: new Date().toISOString(),
         notified: false,
       })
+      try { await pushAchievementUnlocked(userId, ach.name) } catch { /* best-effort */ }
     }
   }
 
@@ -305,7 +323,7 @@ export async function getAchievementFeedPosts(
       `
       *,
       profile:profiles!achievement_feed_posts_user_id_fkey(display_name, avatar_url),
-      achievement:achievements(name, icon)
+      achievement:achievements(name, icon, key)
     `
     )
     .in('user_id', userIds)
@@ -324,6 +342,7 @@ export async function getAchievementFeedPosts(
     avatar_url: row.profile?.avatar_url ?? null,
     achievement_name: row.achievement?.name ?? null,
     achievement_icon: row.achievement?.icon ?? null,
+    achievement_key: row.achievement?.key ?? null,
   }))
 }
 

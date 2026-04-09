@@ -34,13 +34,14 @@ import { ThemedText } from '@/components/themed-text';
 import { Colors } from '@/constants/theme';
 import { useAuthContext } from '@/hooks/use-auth-context';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { AchievementBadge } from '@/components/achievement-badge';
 import { getAchievementFeedPosts, hasStreakFreezeAvailable } from '@/lib/achievements';
 import { addComment, getCommentsForWorkouts } from '@/lib/comments';
 import {
   getDailyReminderInfo,
   type DailyReminderInfo
 } from '@/lib/daily-reminder';
-import { getFriendsWorkouts, type FeedItem } from '@/lib/feed';
+import { getFriendsWorkouts, getGlobalWorkouts, type FeedItem } from '@/lib/feed';
 import { getFlashbacks, type FlashbackItem } from '@/lib/flashbacks';
 import { getFriends } from '@/lib/friends';
 import { computeXP, getLevelFromXP } from '@/lib/levels';
@@ -176,7 +177,9 @@ export default function HomeScreen() {
   const [todayWorkoutReactions, setTodayWorkoutReactions] = useState<WorkoutReactionWithProfile[]>([]);
   const [todayWorkoutComments, setTodayWorkoutComments] = useState<WorkoutCommentWithProfile[]>([]);
   const todayWorkoutIdRef = useRef<string | null>(null);
+  const [feedTab, setFeedTab] = useState<'friends' | 'public'>('friends');
   const [feedItems, setFeedItems] = useState<FeedItem[]>([]);
+  const [globalFeedItems, setGlobalFeedItems] = useState<FeedItem[]>([]);
   const [achievementPosts, setAchievementPosts] = useState<AchievementFeedPost[]>([]);
   const [flashbacks, setFlashbacks] = useState<FlashbackItem[]>([]);
   const [socialNudges, setSocialNudges] = useState<SocialNudge[]>([]);
@@ -243,7 +246,12 @@ export default function HomeScreen() {
   }, [todayWorkout?.id]);
 
   const refreshFeed = useCallback(() => {
-    if (session) getFriendsWorkouts(session.user.id).then(setFeedItems);
+    if (!session) return;
+    getFriendsWorkouts(session.user.id).then((items) => {
+      setFeedItems(items);
+      if (items.length === 0) setFeedTab('public');
+    });
+    getGlobalWorkouts(session.user.id).then(setGlobalFeedItems);
   }, [session]);
 
   const handleOpenNotifications = () => {
@@ -688,7 +696,11 @@ export default function HomeScreen() {
           const workout = (data as Workout) ?? null;
           setTodayWorkout(workout);
         });
-      getFriendsWorkouts(session.user.id).then(setFeedItems);
+      getFriendsWorkouts(session.user.id).then((items) => {
+        setFeedItems(items);
+        if (items.length === 0) setFeedTab('public');
+      });
+      getGlobalWorkouts(session.user.id).then(setGlobalFeedItems);
       // Load flashbacks
       getFlashbacks(session.user.id).then(setFlashbacks);
       // Load social nudges
@@ -794,6 +806,40 @@ export default function HomeScreen() {
               )}
             </Pressable>
           </View>
+        </View>
+
+        {/* Feed tabs */}
+        <View style={[styles.feedTabRow, { paddingHorizontal: 20, marginBottom: 14 }]}>
+          <Pressable
+            onPress={() => setFeedTab('friends')}
+            style={[
+              styles.feedTabBtn,
+              { borderColor: colors.tabBarBorder },
+              feedTab === 'friends' && { backgroundColor: colors.tint, borderColor: colors.tint },
+            ]}
+          >
+            <Ionicons name="people" size={16} color={feedTab === 'friends' ? '#fff' : colors.textMuted} />
+            <ThemedText
+              style={[styles.feedTabLabel, { color: feedTab === 'friends' ? '#fff' : colors.textMuted }]}
+            >
+              Friends Only
+            </ThemedText>
+          </Pressable>
+          <Pressable
+            onPress={() => setFeedTab('public')}
+            style={[
+              styles.feedTabBtn,
+              { borderColor: colors.tabBarBorder },
+              feedTab === 'public' && { backgroundColor: colors.tint, borderColor: colors.tint },
+            ]}
+          >
+            <Ionicons name="globe" size={16} color={feedTab === 'public' ? '#fff' : colors.textMuted} />
+            <ThemedText
+              style={[styles.feedTabLabel, { color: feedTab === 'public' ? '#fff' : colors.textMuted }]}
+            >
+              Public
+            </ThemedText>
+          </Pressable>
         </View>
 
         {/* Today's workout */}
@@ -976,10 +1022,14 @@ export default function HomeScreen() {
                 }}
               >
                 <View style={styles.achievementFeedRow}>
-                  <View style={[styles.achievementFeedIconWrap, { backgroundColor: colors.tint + '15' }]}>
-                    <ThemedText style={styles.achievementFeedIcon}>
-                      {post.achievement_icon ?? '🏅'}
-          </ThemedText>
+                  <View style={[styles.achievementFeedIconWrap, { backgroundColor: 'transparent' }]}>
+                    {post.achievement_key ? (
+                      <AchievementBadge achievementKey={post.achievement_key} size={36} />
+                    ) : (
+                      <ThemedText style={styles.achievementFeedIcon}>
+                        {post.achievement_icon ?? '🏅'}
+                      </ThemedText>
+                    )}
                   </View>
                   <View style={styles.achievementFeedTextBlock}>
                     <ThemedText style={[styles.achievementFeedMessage, { color: colors.text }]}>
@@ -997,16 +1047,25 @@ export default function HomeScreen() {
 
         {/* Feed */}
         <View style={styles.feedSection}>
-          {feedItems.length === 0 ? (
-            <View style={[styles.emptyCard, { backgroundColor: colors.cardElevated, marginHorizontal: 20 }]}>
-              <Ionicons name="people-outline" size={32} color={colors.textMuted + '60'} style={{ marginBottom: 8 }} />
-              <ThemedText style={[styles.emptyText, { color: colors.textMuted }]}>
-                Add friends to see their workout posts here
-              </ThemedText>
-            </View>
+          {(feedTab === 'friends' ? feedItems : globalFeedItems).length === 0 ? (
+            !todayWorkout ? (
+              <View style={[styles.emptyCard, { backgroundColor: colors.cardElevated, marginHorizontal: 20 }]}>
+                <Ionicons
+                  name={feedTab === 'friends' ? 'people-outline' : 'globe-outline'}
+                  size={32}
+                  color={colors.textMuted + '60'}
+                  style={{ marginBottom: 8 }}
+                />
+                <ThemedText style={[styles.emptyText, { color: colors.textMuted }]}>
+                  {feedTab === 'friends'
+                    ? 'Add friends to see their workout posts here'
+                    : 'No public posts yet — be the first to post publicly!'}
+                </ThemedText>
+              </View>
+            ) : null
           ) : (
             <View style={styles.feedList}>
-              {feedItems.map((item) => {
+              {(feedTab === 'friends' ? feedItems : globalFeedItems).map((item) => {
                 const isHighlighted = highlightedWorkoutId === item.workout.id;
                 return (
                 <View
@@ -1717,6 +1776,26 @@ const styles = StyleSheet.create({
   },
   emptyText: { textAlign: 'center', fontSize: 14, lineHeight: 22, letterSpacing: 0.1 },
 
+  // Feed tabs
+  feedTabRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  feedTabBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1.5,
+  },
+  feedTabLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
   // Feed — fullscreen style
   feedSection: { marginBottom: 20 },
   feedList: { gap: 16, paddingHorizontal: 12 },
@@ -2236,6 +2315,7 @@ const styles = StyleSheet.create({
     overflow: 'visible',
   },
   achievementFeedIcon: { fontSize: 22, lineHeight: 30 },
+  achievementFeedIconImg: { width: 30, height: 30, borderRadius: 15 },
   achievementFeedTextBlock: { flex: 1, minWidth: 0 },
   achievementFeedMessage: { fontSize: 13, fontWeight: '700', lineHeight: 19, letterSpacing: 0.1 },
   achievementFeedTime: { fontSize: 10, marginTop: 3, fontWeight: '600', letterSpacing: 0.2, textTransform: 'uppercase' },

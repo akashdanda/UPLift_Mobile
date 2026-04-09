@@ -64,9 +64,18 @@ export async function getLeaderboard(
 
   const payload = data as RpcPayload | null
   const rawRows = payload?.rows
-  const rows = Array.isArray(rawRows)
+  const normalized = Array.isArray(rawRows)
     ? rawRows.map((row) => normalizeRow(row as Record<string, unknown>))
     : []
+
+  // Deduplicate — RPC can return the same user twice when they share multiple groups
+  const seen = new Set<string>()
+  const rows = normalized.filter((r) => {
+    if (seen.has(r.id)) return false
+    seen.add(r.id)
+    return true
+  })
+
   const myRow =
     payload?.my_row != null
       ? normalizeRow(payload.my_row as Record<string, unknown>)
