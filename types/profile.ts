@@ -18,6 +18,8 @@ export type Profile = {
   phone_e164?: string | null
   /** When true, others can find this user by matching a saved phone with synced contacts. */
   discoverable_by_phone?: boolean
+  /** When true, this user's presence is visible to others at the gym. */
+  location_visible?: boolean
   created_at: string
   updated_at: string
 }
@@ -31,4 +33,5 @@ export type ProfileUpdate = {
   expo_push_token?: string | null
   phone_e164?: string | null
   discoverable_by_phone?: boolean
+  location_visible?: boolean
 }

@@ -9,6 +9,7 @@ import { Colors } from '@/constants/theme'
 import { useAuthContext } from '@/hooks/use-auth-context'
 import { useColorScheme } from '@/hooks/use-color-scheme'
 import { clearPushTokenFromProfile } from '@/lib/push-notifications'
+import { supabase } from '@/lib/supabase'
 
 export default function SettingsScreen() {
   const { profile, updateProfile, session } = useAuthContext()
@@ -17,17 +18,32 @@ export default function SettingsScreen() {
   const isDark = colorScheme === 'dark'
 
   const [notifications, setNotifications] = useState(profile?.notifications_enabled ?? true)
+  const [locationVisible, setLocationVisible] = useState(profile?.location_visible ?? false)
   const [updating, setUpdating] = useState(false)
 
   useEffect(() => {
     if (profile?.notifications_enabled !== undefined) setNotifications(profile.notifications_enabled)
   }, [profile?.notifications_enabled])
 
+  useEffect(() => {
+    if (profile?.location_visible !== undefined) setLocationVisible(profile.location_visible)
+  }, [profile?.location_visible])
+
   const handleNotificationsChange = async (value: boolean) => {
     setNotifications(value)
     setUpdating(true)
     await updateProfile({ notifications_enabled: value })
     if (!value && profile?.id) await clearPushTokenFromProfile(profile.id)
+    setUpdating(false)
+  }
+
+  const handleLocationVisibleChange = async (value: boolean) => {
+    setLocationVisible(value)
+    setUpdating(true)
+    await updateProfile({ location_visible: value })
+    if (!value && profile?.id) {
+      await supabase.from('gym_presence').delete().eq('user_id', profile.id)
+    }
     setUpdating(false)
   }
 
@@ -64,6 +80,23 @@ export default function SettingsScreen() {
               disabled={updating}
               trackColor={{ false: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)', true: colors.tint + '50' }}
               thumbColor={notifications ? colors.tint : isDark ? '#555' : '#ccc'}
+            />
+          </View>
+
+          <View style={[styles.sep, { backgroundColor: sep }]} />
+
+          <View style={styles.row}>
+            <Ionicons name="location-outline" size={20} color={colors.text} />
+            <View style={styles.rowText}>
+              <ThemedText style={[styles.rowLabel, { color: colors.text }]}>Show me at the gym</ThemedText>
+              <ThemedText style={[styles.rowHint, { color: colors.textMuted }]}>Let friends see when you're working out</ThemedText>
+            </View>
+            <Switch
+              value={locationVisible}
+              onValueChange={handleLocationVisibleChange}
+              disabled={updating}
+              trackColor={{ false: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)', true: colors.tint + '50' }}
+              thumbColor={locationVisible ? colors.tint : isDark ? '#555' : '#ccc'}
             />
           </View>
         </View>

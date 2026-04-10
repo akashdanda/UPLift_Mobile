@@ -21,6 +21,7 @@ const MAPPING = {
   'trophy.fill': 'emoji-events',
   'person.fill': 'person',
   'person.3.fill': 'groups',
+  'map.fill': 'map',
 } as IconMapping;
 
 /**
