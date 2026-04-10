@@ -1,22 +1,24 @@
 import Ionicons from '@expo/vector-icons/Ionicons'
 import { Image } from 'expo-image'
+import { LinearGradient } from 'expo-linear-gradient'
 
 import { useFocusEffect } from '@react-navigation/native'
 import { useLocalSearchParams, useRouter } from 'expo-router'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
 import { ThemedText } from '@/components/themed-text'
 import { ThemedView } from '@/components/themed-view'
-import { Colors } from '@/constants/theme'
+import { Colors, Fonts } from '@/constants/theme'
 import { useAuthContext } from '@/hooks/use-auth-context'
 import { useColorScheme } from '@/hooks/use-color-scheme'
+import { getPreviousSnapshot, saveLeaderboardSnapshot } from '@/lib/achievements'
 import {
-  getBatchTopBadges,
-  getPreviousSnapshot,
-  saveLeaderboardSnapshot,
-} from '@/lib/achievements'
+  buildSeenBoardKey,
+  loadSeenRanks,
+  saveSeenRanks,
+} from '@/lib/leaderboard-seen-ranks'
 import {
   getCurrentMonthLabel,
   getLeaderboard,
@@ -41,6 +43,15 @@ function getInitials(displayName: string): string {
   return '?'
 }
 
+/** Lower rank # = moved up on the board */
+function getRankMovement(
+  prevRank: number | undefined,
+  currentRank: number
+): 'up' | 'down' | null {
+  if (prevRank === undefined || prevRank === currentRank) return null
+  return currentRank < prevRank ? 'up' : 'down'
+}
+
 export default function LeaderboardScreen() {
   const colorScheme = useColorScheme()
   const colors = Colors[colorScheme ?? 'light']
@@ -56,15 +67,9 @@ export default function LeaderboardScreen() {
   const [myRow, setMyRow] = useState<LeaderboardRow | undefined>(undefined)
   const [loading, setLoading] = useState(true)
   const scopeChanged = useRef(false)
-  const [badgesMap, setBadgesMap] = useState<Map<string, Array<{ icon: string; name: string }>>>(new Map())
   const [levelsMap, setLevelsMap] = useState<Map<string, UserLevel>>(new Map())
   const [myPrevRank, setMyPrevRank] = useState<number | null>(null)
-
-  // Current period key (e.g. "2026-02")
-  const currentPeriod = useMemo(() => {
-    const now = new Date()
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
-  }, [])
+  const [rankDeltas, setRankDeltas] = useState<Map<string, 'up' | 'down'>>(new Map())
 
   useEffect(() => {
     const paramScope = params.scope
@@ -73,34 +78,46 @@ export default function LeaderboardScreen() {
     }
   }, [params.scope])
 
+  useEffect(() => {
+    setRankDeltas(new Map())
+  }, [scope, selectedGroupId])
+
   const load = useCallback(() => {
     setLoading(true)
     const groupIdForScope = scope === 'groups' ? selectedGroupId ?? undefined : undefined
     getLeaderboard(50, session?.user?.id, scope, groupIdForScope)
       .then(async ({ rows: r, myRow: m }) => {
+        const now = new Date()
+        const period = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+        const boardKey = buildSeenBoardKey(period, scope, selectedGroupId)
+
+        const prevMap = await loadSeenRanks(boardKey)
+        const deltas = new Map<string, 'up' | 'down'>()
+        for (const row of r) {
+          const mv = getRankMovement(prevMap[row.id], row.rank)
+          if (mv) deltas.set(row.id, mv)
+        }
+        setRankDeltas(deltas)
+
         setRows(r)
         setMyRow(m)
+        await saveSeenRanks(boardKey, r)
 
-        // Fetch badges + levels for all users on the board
         const userIds = r.map(row => row.id)
         if (userIds.length > 0) {
-          const [badges, levels] = await Promise.all([
-            getBatchTopBadges(userIds, 2),
-            getBatchUserLevels(userIds),
-          ])
-          setBadgesMap(badges)
+          const levels = await getBatchUserLevels(userIds)
           setLevelsMap(levels)
         }
 
         // Save snapshot and get previous rank for movement display
         if (session?.user?.id && m) {
-          const prevSnap = await getPreviousSnapshot(session.user.id, scope, currentPeriod)
+          const prevSnap = await getPreviousSnapshot(session.user.id, scope, period)
           setMyPrevRank(prevSnap?.rank ?? null)
-          await saveLeaderboardSnapshot(session.user.id, scope, m.rank, m.points, currentPeriod)
+          await saveLeaderboardSnapshot(session.user.id, scope, m.rank, m.points, period)
         }
       })
       .finally(() => setLoading(false))
-  }, [session?.user?.id, scope, selectedGroupId, currentPeriod])
+  }, [session?.user?.id, scope, selectedGroupId])
 
   useEffect(() => {
     if (!session?.user?.id) return
@@ -139,13 +156,11 @@ export default function LeaderboardScreen() {
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
-        <ThemedView style={styles.header}>
-          <ThemedText type="title" style={[styles.title, { color: colors.text }]}>
-            Leaderboard
-          </ThemedText>
-          <View style={styles.headerRow}>
-            <ThemedText style={[styles.subtitle, { color: colors.textMuted }]}>
-              {getCurrentMonthLabel()} — resets monthly
+        {/* ─── Hero header ─── */}
+        <View style={styles.header}>
+          <View style={styles.headerTopRow}>
+            <ThemedText type="title" style={[styles.title, { color: colors.text }]}>
+              Leaderboard
             </ThemedText>
             <Pressable
               onPress={showPointsInfo}
@@ -159,15 +174,18 @@ export default function LeaderboardScreen() {
               <Ionicons name="information-circle-outline" size={20} color={colors.textMuted} />
             </Pressable>
           </View>
-          <View style={[styles.tabs, { backgroundColor: isDark ? colors.cardElevated : colors.card }]}>
+          <ThemedText type="default" style={[styles.subtitle, { color: colors.textMuted }]}>
+            {getCurrentMonthLabel()} · resets monthly
+          </ThemedText>
+
+          <View style={[styles.tabs, { backgroundColor: isDark ? colors.cardElevated : colors.card, borderColor: colors.tabBarBorder }]}>
             {(['friends', 'groups', 'global'] as const).map((s) => (
               <Pressable
                 key={s}
                 onPress={() => setScope(s)}
                 style={[
                   styles.tab,
-                  scope === s && { backgroundColor: colors.tint, borderColor: colors.tint },
-                  scope !== s && { borderColor: colors.tabBarBorder },
+                  scope === s && { backgroundColor: colors.tint },
                 ]}
               >
                 <ThemedText
@@ -179,6 +197,7 @@ export default function LeaderboardScreen() {
               </Pressable>
             ))}
           </View>
+
           {scope === 'groups' && groups.length > 0 && (
             <ScrollView
               horizontal
@@ -213,29 +232,44 @@ export default function LeaderboardScreen() {
               })}
             </ScrollView>
           )}
-        </ThemedView>
+        </View>
 
+        {/* ─── Your score card ─── */}
         {session && (
-          <View
-            style={[
-              styles.myCard,
-              {
-                borderColor: colors.tint + '30',
-                backgroundColor: colors.tint + '12',
-              },
-            ]}
-          >
-            <ThemedText type="defaultSemiBold" style={[styles.myCardTitle, { color: colors.text }]}>
-              Your score
-            </ThemedText>
-            <ThemedText type="title" style={[styles.myPoints, { color: '#FFFFFF' }]}>
-              {myPoints} Points
-            </ThemedText>
+          <View style={[styles.myCard, { borderColor: colors.tint + '30' }]}>
+            <LinearGradient
+              colors={
+                isDark
+                  ? [colors.tint + '28', 'rgba(20, 20, 20, 0.95)']
+                  : [colors.tint + '12', colors.card]
+              }
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={[StyleSheet.absoluteFillObject, { borderRadius: 18 }]}
+            />
             {myRow ? (
-              <View>
-                <View style={styles.rankRow}>
-                  <ThemedText style={[styles.myRank, { color: colors.textMuted }]}>
-                    Rank #{myRow.rank} this month
+              <View style={styles.myCardContent}>
+                <View style={styles.myCardRow}>
+                  <View style={{ flex: 1 }}>
+                    <ThemedText type="defaultSemiBold" style={[styles.myCardLabel, { color: colors.textMuted }]}>
+                      Your score
+                    </ThemedText>
+                    <ThemedText type="title" style={[styles.myPoints, { color: colors.text }]}>
+                      {myPoints} pts
+                    </ThemedText>
+                  </View>
+                  <View style={[styles.rankBadge, { backgroundColor: colors.tint + '18', borderColor: colors.tint + '40' }]}>
+                    <ThemedText type="defaultSemiBold" style={[styles.rankBadgeLabel, { color: colors.textMuted }]}>
+                      RANK
+                    </ThemedText>
+                    <ThemedText type="defaultSemiBold" style={[styles.rankBadgeNum, { color: colors.tint }]}>
+                      #{myRow.rank}
+                    </ThemedText>
+                  </View>
+                </View>
+                <View style={styles.myCardMeta}>
+                  <ThemedText type="default" style={[styles.myRankText, { color: colors.textMuted }]}>
+                    {getCurrentMonthLabel()}
                   </ThemedText>
                   {myPrevRank !== null && myPrevRank !== myRow.rank && (
                     <View style={styles.rankMovement}>
@@ -254,15 +288,20 @@ export default function LeaderboardScreen() {
                   )}
                 </View>
                 {myRow.rank > 1 && rows.length > 0 && rows[0].points > myPoints && (
-                  <ThemedText style={[styles.gapText, { color: '#FFFFFF' }]}>
-                    {rows[0].points - myPoints} Points behind #{1}
+                  <ThemedText type="default" style={[styles.gapText, { color: colors.textMuted }]}>
+                    {rows[0].points - myPoints} pts behind #1
                   </ThemedText>
                 )}
               </View>
             ) : (
-              <ThemedText style={[styles.myRank, { color: colors.textMuted }]}>
-                No activity this month yet — log a workout to get on the board
-              </ThemedText>
+              <View style={styles.myCardContent}>
+                <ThemedText type="defaultSemiBold" style={[styles.myCardLabel, { color: colors.textMuted }]}>
+                  Your score
+                </ThemedText>
+                <ThemedText type="default" style={[styles.myRankText, { color: colors.textMuted, marginTop: 6 }]}>
+                  No activity this month yet — log a workout to get on the board
+                </ThemedText>
+              </View>
             )}
           </View>
         )}
@@ -291,6 +330,7 @@ export default function LeaderboardScreen() {
                 const isMe = session?.user?.id === row.id
                 const name = getDisplayName(row)
                 const rowLevel = levelsMap.get(row.id)
+                const rankDelta = rankDeltas.get(row.id)
                 return (
                   <Pressable
                     key={row.id}
@@ -308,9 +348,17 @@ export default function LeaderboardScreen() {
                       pressed && { opacity: 0.7 },
                     ]}
                   >
-                    <ThemedText type="defaultSemiBold" style={[styles.rank, { color: colors.textMuted }]}>
-                      #{row.rank}
-                    </ThemedText>
+                    <View style={styles.rankCol}>
+                      <ThemedText type="defaultSemiBold" style={[styles.rank, { color: colors.textMuted }]}>
+                        #{row.rank}
+                      </ThemedText>
+                      {rankDelta === 'up' && (
+                        <Ionicons name="arrow-up" size={13} color="#22C55E" style={styles.rankArrow} />
+                      )}
+                      {rankDelta === 'down' && (
+                        <Ionicons name="arrow-down" size={13} color="#EF4444" style={styles.rankArrow} />
+                      )}
+                    </View>
                     <View
                       style={[
                         styles.avatarRing,
@@ -329,31 +377,16 @@ export default function LeaderboardScreen() {
                     </View>
                     <View style={styles.nameBlock}>
                       <View style={styles.nameRow}>
-                        {rowLevel && (
-                          <ThemedText style={styles.levelEmojiSmall}>{rowLevel.level.emoji}</ThemedText>
-                        )}
                         <ThemedText type="defaultSemiBold" style={[styles.name, { color: colors.text }]} numberOfLines={1}>
                           {name}
                           {isMe ? ' (you)' : ''}
                         </ThemedText>
-                        {badgesMap.has(row.id) && (
-                          <View style={styles.badgeRow}>
-                            {badgesMap.get(row.id)!.map((badge, bIdx) => (
-                              <View
-                                key={`badge-${bIdx}`}
-                                style={[styles.badgePill, { backgroundColor: colors.tint + '15' }]}
-                              >
-                                <ThemedText style={styles.badgeEmoji}>{badge.icon}</ThemedText>
-                              </View>
-                            ))}
-                          </View>
-                        )}
                       </View>
                       <ThemedText style={[styles.statsLine, { color: colors.textMuted }]}>
-                        {rowLevel ? `${rowLevel.level.title} · ` : ''}{row.workouts_count} workouts · {row.streak} streak
+                        {row.workouts_count} workouts · {row.streak} streak
                       </ThemedText>
                     </View>
-                    <ThemedText type="defaultSemiBold" style={[styles.points, { color: '#FFFFFF' }]}>
+                    <ThemedText type="defaultSemiBold" style={[styles.points, { color: colors.text }]}>
                       {row.points}
                     </ThemedText>
                   </Pressable>
@@ -372,13 +405,17 @@ const styles = StyleSheet.create({
   scrollView: { flex: 1 },
   content: { padding: 20, paddingBottom: 40 },
   header: { marginBottom: 24 },
-  title: { marginBottom: 4 },
-  headerRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  subtitle: { fontSize: 13, flex: 1, letterSpacing: 0.2, fontWeight: '600' },
+  headerTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  title: { marginBottom: 4, fontFamily: Fonts?.rounded },
+  subtitle: { fontSize: 13, letterSpacing: 0.2 },
   infoButton: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -388,6 +425,7 @@ const styles = StyleSheet.create({
     marginTop: 16,
     padding: 3,
     borderRadius: 14,
+    borderWidth: 1,
   },
   tab: {
     flex: 1,
@@ -396,7 +434,7 @@ const styles = StyleSheet.create({
     borderRadius: 11,
     alignItems: 'center',
   },
-  tabLabel: { fontSize: 12, fontWeight: '700', letterSpacing: 0.3 },
+  tabLabel: { fontSize: 12, fontWeight: '700', letterSpacing: 0.3, fontFamily: Fonts?.rounded },
   groupChipsContainer: {
     marginTop: 12,
     paddingHorizontal: 2,
@@ -406,6 +444,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 7,
     borderRadius: 999,
+    borderWidth: 1,
     marginRight: 8,
   },
   groupChipLabel: {
@@ -414,15 +453,61 @@ const styles = StyleSheet.create({
     letterSpacing: 0.2,
   },
   myCard: {
-    padding: 20,
-    borderRadius: 16,
+    borderRadius: 18,
+    borderWidth: 1,
     marginBottom: 24,
+    overflow: 'hidden',
   },
-  myCardTitle: { fontSize: 11, fontWeight: '700', letterSpacing: 1, marginBottom: 6 },
-  myPoints: { fontSize: 32, fontWeight: '800', letterSpacing: -1 },
-  myRank: { fontSize: 12, marginTop: 6, fontWeight: '600', letterSpacing: 0.2 },
+  myCardContent: {
+    padding: 20,
+  },
+  myCardRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  myCardLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+    marginBottom: 6,
+  },
+  myPoints: { fontSize: 32, fontWeight: '800', letterSpacing: -1, lineHeight: 38, fontFamily: Fonts?.rounded },
+  rankBadge: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+    minWidth: 78,
+  },
+  rankBadgeLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1.2,
+    marginBottom: 2,
+    lineHeight: 14,
+  },
+  rankBadgeNum: {
+    fontSize: 22,
+    fontWeight: '800',
+    letterSpacing: -0.5,
+    lineHeight: 26,
+    fontFamily: Fonts?.rounded,
+  },
+  myCardMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 12,
+  },
+  myRankText: { fontSize: 13, fontWeight: '600', letterSpacing: 0.15, lineHeight: 20 },
+  gapText: { fontSize: 12, marginTop: 6, letterSpacing: 0.1, lineHeight: 18 },
   section: { marginBottom: 28 },
-  sectionTitle: { marginBottom: 14 },
+  sectionTitle: { marginBottom: 14, fontFamily: Fonts?.rounded },
   loadingRow: { paddingVertical: 32, alignItems: 'center' },
   emptyCard: { padding: 28, borderRadius: 16 },
   emptyText: { textAlign: 'center', lineHeight: 22, letterSpacing: 0.1 },
@@ -433,7 +518,13 @@ const styles = StyleSheet.create({
     padding: 14,
     borderRadius: 14,
   },
-  rank: { width: 32, fontSize: 14, fontWeight: '800', letterSpacing: -0.3 },
+  rankCol: {
+    width: 38,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rank: { fontSize: 14, fontWeight: '800', letterSpacing: -0.3, fontFamily: Fonts?.rounded },
+  rankArrow: { marginTop: -1 },
   avatarRing: {
     width: 44,
     height: 44,
@@ -453,22 +544,13 @@ const styles = StyleSheet.create({
   },
   avatarImage: { width: 36, height: 36 },
   avatarInitials: { fontSize: 13, fontWeight: '700' },
-  levelEmojiSmall: { fontSize: 13 },
   nameBlock: { flex: 1, marginLeft: 10, minWidth: 0 },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  name: { fontSize: 14, fontWeight: '700', flexShrink: 1, letterSpacing: 0.1 },
-  badgeRow: { flexDirection: 'row', gap: 3 },
-  badgePill: {
-    paddingHorizontal: 4,
-    paddingVertical: 1,
-    borderRadius: 6,
-  },
-  badgeEmoji: { fontSize: 12 },
+  name: { fontSize: 14, fontWeight: '700', flexShrink: 1, letterSpacing: 0.1, fontFamily: Fonts?.rounded },
   statsLine: { fontSize: 10, marginTop: 3, fontWeight: '600', letterSpacing: 0.3 },
-  points: { fontSize: 16, fontWeight: '800', marginLeft: 8, letterSpacing: -0.3 },
+  points: { fontSize: 16, fontWeight: '800', marginLeft: 8, letterSpacing: -0.3, fontFamily: Fonts?.rounded },
   rankRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   rankMovement: { flexDirection: 'row', alignItems: 'center', gap: 2 },
   rankUp: { fontSize: 12, fontWeight: '800', color: '#22C55E' },
   rankDown: { fontSize: 12, fontWeight: '800', color: '#EF4444' },
-  gapText: { fontSize: 11, marginTop: 4, letterSpacing: 0.1 },
 })

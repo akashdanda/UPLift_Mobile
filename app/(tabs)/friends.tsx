@@ -17,7 +17,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context'
 
 import { ThemedText } from '@/components/themed-text'
-import { BrandViolet, Colors } from '@/constants/theme'
+import { BrandViolet, Colors, Fonts } from '@/constants/theme'
 import { useAuthContext } from '@/hooks/use-auth-context'
 import { useColorScheme } from '@/hooks/use-color-scheme'
 import { getBuddySuggestions, type BuddySuggestion } from '@/lib/buddy-matching'
@@ -300,21 +300,23 @@ export default function FriendsScreen() {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
       {/* Header */}
-      <View style={[styles.header, { borderBottomColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)' }]}>
-        <View style={{ width: 36 }} />
-        <ThemedText type="title" style={[styles.headerTitle, { color: colors.text }]}>
-          Friends
-        </ThemedText>
-        <Pressable onPress={() => setShowSearch((v) => !v)} hitSlop={12}>
-          <Ionicons name={showSearch ? 'close' : 'search'} size={22} color={colors.text} />
-        </Pressable>
-      </View>
+      <View style={styles.header}>
+        <View style={styles.headerTopRow}>
+          <ThemedText type="title" style={[styles.headerTitle, { color: colors.text }]}>
+            Friends
+          </ThemedText>
+          <Pressable
+            onPress={() => setShowSearch((v) => !v)}
+            hitSlop={12}
+            style={[styles.headerAction, { backgroundColor: colors.textMuted + '18' }]}
+          >
+            <Ionicons name={showSearch ? 'close' : 'search'} size={18} color={colors.text} />
+          </Pressable>
+        </View>
 
-      {/* Search bar (collapsible) */}
-      {showSearch && (
-        <View style={[styles.searchBar, { backgroundColor: colors.card, borderBottomColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)' }]}>
-          <View style={styles.searchInputRow}>
-            <Ionicons name="search" size={18} color={colors.textMuted} />
+        {showSearch && (
+          <View style={[styles.searchBar, { backgroundColor: isDark ? colors.cardElevated : colors.card, borderColor: colors.tabBarBorder }]}>
+            <Ionicons name="search" size={16} color={colors.textMuted} />
             <TextInput
               style={[styles.searchInput, { color: colors.text }]}
               placeholder="Search by name..."
@@ -327,56 +329,63 @@ export default function FriendsScreen() {
             />
             {searchQuery.length > 0 && (
               <Pressable onPress={() => { setSearchQuery(''); setSearchResults([]) }} hitSlop={8}>
-                <Ionicons name="close-circle" size={18} color={colors.textMuted} />
+                <Ionicons name="close-circle" size={16} color={colors.textMuted} />
               </Pressable>
             )}
           </View>
-          {searching && <ActivityIndicator size="small" color={colors.tint} style={{ marginTop: 8 }} />}
-          {searchResults.length > 0 && (
-            <View style={styles.searchResults}>
-              {searchResults.map((p) => (
-                <Pressable
-                  key={p.id}
-                  style={[styles.searchResultRow, { borderBottomColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)' }]}
-                  onPress={() => { setShowSearch(false); router.push(`/friend-profile?id=${p.id}`) }}
-                >
-                  <View style={[styles.avatarSm, { backgroundColor: colors.tint + '25' }]}>
-                    {p.avatar_url ? (
-                      <Image source={{ uri: p.avatar_url }} style={styles.avatarSmImg} />
-                    ) : (
-                      <ThemedText style={[styles.avatarInit, { color: colors.tint }]}>{getInitials(p.display_name)}</ThemedText>
-                    )}
-                  </View>
-                  <View style={styles.rowInfo}>
-                    <ThemedText style={[styles.rowName, { color: colors.text }]} numberOfLines={1}>{p.display_name || 'No name'}</ThemedText>
-                    <ThemedText style={[styles.rowMeta, { color: colors.textMuted }]}>{p.workouts_count} workouts</ThemedText>
-                  </View>
-                  {renderAddButton(p.id)}
-                </Pressable>
-              ))}
-            </View>
-          )}
-        </View>
-      )}
+        )}
 
-      {/* Tabs */}
-      <View style={[styles.tabRow, { borderBottomColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)' }]}>
-        {(['friends', 'challenges'] as const).map((tab) => (
-          <Pressable
-            key={tab}
-            style={[styles.tab, activeTab === tab && { borderBottomColor: colors.tint, borderBottomWidth: 2 }]}
-            onPress={() => setActiveTab(tab)}
-          >
-            <ThemedText style={[styles.tabText, { color: activeTab === tab ? colors.tint : colors.textMuted }]}>
-              {tab === 'friends' ? 'Friends' : 'Challenges'}
-            </ThemedText>
-            {tab === 'friends' && pending.length > 0 && (
-              <View style={[styles.badge, { backgroundColor: '#EF4444' }]}>
-                <ThemedText style={styles.badgeText}>{pending.length}</ThemedText>
-              </View>
-            )}
-          </Pressable>
-        ))}
+        {searching && <ActivityIndicator size="small" color={colors.tint} style={{ marginTop: 8 }} />}
+
+        {showSearch && searchResults.length > 0 && (
+          <View style={styles.searchResults}>
+            {searchResults.map((p) => (
+              <Pressable
+                key={p.id}
+                style={[styles.searchResultRow, { borderBottomColor: colors.tabBarBorder }]}
+                onPress={() => { setShowSearch(false); router.push(`/friend-profile?id=${p.id}`) }}
+              >
+                <View style={[styles.avatarSm, { backgroundColor: colors.tint + '25' }]}>
+                  {p.avatar_url ? (
+                    <Image source={{ uri: p.avatar_url }} style={styles.avatarSmImg} />
+                  ) : (
+                    <ThemedText style={[styles.avatarInit, { color: colors.tint }]}>{getInitials(p.display_name)}</ThemedText>
+                  )}
+                </View>
+                <View style={styles.rowInfo}>
+                  <ThemedText style={[styles.rowName, { color: colors.text }]} numberOfLines={1}>{p.display_name || 'No name'}</ThemedText>
+                  <ThemedText style={[styles.rowMeta, { color: colors.textMuted }]}>{p.workouts_count} workouts</ThemedText>
+                </View>
+                {renderAddButton(p.id)}
+              </Pressable>
+            ))}
+          </View>
+        )}
+
+        <View style={[styles.tabs, { backgroundColor: isDark ? colors.cardElevated : colors.card, borderColor: colors.tabBarBorder }]}>
+          {(['friends', 'challenges'] as const).map((tab) => (
+            <Pressable
+              key={tab}
+              style={[
+                styles.tab,
+                activeTab === tab && { backgroundColor: colors.tint },
+              ]}
+              onPress={() => setActiveTab(tab)}
+            >
+              <ThemedText
+                type="defaultSemiBold"
+                style={[styles.tabLabel, { color: activeTab === tab ? '#fff' : colors.textMuted }]}
+              >
+                {tab === 'friends' ? 'Friends' : 'Challenges'}
+              </ThemedText>
+              {tab === 'friends' && pending.length > 0 && (
+                <View style={[styles.badge, { backgroundColor: activeTab === tab ? '#fff' : '#EF4444' }]}>
+                  <ThemedText style={[styles.badgeText, activeTab === tab && { color: colors.tint }]}>{pending.length}</ThemedText>
+                </View>
+              )}
+            </Pressable>
+          ))}
+        </View>
       </View>
 
       <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
@@ -452,11 +461,10 @@ export default function FriendsScreen() {
                   )}
                 </View>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.suggestionsRow}>
-                  {/* Contact matches first */}
                   {contactMatches.map((p) => (
                     <Pressable
                       key={`c-${p.id}`}
-                      style={[styles.suggestionCard, { backgroundColor: colors.card }]}
+                      style={[styles.suggestionCard, { backgroundColor: colors.tint + '0A', borderColor: colors.tint + '25' }]}
                       onPress={() => router.push(`/friend-profile?id=${p.id}`)}
                     >
                       <View style={[styles.suggestionAvatar, { backgroundColor: colors.tint + '20' }]}>
@@ -465,7 +473,7 @@ export default function FriendsScreen() {
                         ) : (
                           <ThemedText style={[styles.suggestionAvatarInit, { color: colors.tint }]}>{getInitials(p.display_name)}</ThemedText>
                         )}
-                        <View style={[styles.contactBadge, { backgroundColor: '#22C55E' }]}>
+                        <View style={[styles.contactBadge, { backgroundColor: '#22C55E', borderColor: isDark ? colors.card : '#fff' }]}>
                           <Ionicons name="call" size={8} color="#fff" />
                         </View>
                       </View>
@@ -474,7 +482,6 @@ export default function FriendsScreen() {
                       {renderAddButton(p.id)}
                     </Pressable>
                   ))}
-                  {/* Mutual + buddy suggestions */}
                   {allSuggestions.map((s) => {
                     const mutualData = 'mutual_count' in s ? (s as MutualFriendSuggestion) : null
                     const buddyData = 'reason' in s ? (s as BuddySuggestion) : null
@@ -484,7 +491,7 @@ export default function FriendsScreen() {
                     return (
                       <Pressable
                         key={s.id}
-                        style={[styles.suggestionCard, { backgroundColor: colors.card }]}
+                        style={[styles.suggestionCard, { backgroundColor: colors.tint + '0A', borderColor: colors.tint + '25' }]}
                         onPress={() => router.push(`/friend-profile?id=${s.id}`)}
                       >
                         <View style={[styles.suggestionAvatar, { backgroundColor: colors.tint + '20' }]}>
@@ -509,7 +516,9 @@ export default function FriendsScreen() {
               <ThemedText style={[styles.sectionTitle, { color: colors.text }]}>
                 Your friends
               </ThemedText>
-              <ThemedText style={[styles.friendCount, { color: colors.textMuted }]}>{friends.length}</ThemedText>
+              <View style={[styles.countBadge, { backgroundColor: colors.tint + '18' }]}>
+                <ThemedText style={[styles.countBadgeText, { color: colors.tint }]}>{friends.length}</ThemedText>
+              </View>
             </View>
 
             {loading && friends.length === 0 ? (
@@ -517,7 +526,7 @@ export default function FriendsScreen() {
                 <ActivityIndicator size="small" color={colors.tint} />
               </View>
             ) : friends.length === 0 ? (
-              <View style={[styles.emptyState, { backgroundColor: colors.card }]}>
+              <View style={[styles.emptyState, { backgroundColor: colors.tint + '08', borderColor: colors.tint + '20' }]}>
                 <Ionicons name="people-outline" size={40} color={colors.textMuted} style={{ marginBottom: 12 }} />
                 <ThemedText style={[styles.emptyTitle, { color: colors.text }]}>No friends yet</ThemedText>
                 <ThemedText style={[styles.emptySubtitle, { color: colors.textMuted }]}>
@@ -525,13 +534,14 @@ export default function FriendsScreen() {
                 </ThemedText>
               </View>
             ) : (
-              <View style={[styles.friendsList, { backgroundColor: colors.card }]}>
-                {friends.map((friend, i) => (
+              <View style={styles.friendsList}>
+                {friends.map((friend) => (
                   <Pressable
                     key={friend.id}
-                    style={[
+                    style={({ pressed }) => [
                       styles.friendRow,
-                      i < friends.length - 1 && { borderBottomColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)', borderBottomWidth: 1 },
+                      { backgroundColor: colors.tint + '0A', borderColor: colors.tint + '18' },
+                      pressed && { opacity: 0.7 },
                     ]}
                     onPress={() => router.push(`/friend-profile?id=${friend.id}`)}
                     onLongPress={() => handleUnfriend(friend)}
@@ -622,37 +632,42 @@ export default function FriendsScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
 
-  // Header
   header: {
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    paddingBottom: 4,
+  },
+  headerTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingTop: 8,
-    paddingBottom: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    marginBottom: 14,
   },
-  headerTitle: { fontSize: 24, fontWeight: '800', letterSpacing: -0.3 },
+  headerTitle: { fontFamily: Fonts?.rounded },
+  headerAction: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 
-  // Search
   searchBar: {
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  searchInputRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginBottom: 12,
   },
   searchInput: {
     flex: 1,
     fontSize: 15,
     paddingVertical: 0,
   },
-  searchResults: {
-    marginTop: 8,
-  },
+  searchResults: { marginBottom: 8 },
   searchResultRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -660,26 +675,24 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
 
-  // Tabs
-  tabRow: {
+  tabs: {
     flexDirection: 'row',
-    paddingHorizontal: 24,
-    paddingTop: 8,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    padding: 3,
+    borderRadius: 14,
+    borderWidth: 1,
+    marginBottom: 4,
   },
   tab: {
     flex: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 11,
     alignItems: 'center',
-    paddingBottom: 10,
     flexDirection: 'row',
     justifyContent: 'center',
     gap: 6,
   },
-  tabText: {
-    fontSize: 13,
-    fontWeight: '700',
-    letterSpacing: 0.4,
-  },
+  tabLabel: { fontSize: 12, fontWeight: '700', letterSpacing: 0.3, fontFamily: Fonts?.rounded },
   badge: {
     width: 18,
     height: 18,
@@ -689,11 +702,9 @@ const styles = StyleSheet.create({
   },
   badgeText: { color: '#fff', fontSize: 10, fontWeight: '800' },
 
-  // Scroll
   scroll: { flex: 1 },
   scrollContent: { padding: 20, paddingBottom: 40 },
 
-  // Pending
   pendingSection: {
     borderRadius: 16,
     padding: 14,
@@ -705,7 +716,7 @@ const styles = StyleSheet.create({
     gap: 8,
     marginBottom: 4,
   },
-  pendingSectionTitle: { fontSize: 15, fontWeight: '700', flex: 1 },
+  pendingSectionTitle: { fontSize: 15, fontWeight: '700', flex: 1, fontFamily: Fonts?.rounded },
   pendingCount: { width: 22, height: 22, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
   pendingCountText: { color: '#fff', fontSize: 11, fontWeight: '800' },
   pendingRow: {
@@ -717,10 +728,9 @@ const styles = StyleSheet.create({
   },
   pendingActions: { flexDirection: 'row', gap: 8 },
   acceptBtn: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 10 },
-  acceptBtnText: { color: '#fff', fontWeight: '700', fontSize: 13 },
+  acceptBtnText: { color: '#fff', fontWeight: '700', fontSize: 13, fontFamily: Fonts?.rounded },
   declineBtn: { width: 34, height: 34, borderRadius: 17, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
 
-  // Suggestions
   suggestionsSection: { marginBottom: 20 },
   sectionHeader: {
     flexDirection: 'row',
@@ -728,28 +738,34 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginBottom: 12,
   },
-  sectionTitle: { fontSize: 17, fontWeight: '800', letterSpacing: -0.2 },
-  friendCount: { fontSize: 15, fontWeight: '600' },
+  sectionTitle: { fontSize: 17, fontWeight: '800', letterSpacing: -0.2, fontFamily: Fonts?.rounded },
+  countBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 10,
+  },
+  countBadgeText: { fontSize: 13, fontWeight: '800', fontFamily: Fonts?.rounded },
   syncLink: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   syncLinkText: { fontSize: 12, fontWeight: '600' },
   suggestionsRow: { paddingRight: 4, gap: 10 },
   suggestionCard: {
     width: SUGGESTION_CARD_W,
-    borderRadius: 14,
-    padding: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 14,
     alignItems: 'center',
-    gap: 6,
+    gap: 8,
   },
   suggestionAvatar: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
+    width: 54,
+    height: 54,
+    borderRadius: 27,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
   },
-  suggestionAvatarImg: { width: 52, height: 52 },
-  suggestionAvatarInit: { fontSize: 17, fontWeight: '700' },
+  suggestionAvatarImg: { width: 54, height: 54 },
+  suggestionAvatarInit: { fontSize: 18, fontWeight: '700' },
   contactBadge: {
     position: 'absolute',
     bottom: 0,
@@ -760,25 +776,34 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 2,
-    borderColor: '#1a1a2e',
   },
-  suggestionName: { fontSize: 13, fontWeight: '700', textAlign: 'center' },
+  suggestionName: { fontSize: 13, fontWeight: '700', textAlign: 'center', fontFamily: Fonts?.rounded },
   suggestionMeta: { fontSize: 11, textAlign: 'center' },
 
-  // Add / status
-  addBtn: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', shadowColor: BrandViolet.primary, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.25, shadowRadius: 6, elevation: 4 },
+  addBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: BrandViolet.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 4,
+  },
   statusChip: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, borderWidth: 1 },
   statusChipText: { fontSize: 11, fontWeight: '600' },
 
-  // Friends list
-  friendsList: { borderRadius: 14, overflow: 'hidden', marginBottom: 20 },
+  friendsList: { gap: 8, marginBottom: 20 },
   friendRow: {
     flexDirection: 'row',
     alignItems: 'center',
     padding: 14,
+    borderRadius: 14,
+    borderWidth: 1,
   },
 
-  // Shared row elements
   avatarSm: {
     width: 42,
     height: 42,
@@ -792,21 +817,20 @@ const styles = StyleSheet.create({
   avatarSmImg: { width: 42, height: 42 },
   avatarInit: { fontSize: 14, fontWeight: '700' },
   rowInfo: { flex: 1, minWidth: 0 },
-  rowName: { fontSize: 15, fontWeight: '700', letterSpacing: 0.1 },
+  rowName: { fontSize: 15, fontWeight: '700', letterSpacing: 0.1, fontFamily: Fonts?.rounded },
   rowMeta: { fontSize: 12, marginTop: 2, fontWeight: '500' },
 
-  // Empty state
   centered: { paddingVertical: 16, alignItems: 'center' },
   emptyState: {
-    borderRadius: 16,
+    borderRadius: 18,
+    borderWidth: 1,
     padding: 32,
     alignItems: 'center',
     marginBottom: 20,
   },
-  emptyTitle: { fontSize: 16, fontWeight: '700', marginBottom: 4 },
-  emptySubtitle: { fontSize: 13, textAlign: 'center' },
+  emptyTitle: { fontSize: 16, fontWeight: '700', marginBottom: 4, fontFamily: Fonts?.rounded },
+  emptySubtitle: { fontSize: 13, textAlign: 'center', lineHeight: 20 },
 
-  // Challenges
   challengeBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -821,7 +845,7 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 8,
   },
-  challengeBtnText: { color: '#fff', fontSize: 14, fontWeight: '800', letterSpacing: 0.5 },
+  challengeBtnText: { color: '#fff', fontSize: 14, fontWeight: '800', letterSpacing: 0.5, fontFamily: Fonts?.rounded },
   duelChip: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
   duelChipText: { fontSize: 12, fontWeight: '600' },
 })
