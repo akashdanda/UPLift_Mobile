@@ -7,7 +7,6 @@ import type { Profile } from '@/types/profile'
 // ──────────────────────────────────────────────
 export const POINTS = {
   perFriend: 2,
-  perGroup: 1,
   perWorkout: 5,
   perCompetitionWin: 20,
   perWorkoutMissed: -2,
@@ -30,12 +29,10 @@ export function computePoints(
   workoutsMissed = 0
 ): number {
   const friends = profile.friends_count ?? 0
-  const groups = profile.groups_count ?? 0
   const workouts = profile.workouts_count ?? 0
   const streak = profile.streak ?? 0
   return (
     friends * POINTS.perFriend +
-    groups * POINTS.perGroup +
     workouts * POINTS.perWorkout +
     competitionWins * POINTS.perCompetitionWin +
     workoutsMissed * POINTS.perWorkoutMissed +

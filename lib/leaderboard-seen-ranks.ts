@@ -4,12 +4,7 @@ import type { LeaderboardRow, LeaderboardScope } from '@/lib/leaderboard'
 
 const STORAGE_KEY = 'leaderboardSeenRanks_v1'
 
-export function buildSeenBoardKey(
-  period: string,
-  scope: LeaderboardScope,
-  selectedGroupId: string | null
-): string {
-  if (scope === 'groups') return `${period}|groups|${selectedGroupId ?? ''}`
+export function buildSeenBoardKey(period: string, scope: LeaderboardScope): string {
   return `${period}|${scope}|`
 }
 

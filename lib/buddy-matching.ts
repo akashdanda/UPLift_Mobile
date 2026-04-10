@@ -56,7 +56,6 @@ type ActivityPattern = {
   workoutTypes: Set<string>
   postingHours: number[] // hours of day (0-23) when workouts are posted
   postingDays: Set<number> // days of week (0-6)
-  groupTags: Set<string>
 }
 
 async function analyzeUserActivity(userId: string): Promise<ActivityPattern> {
@@ -88,28 +87,7 @@ async function analyzeUserActivity(userId: string): Promise<ActivityPattern> {
     postingDays.add(createdAt.getDay())
   }
 
-  // Get user's groups and their tags
-  const { data: memberships } = await supabase
-    .from('group_members')
-    .select('group_id')
-    .eq('user_id', userId)
-
-  const groupTags = new Set<string>()
-  if (memberships?.length) {
-    const groupIds = memberships.map((m) => m.group_id)
-    const { data: groups } = await supabase
-      .from('groups')
-      .select('tags')
-      .in('id', groupIds)
-
-    for (const g of (groups ?? []) as Array<{ tags: string[] | null }>) {
-      if (g.tags) {
-        g.tags.forEach((tag) => groupTags.add(tag.toLowerCase()))
-      }
-    }
-  }
-
-  return { workoutTypes, postingHours, postingDays, groupTags }
+  return { workoutTypes, postingHours, postingDays }
 }
 
 // ──────────────────────────────────────────────
@@ -168,22 +146,11 @@ function calculateSimilarity(
     reasons.push('Some schedule overlap')
   }
 
-  // Group tag overlap
-  const tagIntersection = new Set([...myPattern.groupTags].filter((t) => theirPattern.groupTags.has(t)))
-  if (tagIntersection.size >= 2) {
-    score += 20
-    const tags = Array.from(tagIntersection).slice(0, 2).join(', ')
-    reasons.push(`Similar interests: ${tags}`)
-  } else if (tagIntersection.size >= 1) {
-    score += 10
-    reasons.push('Shared interests')
-  }
-
   return { score, reasons }
 }
 
 // ──────────────────────────────────────────────
-// Matching logic — pairs users with similar workout types, posting activity, and group tags
+// Matching logic — pairs users with similar workout types and posting activity
 // ──────────────────────────────────────────────
 export async function getBuddySuggestions(
   userId: string,

@@ -28,10 +28,11 @@ export default function AuthCallbackScreen() {
     if (lastProcessedUrl.current === url) return
     lastProcessedUrl.current = url
 
-    const { error } = await setSessionFromRedirectUrl(url)
-    if (error) {
+    try {
+      await setSessionFromRedirectUrl(url)
+    } catch (e) {
       setStatus('link_error')
-      setMessage(error.message)
+      setMessage(e instanceof Error ? e.message : 'Could not complete sign-in')
       return
     }
 
@@ -44,7 +45,7 @@ export default function AuthCallbackScreen() {
 
     setStatus('no_session_hint')
     setMessage(
-      'If you just confirmed your email, your account is ready. Sign in with your email and password.'
+      'If you just finished signing in from a link, open the app again or sign in with Google, Apple, or your phone number.'
     )
   }, [])
 
@@ -73,7 +74,7 @@ export default function AuthCallbackScreen() {
   useEffect(() => {
     if (status !== 'no_session_hint' || message != null) return
     setMessage(
-      'Open the confirmation link from your email on this device. If you already confirmed, sign in below.'
+      'Open the sign-in link on this device, or go back and sign in with Google, Apple, or your phone number.'
     )
   }, [status, message])
 
@@ -108,7 +109,7 @@ export default function AuthCallbackScreen() {
               {message ?? 'This link may be expired or already used.'}
             </ThemedText>
             <ThemedText style={[styles.hint, { color: colors.textMuted }]}>
-              If you already tapped confirm, try signing in — your email may already be verified.
+              If you already completed the link flow, try signing in again from the login screen.
             </ThemedText>
             <Pressable style={[styles.btn, { backgroundColor: colors.tint }]} onPress={goLogin}>
               <ThemedText style={styles.btnText}>Go to sign in</ThemedText>

@@ -146,12 +146,6 @@ export async function pushFriendAccepted(targetUserId: string, accepterUserId: s
   await sendEventPush(targetUserId, `${name} accepted your friend request.`)
 }
 
-/** Push when someone invites you to a group. */
-export async function pushGroupInvite(targetUserId: string, inviterUserId: string, groupName: string): Promise<void> {
-  const name = await getDisplayName(inviterUserId)
-  await sendEventPush(targetUserId, `${name} invited you to join ${groupName}.`)
-}
-
 /** Push when the first friend works out today. */
 export async function pushFirstFriendWorkout(targetUserId: string, friendName: string): Promise<void> {
   await sendEventPush(targetUserId, `${friendName} just logged a workout. Your turn!`)
@@ -175,7 +169,3 @@ export async function pushDuelDeclined(targetUserId: string, declinerUserId: str
   await sendEventPush(targetUserId, `${name} declined your challenge.`)
 }
 
-/** Push when user unlocks an achievement. */
-export async function pushAchievementUnlocked(targetUserId: string, achievementName: string): Promise<void> {
-  await sendEventPush(targetUserId, `You unlocked "${achievementName}"! 🏆`)
-}

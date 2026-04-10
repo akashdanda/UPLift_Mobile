@@ -11,7 +11,6 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated'
 
-import { AchievementBadge } from '@/components/achievement-badge'
 import { ThemedText } from '@/components/themed-text'
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window')
@@ -119,7 +118,8 @@ function ConfettiParticle({ index, active }: { index: number; active: boolean })
 type Props = {
   visible: boolean
   icon: string
-  achievementKey?: string
+  /** Small uppercase label above the title (e.g. milestone type). Omit for compact layouts. */
+  topLabel?: string
   title: string
   description: string
   onDismiss: () => void
@@ -130,7 +130,7 @@ type Props = {
 export function CelebrationModal({
   visible,
   icon,
-  achievementKey,
+  topLabel,
   title,
   description,
   onDismiss,
@@ -194,14 +194,12 @@ export function CelebrationModal({
         <Animated.View style={[styles.card, cardStyle]}>
           <Pressable onPress={(e) => e.stopPropagation()} style={styles.cardInner}>
             <Animated.View style={[styles.iconWrap, iconStyle]}>
-              {achievementKey ? (
-                <AchievementBadge achievementKey={achievementKey} size={72} />
-              ) : (
-                <ThemedText style={styles.icon}>{icon}</ThemedText>
-              )}
+              <ThemedText style={styles.icon}>{icon}</ThemedText>
             </Animated.View>
 
-            <ThemedText style={styles.celebTitle}>Achievement Unlocked!</ThemedText>
+            {topLabel ? (
+              <ThemedText style={[styles.celebTitle, { color: accentColor }]}>{topLabel}</ThemedText>
+            ) : null}
             <ThemedText style={styles.achievementName}>{title}</ThemedText>
             <View style={styles.descriptionWrap}>
               <ThemedText style={styles.achievementDesc}>{description}</ThemedText>

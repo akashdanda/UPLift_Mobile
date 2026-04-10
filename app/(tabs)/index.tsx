@@ -34,8 +34,7 @@ import { ThemedText } from '@/components/themed-text';
 import { Colors } from '@/constants/theme';
 import { useAuthContext } from '@/hooks/use-auth-context';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { AchievementBadge } from '@/components/achievement-badge';
-import { getAchievementFeedPosts, hasStreakFreezeAvailable } from '@/lib/achievements';
+import { hasStreakFreezeAvailable } from '@/lib/streak-freeze';
 import { addComment, getCommentsForWorkouts } from '@/lib/comments';
 import {
   getDailyReminderInfo,
@@ -49,7 +48,6 @@ import { getUnreadNotificationCount, markNotificationsAsRead } from '@/lib/notif
 import { addReaction, getReactionsForWorkouts, removeReaction } from '@/lib/reactions';
 import { getSocialNudges, type SocialNudge } from '@/lib/social-hooks';
 import { supabase } from '@/lib/supabase';
-import type { AchievementFeedPost } from '@/types/achievement';
 import type { WorkoutCommentWithProfile } from '@/types/comment';
 import type { WorkoutReactionWithProfile } from '@/types/reaction';
 import { WORKOUT_TYPES, type Workout } from '@/types/workout';
@@ -181,7 +179,6 @@ export default function HomeScreen() {
   const [feedTab, setFeedTab] = useState<'friends' | 'public'>('friends');
   const [feedItems, setFeedItems] = useState<FeedItem[]>([]);
   const [globalFeedItems, setGlobalFeedItems] = useState<FeedItem[]>([]);
-  const [achievementPosts, setAchievementPosts] = useState<AchievementFeedPost[]>([]);
   const [flashbacks, setFlashbacks] = useState<FlashbackItem[]>([]);
   const [socialNudges, setSocialNudges] = useState<SocialNudge[]>([]);
   const [freezeAvailable, setFreezeAvailable] = useState(false);
@@ -592,24 +589,6 @@ export default function HomeScreen() {
     commentsChannel.subscribe()
     channels.push(commentsChannel)
 
-    // Subscribe to user achievements
-    const achievementsChannel = supabase
-      .channel('notifications-achievements')
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'user_achievements',
-          filter: `user_id=eq.${session.user.id}`,
-        },
-        () => {
-          refreshUnreadCount()
-        }
-      )
-      .subscribe()
-    channels.push(achievementsChannel)
-
     // Subscribe to friend workouts (for friend_activity notifications)
     getFriends(session.user.id).then((friends) => {
       if (!isMounted) return
@@ -635,38 +614,6 @@ export default function HomeScreen() {
       }
     })
 
-    // Subscribe to group competitions (user's groups)
-    supabase
-      .from('group_members')
-      .select('group_id')
-      .eq('user_id', session.user.id)
-      .then(({ data }) => {
-        if (!isMounted) return
-        if (data && data.length > 0) {
-          const userGroupIds = data.map((g) => g.group_id)
-          const competitionsChannel = supabase
-            .channel('notifications-competitions')
-            .on(
-              'postgres_changes',
-              {
-                event: 'INSERT',
-                schema: 'public',
-                table: 'group_competitions',
-              },
-              (payload) => {
-                if (
-                  userGroupIds.includes(payload.new.group1_id) ||
-                  userGroupIds.includes(payload.new.group2_id)
-                ) {
-                  refreshUnreadCount()
-                }
-              }
-            )
-            .subscribe()
-          channels.push(competitionsChannel)
-        }
-      })
-
     return () => {
       isMounted = false
       channels.forEach((channel) => {
@@ -680,7 +627,6 @@ export default function HomeScreen() {
       if (!session) {
         setTodayWorkout(null);
         setFeedItems([]);
-        setAchievementPosts([]);
         setFlashbacks([]);
         return;
       }
@@ -719,7 +665,7 @@ export default function HomeScreen() {
               groups_count: profile?.groups_count ?? 0,
               friends_count: profile?.friends_count ?? 0,
             },
-            0 // approximate — skip achievement count for nudge check
+            0
           );
           const lvl = getLevelFromXP(xp);
           getSocialNudges(
@@ -730,11 +676,6 @@ export default function HomeScreen() {
             hasLogged
           ).then(setSocialNudges);
         });
-      // Load achievement feed posts
-      getFriends(session.user.id).then((friends) => {
-        const ids = [session.user.id, ...friends.map((f) => f.id)];
-        getAchievementFeedPosts(ids, 10).then(setAchievementPosts);
-      });
       // Check streak risk (after 6pm and no workout logged today)
       const now = new Date();
       const hour = now.getHours();
@@ -1000,43 +941,6 @@ export default function HomeScreen() {
           </View>
         )}
 
-        {/* Achievement announcements */}
-        {achievementPosts.length > 0 && (
-        <View style={styles.section}>
-            {achievementPosts.map((post) => (
-              <Pressable
-                key={post.id}
-                style={[styles.achievementFeedCard, { backgroundColor: colors.card, borderColor: colors.tint + '40' }]}
-                onPress={() => {
-                  if (post.user_id !== session?.user?.id) {
-                    router.push(`/friend-profile?id=${post.user_id}`);
-                  }
-                }}
-              >
-                <View style={styles.achievementFeedRow}>
-                  <View style={[styles.achievementFeedIconWrap, { backgroundColor: 'transparent' }]}>
-                    {post.achievement_key ? (
-                      <AchievementBadge achievementKey={post.achievement_key} size={36} />
-                    ) : (
-                      <ThemedText style={styles.achievementFeedIcon}>
-                        {post.achievement_icon ?? '🏅'}
-                      </ThemedText>
-                    )}
-                  </View>
-                  <View style={styles.achievementFeedTextBlock}>
-                    <ThemedText style={[styles.achievementFeedMessage, { color: colors.text }]}>
-                      {post.message}
-                    </ThemedText>
-                    <ThemedText style={[styles.achievementFeedTime, { color: colors.textMuted }]}>
-                      {formatFeedDate(post.created_at.slice(0, 10))}
-                    </ThemedText>
-                  </View>
-                </View>
-              </Pressable>
-            ))}
-          </View>
-        )}
-
         {/* Feed */}
         <View style={styles.feedSection}>
           {(feedTab === 'friends' ? feedItems : globalFeedItems).length === 0 ? (
@@ -1053,6 +957,16 @@ export default function HomeScreen() {
                     ? 'Add friends to see their workout posts here'
                     : 'No public posts yet — be the first to post publicly!'}
                 </ThemedText>
+                {feedTab === 'friends' && (
+                  <Pressable
+                    onPress={() =>
+                      router.push({ pathname: '/(tabs)/profile', params: { friends: '1' } })
+                    }
+                    style={[styles.emptyCta, { backgroundColor: colors.tint }]}
+                  >
+                    <ThemedText style={styles.emptyCtaText}>Find friends</ThemedText>
+                  </Pressable>
+                )}
               </View>
             ) : null
           ) : (
@@ -1765,6 +1679,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   emptyText: { textAlign: 'center', fontSize: 14, lineHeight: 22, letterSpacing: 0.1 },
+  emptyCta: {
+    marginTop: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 22,
+    borderRadius: 12,
+  },
+  emptyCtaText: { color: '#fff', fontSize: 14, fontWeight: '700' },
 
   // Feed tabs
   feedTabRow: {
@@ -2279,33 +2200,6 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
   },
   flashbackDate: { fontSize: 11 },
-
-  // Achievement feed cards
-  achievementFeedCard: {
-    borderRadius: 18,
-    borderWidth: 1,
-    padding: 16,
-    marginBottom: 10,
-    overflow: 'visible',
-  },
-  achievementFeedRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-  },
-  achievementFeedIconWrap: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'visible',
-  },
-  achievementFeedIcon: { fontSize: 22, lineHeight: 30 },
-  achievementFeedIconImg: { width: 30, height: 30, borderRadius: 15 },
-  achievementFeedTextBlock: { flex: 1, minWidth: 0 },
-  achievementFeedMessage: { fontSize: 13, fontWeight: '700', lineHeight: 19, letterSpacing: 0.1 },
-  achievementFeedTime: { fontSize: 10, marginTop: 3, fontWeight: '600', letterSpacing: 0.2 },
 });
 
 // ─── Share Card Styles (story-optimized) ─────────────────

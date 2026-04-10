@@ -22,8 +22,6 @@ const PHONE_H = PHONE_W * 2.16
 const screenshotFeed = require('../assets/images/onboarding-feed.png')
 const screenshotLeaderboard = require('../assets/images/onboarding-leaderboard.png')
 const screenshotProfile = require('../assets/images/onboarding-profile.png')
-const screenshotGroups = require('../assets/images/onboarding-groups.png')
-
 type Slide = {
   id: string
   screenshot: any
@@ -33,7 +31,6 @@ const SLIDES: Slide[] = [
   { id: '1', screenshot: screenshotFeed },
   { id: '2', screenshot: screenshotLeaderboard },
   { id: '3', screenshot: screenshotProfile },
-  { id: '4', screenshot: screenshotGroups },
 ]
 
 export default function OnboardingScreen() {

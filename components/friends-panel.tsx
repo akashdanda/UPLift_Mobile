@@ -6,7 +6,6 @@ import { useCallback, useState } from 'react'
 import {
   ActivityIndicator,
   Alert,
-  Dimensions,
   Platform,
   Pressable,
   ScrollView,
@@ -14,7 +13,6 @@ import {
   TextInput,
   View,
 } from 'react-native'
-import { SafeAreaView } from 'react-native-safe-area-context'
 
 import { ThemedText } from '@/components/themed-text'
 import { BrandViolet, Colors, Fonts } from '@/constants/theme'
@@ -42,7 +40,6 @@ import {
 import type { FriendWithProfile } from '@/lib/friends'
 import type { ProfilePublic } from '@/types/friendship'
 
-const { width: SCREEN_W } = Dimensions.get('window')
 const SUGGESTION_CARD_W = 130
 
 function getInitials(displayName: string | null): string {
@@ -55,7 +52,12 @@ function getInitials(displayName: string | null): string {
   return '?'
 }
 
-export default function FriendsScreen() {
+type FriendsPanelProps = {
+  /** Called when friends or incoming requests change (e.g. refresh profile strip). */
+  onFriendsChanged?: () => void
+}
+
+export function FriendsPanel({ onFriendsChanged }: FriendsPanelProps) {
   const { session, refreshProfile } = useAuthContext()
   const colorScheme = useColorScheme()
   const colors = Colors[colorScheme ?? 'light']
@@ -86,6 +88,7 @@ export default function FriendsScreen() {
       .then(([f, p]) => {
         setFriends(f)
         setPending(p)
+        onFriendsChanged?.()
       })
       .finally(() => setLoading(false))
     getMutualFriendSuggestions(userId, 30)
@@ -123,7 +126,7 @@ export default function FriendsScreen() {
       })
       .catch(() => {})
     getUserDuels(userId, ['active', 'pending']).then(setActiveDuels).catch(() => {})
-  }, [userId])
+  }, [userId, onFriendsChanged])
 
   useFocusEffect(
     useCallback(() => {
@@ -298,7 +301,7 @@ export default function FriendsScreen() {
   }
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerTopRow}>
@@ -530,7 +533,7 @@ export default function FriendsScreen() {
                 <Ionicons name="people-outline" size={40} color={colors.textMuted} style={{ marginBottom: 12 }} />
                 <ThemedText style={[styles.emptyTitle, { color: colors.text }]}>No friends yet</ThemedText>
                 <ThemedText style={[styles.emptySubtitle, { color: colors.textMuted }]}>
-                  Tap the search icon above to find people
+                  Use search above or sync contacts to find people you know
                 </ThemedText>
               </View>
             ) : (
@@ -625,7 +628,7 @@ export default function FriendsScreen() {
           </>
         )}
       </ScrollView>
-    </SafeAreaView>
+    </View>
   )
 }
 

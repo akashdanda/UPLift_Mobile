@@ -13,7 +13,7 @@ import { ThemedView } from '@/components/themed-view'
 import { Colors, Fonts } from '@/constants/theme'
 import { useAuthContext } from '@/hooks/use-auth-context'
 import { useColorScheme } from '@/hooks/use-color-scheme'
-import { getPreviousSnapshot, saveLeaderboardSnapshot } from '@/lib/achievements'
+import { getPreviousSnapshot, saveLeaderboardSnapshot } from '@/lib/leaderboard-snapshots'
 import {
   buildSeenBoardKey,
   loadSeenRanks,
@@ -27,7 +27,6 @@ import {
   type LeaderboardScope,
 } from '@/lib/leaderboard'
 import { getBatchUserLevels } from '@/lib/levels'
-import { getMyGroups, type GroupWithMeta } from '@/lib/groups'
 import type { UserLevel } from '@/types/level'
 
 function getDisplayName(row: LeaderboardRow): string {
@@ -61,8 +60,6 @@ export default function LeaderboardScreen() {
   const params = useLocalSearchParams<{ scope?: string }>()
 
   const [scope, setScope] = useState<LeaderboardScope>('friends')
-  const [groups, setGroups] = useState<GroupWithMeta[]>([])
-  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null)
   const [rows, setRows] = useState<LeaderboardRow[]>([])
   const [myRow, setMyRow] = useState<LeaderboardRow | undefined>(undefined)
   const [loading, setLoading] = useState(true)
@@ -73,23 +70,22 @@ export default function LeaderboardScreen() {
 
   useEffect(() => {
     const paramScope = params.scope
-    if (paramScope === 'friends' || paramScope === 'groups' || paramScope === 'global') {
+    if (paramScope === 'friends' || paramScope === 'global') {
       setScope(paramScope)
     }
   }, [params.scope])
 
   useEffect(() => {
     setRankDeltas(new Map())
-  }, [scope, selectedGroupId])
+  }, [scope])
 
   const load = useCallback(() => {
     setLoading(true)
-    const groupIdForScope = scope === 'groups' ? selectedGroupId ?? undefined : undefined
-    getLeaderboard(50, session?.user?.id, scope, groupIdForScope)
+    getLeaderboard(50, session?.user?.id, scope, undefined)
       .then(async ({ rows: r, myRow: m }) => {
         const now = new Date()
         const period = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
-        const boardKey = buildSeenBoardKey(period, scope, selectedGroupId)
+        const boardKey = buildSeenBoardKey(period, scope)
 
         const prevMap = await loadSeenRanks(boardKey)
         const deltas = new Map<string, 'up' | 'down'>()
@@ -117,18 +113,7 @@ export default function LeaderboardScreen() {
         }
       })
       .finally(() => setLoading(false))
-  }, [session?.user?.id, scope, selectedGroupId])
-
-  useEffect(() => {
-    if (!session?.user?.id) return
-    ;(async () => {
-      const myGroups = await getMyGroups(session.user.id)
-      setGroups(myGroups)
-      if (!selectedGroupId && myGroups.length > 0) {
-        setSelectedGroupId(myGroups[0].id)
-      }
-    })()
-  }, [session?.user?.id])
+  }, [session?.user?.id, scope])
 
   useFocusEffect(useCallback(() => load(), [load]))
   useEffect(() => {
@@ -144,7 +129,7 @@ export default function LeaderboardScreen() {
   const showPointsInfo = useCallback(() => {
     Alert.alert(
       'How Points Work',
-      `All Points are based on this month's activity only.\n\n💪 Each workout: +${LEADERBOARD_POINTS.perWorkout} Points\n🏆 Competition win: +${LEADERBOARD_POINTS.perCompetitionWin} Points\n👥 Friend added: +${LEADERBOARD_POINTS.perFriend} Points\n📁 Group joined: +${LEADERBOARD_POINTS.perGroup} Point`,
+      `All Points are based on this month's activity only.\n\n💪 Each workout: +${LEADERBOARD_POINTS.perWorkout} Points\n🏆 Competition win: +${LEADERBOARD_POINTS.perCompetitionWin} Points\n👥 Friend added: +${LEADERBOARD_POINTS.perFriend} Points`,
       [{ text: 'OK' }]
     )
   }, [])
@@ -179,7 +164,7 @@ export default function LeaderboardScreen() {
           </ThemedText>
 
           <View style={[styles.tabs, { backgroundColor: isDark ? colors.cardElevated : colors.card, borderColor: colors.tabBarBorder }]}>
-            {(['friends', 'groups', 'global'] as const).map((s) => (
+            {(['friends', 'global'] as const).map((s) => (
               <Pressable
                 key={s}
                 onPress={() => setScope(s)}
@@ -192,46 +177,11 @@ export default function LeaderboardScreen() {
                   type="defaultSemiBold"
                   style={[styles.tabLabel, { color: scope === s ? '#fff' : colors.textMuted }]}
                 >
-                  {s === 'friends' ? 'Friends' : s === 'groups' ? 'Groups' : 'Global'}
+                  {s === 'friends' ? 'Friends' : 'Global'}
                 </ThemedText>
               </Pressable>
             ))}
           </View>
-
-          {scope === 'groups' && groups.length > 0 && (
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.groupChipsContainer}
-            >
-              {groups.map((g) => {
-                const selected = g.id === selectedGroupId
-                return (
-                  <Pressable
-                    key={g.id}
-                    onPress={() => setSelectedGroupId(g.id)}
-                    style={[
-                      styles.groupChip,
-                      {
-                        backgroundColor: selected ? colors.tint : colors.card,
-                        borderColor: selected ? colors.tint : colors.tabBarBorder,
-                      },
-                    ]}
-                  >
-                    <ThemedText
-                      style={[
-                        styles.groupChipLabel,
-                        { color: selected ? '#fff' : colors.textMuted },
-                      ]}
-                      numberOfLines={1}
-                    >
-                      {g.name}
-                    </ThemedText>
-                  </Pressable>
-                )
-              })}
-            </ScrollView>
-          )}
         </View>
 
         {/* ─── Your score card ─── */}
@@ -319,10 +269,18 @@ export default function LeaderboardScreen() {
               <ThemedText style={[styles.emptyText, { color: colors.textMuted }]}>
                 {scope === 'friends'
                   ? 'Add friends to see how you rank among them.'
-                  : scope === 'groups'
-                    ? 'Join groups to see how you rank with other members.'
-                    : 'No one on the board yet. Log workouts, build streaks, join groups and add friends to earn points.'}
+                  : 'No one on the board yet. Log workouts, build streaks, and add friends to earn points.'}
               </ThemedText>
+              {scope === 'friends' && (
+                <Pressable
+                  onPress={() =>
+                    router.push({ pathname: '/(tabs)/profile', params: { friends: '1' } })
+                  }
+                  style={[styles.emptyCta, { backgroundColor: colors.tint }]}
+                >
+                  <ThemedText style={styles.emptyCtaText}>Find friends</ThemedText>
+                </Pressable>
+              )}
             </ThemedView>
           ) : (
             <View style={styles.list}>
@@ -435,23 +393,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   tabLabel: { fontSize: 12, fontWeight: '700', letterSpacing: 0.3, fontFamily: Fonts?.rounded },
-  groupChipsContainer: {
-    marginTop: 12,
-    paddingHorizontal: 2,
-    columnGap: 8,
-  },
-  groupChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: 999,
-    borderWidth: 1,
-    marginRight: 8,
-  },
-  groupChipLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 0.2,
-  },
   myCard: {
     borderRadius: 18,
     borderWidth: 1,
@@ -511,6 +452,13 @@ const styles = StyleSheet.create({
   loadingRow: { paddingVertical: 32, alignItems: 'center' },
   emptyCard: { padding: 28, borderRadius: 16 },
   emptyText: { textAlign: 'center', lineHeight: 22, letterSpacing: 0.1 },
+  emptyCta: {
+    marginTop: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 22,
+    borderRadius: 12,
+  },
+  emptyCtaText: { color: '#fff', fontSize: 14, fontWeight: '700' },
   list: { gap: 8 },
   row: {
     flexDirection: 'row',

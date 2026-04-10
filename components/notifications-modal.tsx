@@ -6,7 +6,6 @@ import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, View } fro
 import { SafeAreaView } from 'react-native-safe-area-context'
 
 import { ThemedText } from '@/components/themed-text'
-import { AchievementBadge } from '@/components/achievement-badge'
 import { Colors } from '@/constants/theme'
 import { useAuthContext } from '@/hooks/use-auth-context'
 import { useColorScheme } from '@/hooks/use-color-scheme'
@@ -67,32 +66,11 @@ function NotificationItem({
           title: `${notification.friend_display_name || 'A friend'} hit a ${notification.streak_count}-day streak!`,
           subtitle: 'Keep up the momentum',
         }
-      case 'achievement':
-        return {
-          icon: notification.achievement_icon || '🏆',
-          achievementKey: notification.achievement_key,
-          title: `Achievement unlocked: ${notification.achievement_name || 'Achievement'}`,
-          subtitle: 'Great work!',
-        }
-      case 'competition_started':
-        return {
-          icon: '🏅',
-          title: `${notification.competition_group_name || 'Your group'} started a competition`,
-          subtitle: 'Time to compete!',
-        }
       case 'friend_activity':
         return {
           icon: '💪',
           title: `${notification.friend_display_name || 'A friend'} ${notification.activity_description || 'was active'}`,
           subtitle: 'Stay motivated!',
-        }
-      case 'group_invite':
-        return {
-          icon: '👥',
-          title: `${notification.invited_by_name || 'Someone'} invited you to join ${
-            notification.group_name || 'a group'
-          }`,
-          subtitle: 'Tap to view your group invites',
         }
       case 'duel_update':
         return {
@@ -110,14 +88,10 @@ function NotificationItem({
   const content = getNotificationContent()
   const avatarUrl =
     notification.actor_avatar_url ||
-    notification.friend_avatar_url ||
-    notification.competition_group_avatar_url ||
-    notification.group_avatar_url
+    notification.friend_avatar_url
   const displayName =
     notification.actor_display_name ||
-    notification.friend_display_name ||
-    notification.competition_group_name ||
-    notification.group_name
+    notification.friend_display_name
 
   return (
     <Pressable
@@ -134,7 +108,7 @@ function NotificationItem({
         ) : (
           <View style={[styles.avatar, styles.avatarPlaceholder, { backgroundColor: colors.tint + '20' }]}>
             <ThemedText style={[styles.avatarInitials, { color: colors.tint }]}>
-              {getInitials(displayName)}
+              {getInitials(displayName ?? null)}
             </ThemedText>
           </View>
         )}
@@ -146,11 +120,7 @@ function NotificationItem({
       </View>
       <View style={styles.notificationContent}>
         <View style={styles.notificationHeader}>
-          {content.achievementKey ? (
-            <AchievementBadge achievementKey={content.achievementKey} size={22} />
-          ) : (
-            <ThemedText style={styles.notificationIcon}>{content.icon}</ThemedText>
-          )}
+          <ThemedText style={styles.notificationIcon}>{content.icon}</ThemedText>
           <ThemedText style={[styles.notificationTitle, { color: colors.text }]} numberOfLines={2}>
             {content.title}
           </ThemedText>
@@ -259,24 +229,6 @@ export function NotificationsModal({
       .subscribe()
     channels.push(commentsChannel)
 
-    // Subscribe to user achievements
-    const achievementsChannel = supabase
-      .channel('modal-notifications-achievements')
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'user_achievements',
-          filter: `user_id=eq.${session.user.id}`,
-        },
-        () => {
-          loadNotifications()
-        }
-      )
-      .subscribe()
-    channels.push(achievementsChannel)
-
     // Subscribe to friend workouts
     getFriends(session.user.id).then((friends) => {
       if (!isMounted) return
@@ -302,38 +254,6 @@ export function NotificationsModal({
       }
     })
 
-    // Subscribe to group competitions
-    supabase
-      .from('group_members')
-      .select('group_id')
-      .eq('user_id', session.user.id)
-      .then(({ data }) => {
-        if (!isMounted) return
-        if (data && data.length > 0) {
-          const userGroupIds = data.map((g) => g.group_id)
-          const competitionsChannel = supabase
-            .channel('modal-notifications-competitions')
-            .on(
-              'postgres_changes',
-              {
-                event: 'INSERT',
-                schema: 'public',
-                table: 'group_competitions',
-              },
-              (payload) => {
-                if (
-                  userGroupIds.includes(payload.new.group1_id) ||
-                  userGroupIds.includes(payload.new.group2_id)
-                ) {
-                  loadNotifications()
-                }
-              }
-            )
-            .subscribe()
-          channels.push(competitionsChannel)
-        }
-      })
-
     return () => {
       isMounted = false
       channels.forEach((channel) => {
@@ -350,26 +270,15 @@ export function NotificationsModal({
         onNavigateToWorkout(notification.workout_id, expandComments)
       } else {
         // Fallback: just navigate to home
-        router.push('/(tabs)/')
+        router.push('/(tabs)')
         onClose()
       }
-    } else if (notification.competition_id) {
-      router.push(`/competition-detail?id=${notification.competition_id}`)
-      onClose()
-    } else if (notification.type === 'group_invite' && notification.group_id) {
-      // Navigate to Groups tab where invites are visible
-      router.push('/(tabs)/groups')
-      onClose()
     } else if (notification.type === 'duel_update' && notification.duel_id) {
       // Navigate directly to the duel detail screen
       router.push(`/duel-detail?id=${notification.duel_id}`)
       onClose()
     } else if (notification.friend_id) {
       router.push({ pathname: '/friend-profile', params: { id: notification.friend_id } })
-      onClose()
-    } else if (notification.achievement_id) {
-      // Navigate to profile to see achievements
-      router.push('/(tabs)/profile')
       onClose()
     } else {
       // Default: just close
@@ -401,7 +310,7 @@ export function NotificationsModal({
               No notifications yet
             </ThemedText>
             <ThemedText style={[styles.emptySubtext, { color: colors.textMuted }]}>
-              You'll see reactions, comments, and updates here
+              You&apos;ll see reactions, comments, and updates here
             </ThemedText>
           </View>
         ) : (

@@ -7,8 +7,11 @@ export type AuthData = {
   profile: Profile | null
   isLoading: boolean
   isLoggedIn: boolean
-  signIn: (email: string, password: string) => Promise<{ error: Error | null }>
-  signUp: (email: string, password: string) => Promise<{ error: Error | null }>
+  sendPhoneOtp: (
+    phoneE164: string,
+    options?: { isSignUp?: boolean; fullName?: string }
+  ) => Promise<{ error: Error | null }>
+  verifyPhoneOtp: (phoneE164: string, token: string) => Promise<{ error: Error | null }>
   signInWithGoogle: () => Promise<{ error: Error | null }>
   signInWithApple: () => Promise<{ error: Error | null }>
   signOut: () => Promise<void>
@@ -22,8 +25,8 @@ const defaultAuth: AuthData = {
   profile: null,
   isLoading: true,
   isLoggedIn: false,
-  signIn: async () => ({ error: new Error('AuthProvider not mounted') }),
-  signUp: async () => ({ error: new Error('AuthProvider not mounted') }),
+  sendPhoneOtp: async () => ({ error: new Error('AuthProvider not mounted') }),
+  verifyPhoneOtp: async () => ({ error: new Error('AuthProvider not mounted') }),
   signInWithGoogle: async () => ({ error: new Error('AuthProvider not mounted') }),
   signInWithApple: async () => ({ error: new Error('AuthProvider not mounted') }),
   signOut: async () => {},

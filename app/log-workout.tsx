@@ -22,20 +22,17 @@ import { ThemedText } from '@/components/themed-text'
 import { Colors } from '@/constants/theme'
 import { useAuthContext } from '@/hooks/use-auth-context'
 import { useColorScheme } from '@/hooks/use-color-scheme'
-import {
-  checkAndUpdateAchievements,
-  createAchievementFeedPost,
-  markAchievementNotified,
-} from '@/lib/achievements'
 import { getFriends, type FriendWithProfile } from '@/lib/friends'
 import { computeXP, getLevelFromXP } from '@/lib/levels'
 import { pushFirstFriendWorkout } from '@/lib/push-notifications'
 import { supabase } from '@/lib/supabase'
 import { addWorkoutTags } from '@/lib/tags'
 import { uploadWorkoutImage } from '@/lib/workout-upload'
-import { ACHIEVEMENT_CATEGORIES, type UserAchievementWithDetails } from '@/types/achievement'
 import type { UserLevel } from '@/types/level'
-import { WORKOUT_TYPES, type Workout, type WorkoutType, type WorkoutVisibility } from '@/types/workout'
+import type { Workout, WorkoutVisibility } from '@/types/workout'
+
+/** Stored for analytics / feed; no longer user-selectable in this screen. */
+const DEFAULT_WORKOUT_TYPE = 'strength' as const
 
 function BeRealPreview({ primaryUri, secondaryUri }: { primaryUri: string; secondaryUri: string }) {
   const [frontImage, setFrontImage] = useState<'primary' | 'secondary'>('primary')
@@ -76,21 +73,6 @@ function getTodayLocalDate(): string {
   return `${y}-${m}-${day}`
 }
 
-/** Sunday of current week (YYYY-MM-DD) and next Sunday for range. */
-function getWeekRange(): { start: string; end: string } {
-  const d = new Date()
-  const day = d.getDay()
-  const sunday = new Date(d)
-  sunday.setDate(d.getDate() - day)
-  const saturday = new Date(sunday)
-  saturday.setDate(sunday.getDate() + 6)
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return {
-    start: `${sunday.getFullYear()}-${pad(sunday.getMonth() + 1)}-${pad(sunday.getDate())}`,
-    end: `${saturday.getFullYear()}-${pad(saturday.getMonth() + 1)}-${pad(saturday.getDate())}`,
-  }
-}
-
 export default function LogWorkoutScreen() {
   const { session, profile, refreshProfile } = useAuthContext()
   const colorScheme = useColorScheme()
@@ -106,18 +88,9 @@ export default function LogWorkoutScreen() {
   const [pendingSecondaryUri, setPendingSecondaryUri] = useState<string | null>(null)
   const [cameraOpen, setCameraOpen] = useState(false)
   const [cameraMode, setCameraMode] = useState<'primary' | 'secondary'>('primary')
-  // Achievement celebration
-  const [celebrationQueue, setCelebrationQueue] = useState<UserAchievementWithDetails[]>([])
-  const [showCelebration, setShowCelebration] = useState(false)
-  const currentCelebration = celebrationQueue[0] ?? null
-
   // Level-up celebration
   const [levelUpCelebration, setLevelUpCelebration] = useState<UserLevel | null>(null)
   const [showLevelUp, setShowLevelUp] = useState(false)
-
-  // Workout type (cardio, strength, sport, rest)
-  const [workoutType, setWorkoutType] = useState<WorkoutType>('strength')
-  const [restCountThisWeek, setRestCountThisWeek] = useState(0)
 
   // Post visibility
   const [visibility, setVisibility] = useState<WorkoutVisibility>('friends')
@@ -127,46 +100,19 @@ export default function LogWorkoutScreen() {
   const [taggedFriends, setTaggedFriends] = useState<Set<string>>(new Set())
   const [showTagPicker, setShowTagPicker] = useState(false)
 
-  const handleDismissCelebration = () => {
-    setCelebrationQueue((prev) => {
-      if (prev.length <= 1) {
-        setShowCelebration(false)
-        // Show level-up celebration after all achievements are shown
-        if (levelUpCelebration) {
-          setTimeout(() => setShowLevelUp(true), 300)
-        }
-        return []
-      }
-      return prev.slice(1)
-    })
-  }
-
   const today = getTodayLocalDate()
 
   useEffect(() => {
     if (!session) return
     let cancelled = false
     ;(async () => {
-      const [{ data }, { count }] = await Promise.all([
-        supabase
-          .from('workouts')
-          .select('*')
-          .eq('user_id', session.user.id)
-          .eq('workout_date', today)
-          .maybeSingle(),
-        (() => {
-          const { start, end } = getWeekRange()
-          return supabase
-            .from('workouts')
-            .select('*', { count: 'exact', head: true })
-            .eq('user_id', session.user.id)
-            .eq('workout_type', 'rest')
-            .gte('workout_date', start)
-            .lte('workout_date', end)
-        })(),
-      ])
+      const { data } = await supabase
+        .from('workouts')
+        .select('*')
+        .eq('user_id', session.user.id)
+        .eq('workout_date', today)
+        .maybeSingle()
       if (!cancelled && data) setTodayWorkout(data as Workout)
-      if (!cancelled && count !== null) setRestCountThisWeek(count)
       if (!cancelled) setLoading(false)
     })()
     getFriends(session.user.id).then(setFriends).catch(() => {})
@@ -197,13 +143,6 @@ export default function LogWorkoutScreen() {
 
   const handlePost = async () => {
     if (!session || !pendingPhotoUri) return
-    if (workoutType === 'rest' && restCountThisWeek >= 2) {
-      Alert.alert(
-        'Limit reached',
-        'You can only log 2 active rest days per week. Choose another type or wait until next week.'
-      )
-      return
-    }
     setUploading(true)
     const uploadResult = await uploadWorkoutImage(session.user.id, pendingPhotoUri, 'primary')
     if ('error' in uploadResult) {
@@ -224,7 +163,7 @@ export default function LogWorkoutScreen() {
         workout_date: today,
         image_url: uploadResult.url,
         secondary_image_url: secondaryUrl,
-        workout_type: workoutType,
+        workout_type: DEFAULT_WORKOUT_TYPE,
         caption: caption.trim() || null,
         visibility,
       })
@@ -262,50 +201,28 @@ export default function LogWorkoutScreen() {
       workout_date: today,
       image_url: uploadResult.url,
       secondary_image_url: secondaryUrl ?? null,
-      workout_type: workoutType,
+      workout_type: DEFAULT_WORKOUT_TYPE,
       caption: caption.trim() || null,
       visibility,
       created_at: new Date().toISOString(),
     })
-    if (workoutType === 'rest') setRestCountThisWeek((c) => c + 1)
-
-    // Check achievements after logging workout
     try {
-      const newlyUnlocked = await checkAndUpdateAchievements(session.user.id)
-      if (newlyUnlocked.length > 0) {
-        const displayName = profile?.display_name || 'Someone'
-        for (const ach of newlyUnlocked) {
-          await createAchievementFeedPost(
-            session.user.id,
-            ach.achievement_id,
-            `${ach.icon} ${displayName} just unlocked "${ach.name}"!`
-          )
-          await markAchievementNotified(session.user.id, ach.achievement_id)
-        }
-        setCelebrationQueue(newlyUnlocked)
-        setShowCelebration(true)
-      }
-
-      // Check for level-up (rest does not increase streak)
       const newXP = computeXP(
         {
           workouts_count: (profile?.workouts_count ?? 0) + 1,
-          streak: workoutType === 'rest' ? (profile?.streak ?? 0) : (profile?.streak ?? 0) + 1,
+          streak: (profile?.streak ?? 0) + 1,
           groups_count: profile?.groups_count ?? 0,
           friends_count: profile?.friends_count ?? 0,
         },
-        newlyUnlocked.length
+        0
       )
       const newLevel = getLevelFromXP(newXP)
       if (newLevel.level.tier !== oldLevel.level.tier) {
-        // Queue level-up celebration (shows after achievement celebrations)
         setLevelUpCelebration(newLevel)
-        if (newlyUnlocked.length === 0) {
-          setShowLevelUp(true)
-        }
+        setShowLevelUp(true)
       }
     } catch {
-      // Don't block workout posting for achievement errors
+      // Don't block workout posting for level computation errors
     }
 
     try {
@@ -362,14 +279,9 @@ export default function LogWorkoutScreen() {
                 <Image source={{ uri: todayWorkout.image_url }} style={styles.workoutImage} />
               )}
             </View>
-            <View style={styles.doneTypeRow}>
-              <ThemedText style={styles.doneTypeEmoji}>
-                {WORKOUT_TYPES.find((t) => t.value === (todayWorkout.workout_type ?? 'strength'))?.emoji ?? '💪'}
-              </ThemedText>
-              {todayWorkout.caption ? (
-                <ThemedText style={[styles.caption, { color: colors.textMuted }]}>{todayWorkout.caption}</ThemedText>
-              ) : null}
-            </View>
+            {todayWorkout.caption ? (
+              <ThemedText style={[styles.caption, { color: colors.textMuted }]}>{todayWorkout.caption}</ThemedText>
+            ) : null}
             <Pressable style={[styles.backButton, { borderColor: colors.tint }]} onPress={() => router.back()}>
               <ThemedText style={[styles.backButtonText, { color: colors.tint }]}>Back to Home</ThemedText>
             </Pressable>
@@ -414,35 +326,6 @@ export default function LogWorkoutScreen() {
                 <ThemedText style={[styles.retakeButtonText, { color: colors.textMuted }]}>Retake both photos</ThemedText>
               </Pressable>
             </View>
-
-            <ThemedText style={[styles.label, { color: colors.textMuted }]}>Workout type</ThemedText>
-            <View style={styles.workoutTypeRow}>
-              {WORKOUT_TYPES.map((t) => (
-                <Pressable
-                  key={t.value}
-                  style={[
-                    styles.workoutTypeChip,
-                    {  backgroundColor: colors.card },
-                    workoutType === t.value && { borderColor: colors.tint, backgroundColor: colors.tint + '18' },
-                  ]}
-                  onPress={() => setWorkoutType(t.value as WorkoutType)}
-                  disabled={uploading}
-                >
-                  <ThemedText style={styles.workoutTypeEmoji}>{t.emoji}</ThemedText>
-                  <ThemedText
-                    style={[styles.workoutTypeLabel, { color: workoutType === t.value ? colors.tint : colors.text }]}
-                    numberOfLines={1}
-                  >
-                    {t.label}
-                  </ThemedText>
-                </Pressable>
-              ))}
-            </View>
-            {workoutType === 'rest' && (
-              <ThemedText style={[styles.restHint, { color: colors.textMuted }]}>
-                You have {Math.max(0, 2 - restCountThisWeek)} rest day{2 - restCountThisWeek === 1 ? '' : 's'} left this week. Active rest pauses your streak.
-              </ThemedText>
-            )}
 
             <ThemedText style={[styles.label, { color: colors.textMuted }]}>Caption (optional)</ThemedText>
             <TextInput
@@ -581,26 +464,11 @@ export default function LogWorkoutScreen() {
         </ScrollView>
       </KeyboardAvoidingView>
 
-      {/* Achievement celebration */}
-      {currentCelebration && (
-        <CelebrationModal
-          visible={showCelebration}
-          icon={currentCelebration.icon}
-          title={currentCelebration.name}
-          description={currentCelebration.description}
-          onDismiss={handleDismissCelebration}
-          accentColor={
-            ACHIEVEMENT_CATEGORIES[currentCelebration.category as keyof typeof ACHIEVEMENT_CATEGORIES]?.color
-          }
-        />
-      )}
-
-      {/* Level-up celebration */}
       {levelUpCelebration && (
         <CelebrationModal
           visible={showLevelUp}
           icon={levelUpCelebration.level.emoji}
-          title={`Level Up!`}
+          title="Level up!"
           description={`You reached ${levelUpCelebration.level.title}!`}
           onDismiss={() => {
             setShowLevelUp(false)
@@ -650,9 +518,7 @@ const styles = StyleSheet.create({
   },
   dualPreviewSecondary: { width: '100%', height: '100%' },
   retakeRow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 10, marginBottom: 16 },
-  doneTypeRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 16 },
-  doneTypeEmoji: { fontSize: 18 },
-  caption: { flex: 1, marginBottom: 24, textAlign: 'center' },
+  caption: { marginBottom: 24, textAlign: 'center' },
   backButton: { paddingVertical: 14, paddingHorizontal: 24, borderRadius: 12},
   backButtonText: { fontSize: 16, fontWeight: '600' },
   formSection: {},
@@ -667,20 +533,6 @@ const styles = StyleSheet.create({
   },
   retakeButtonText: { fontSize: 14 },
   label: { fontSize: 12, fontWeight: '700', letterSpacing: 0.5, marginBottom: 8 },
-  workoutTypeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 8 },
-  workoutTypeChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    borderRadius: 12,
-    borderWidth: 2,
-    minWidth: '45%',
-  },
-  workoutTypeEmoji: { fontSize: 18 },
-  workoutTypeLabel: { fontSize: 13, fontWeight: '600', flex: 1 },
-  restHint: { fontSize: 12, marginBottom: 16, lineHeight: 18 },
   input: {
     borderRadius: 14,
     paddingHorizontal: 16,

@@ -2,9 +2,9 @@ import Ionicons from '@expo/vector-icons/Ionicons'
 import { useFocusEffect } from '@react-navigation/native'
 import { Image } from 'expo-image'
 
-import { router } from 'expo-router'
+import { router, useLocalSearchParams } from 'expo-router'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ActivityIndicator, Dimensions, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native'
+import { Dimensions, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native'
 import { Gesture, GestureDetector } from 'react-native-gesture-handler'
 import Animated, {
   useAnimatedStyle,
@@ -14,7 +14,7 @@ import Animated, {
 } from 'react-native-reanimated'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
-import { CelebrationModal } from '@/components/celebration-modal'
+import { FriendsPanel } from '@/components/friends-panel'
 import SignOutButton from '@/components/social-auth-buttons/sign-out-button'
 import { ThemedText } from '@/components/themed-text'
 import { ThemedView } from '@/components/themed-view'
@@ -22,18 +22,10 @@ import { getSpecialBadge } from '@/constants/special-badges'
 import { Colors } from '@/constants/theme'
 import { useAuthContext } from '@/hooks/use-auth-context'
 import { useColorScheme } from '@/hooks/use-color-scheme'
-import {
-  checkAndUpdateAchievements,
-  createAchievementFeedPost,
-  getUserAchievements,
-  markAchievementNotified,
-} from '@/lib/achievements'
-import { AchievementBadge } from '@/components/achievement-badge'
-import { getHighlightsForProfile } from '@/lib/highlights'
+import { getPendingReceived } from '@/lib/friends'
 import { getUserLevel } from '@/lib/levels'
 import { supabase } from '@/lib/supabase'
-import { ACHIEVEMENT_CATEGORIES, type UserAchievementWithDetails } from '@/types/achievement'
-import type { HighlightForProfile } from '@/types/highlight'
+import type { ProfilePublic } from '@/types/friendship'
 import type { UserLevel } from '@/types/level'
 
 function getDisplayName(session: { user: { user_metadata?: { full_name?: string }; email?: string } }): string {
@@ -74,9 +66,12 @@ const MENU_ITEMS = [
 
 export default function ProfileScreen() {
   const { session, profile } = useAuthContext()
+  const params = useLocalSearchParams<{ friends?: string }>()
   const colorScheme = useColorScheme()
   const colors = Colors[colorScheme ?? 'light']
   const isDark = colorScheme === 'dark'
+
+  const [profileMainTab, setProfileMainTab] = useState<'me' | 'friends'>('me')
 
   const avatarUrl = getAvatarUrl(profile, session)
   const [avatarLoadError, setAvatarLoadError] = useState(false)
@@ -86,85 +81,30 @@ export default function ProfileScreen() {
   const [monthWorkoutDates, setMonthWorkoutDates] = useState<Set<string>>(new Set())
   const [monthRestDates, setMonthRestDates] = useState<Set<string>>(new Set())
 
-  // Highlights (Instagram-style)
-  const [highlights, setHighlights] = useState<HighlightForProfile[]>([])
-
-  // Achievements state
-  const [achievements, setAchievements] = useState<UserAchievementWithDetails[]>([])
-  const [achievementsLoading, setAchievementsLoading] = useState(true)
-  const [selectedAchievement, setSelectedAchievement] = useState<UserAchievementWithDetails | null>(null)
-  const [celebrationQueue, setCelebrationQueue] = useState<UserAchievementWithDetails[]>([])
-  const [showCelebration, setShowCelebration] = useState(false)
-
-  // Level state
   const [userLevel, setUserLevel] = useState<UserLevel | null>(null)
+  const [pendingIncoming, setPendingIncoming] = useState<
+    { friendship: { id: string }; requester: ProfilePublic }[]
+  >([])
 
-  // Load achievements + compute level
-  const loadAchievements = useCallback(async () => {
-    if (!session) return
-    setAchievementsLoading(true)
-    try {
-      const data = await getUserAchievements(session.user.id)
-      setAchievements(data)
-      // Level uses new point system (friends, groups, workouts, competition wins, streak)
-      if (session) {
-        const level = await getUserLevel(session.user.id)
-        setUserLevel(level)
-      }
-    } catch {
-      // ignore
-    } finally {
-      setAchievementsLoading(false)
-    }
-  }, [session, profile])
-
-  // Check achievements and show celebrations for new unlocks
-  const refreshAchievements = useCallback(async () => {
+  const loadUserLevel = useCallback(async () => {
     if (!session) return
     try {
-      const newlyUnlocked = await checkAndUpdateAchievements(session.user.id)
-      if (newlyUnlocked.length > 0) {
-        setCelebrationQueue(newlyUnlocked)
-        setShowCelebration(true)
-        // Create feed posts for new unlocks
-        for (const ach of newlyUnlocked) {
-          const displayName = profile?.display_name || 'Someone'
-          await createAchievementFeedPost(
-            session.user.id,
-            ach.achievement_id,
-            `${ach.icon} ${displayName} just unlocked "${ach.name}"!`
-          )
-          await markAchievementNotified(session.user.id, ach.achievement_id)
-        }
-      }
-      await loadAchievements()
+      const level = await getUserLevel(session.user.id)
+      setUserLevel(level)
     } catch {
       // ignore
     }
-  }, [session, profile, loadAchievements])
+  }, [session])
 
-  useFocusEffect(
-    useCallback(() => {
-      void refreshAchievements()
-    }, [refreshAchievements])
-  )
-
-  const handleDismissCelebration = useCallback(() => {
-    setCelebrationQueue((prev) => {
-      if (prev.length <= 1) {
-        setShowCelebration(false)
-        return []
-      }
-      return prev.slice(1)
-    })
-  }, [])
-
-  const handleShareCelebration = useCallback(async () => {
-    // The feed post was already created above; just dismiss
-    handleDismissCelebration()
-  }, [handleDismissCelebration])
-
-  const currentCelebration = celebrationQueue[0] ?? null
+  const loadPendingIncoming = useCallback(async () => {
+    if (!session) return
+    try {
+      const p = await getPendingReceived(session.user.id)
+      setPendingIncoming(p)
+    } catch {
+      // ignore
+    }
+  }, [session])
 
   // Today (used for streak / \"missed day\" logic)
   const today = useMemo(() => new Date(), [])
@@ -243,17 +183,23 @@ export default function ProfileScreen() {
     void fetchMonthWorkouts()
   }, [fetchMonthWorkouts])
 
-  // Refresh calendar and highlights when screen comes into focus
   useFocusEffect(
     useCallback(() => {
       void fetchMonthWorkouts()
-      if (session) getHighlightsForProfile(session.user.id).then(setHighlights)
-    }, [fetchMonthWorkouts, session])
+      void loadUserLevel()
+      void loadPendingIncoming()
+    }, [fetchMonthWorkouts, loadUserLevel, loadPendingIncoming])
   )
 
   useEffect(() => {
     setAvatarLoadError(false)
   }, [avatarUrl])
+
+  useEffect(() => {
+    if (params.friends !== '1' && params.friends !== 'true') return
+    setProfileMainTab('friends')
+    router.setParams({ friends: undefined })
+  }, [params.friends])
 
   const displayName =
     (profile?.display_name && profile.display_name.trim()) ||
@@ -265,7 +211,6 @@ export default function ProfileScreen() {
     { value: profile?.workouts_count ?? 0, label: 'Workouts', color: colors.tint },
     { value: profile?.longest_streak ?? 0, label: 'Best streak', color: colors.warm },
     { value: profile?.streak ?? 0, label: 'Streak', color: colors.warm },
-    { value: profile?.groups_count ?? 0, label: 'Groups', color: colors.tint },
     { value: profile?.friends_count ?? 0, label: 'Friends', color: colors.tint },
   ]
 
@@ -306,6 +251,42 @@ export default function ProfileScreen() {
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
+      <View style={styles.profileTopIconRow}>
+        {profileMainTab === 'friends' ? (
+          <Pressable
+            onPress={() => setProfileMainTab('me')}
+            hitSlop={12}
+            style={[styles.profileTopIconBtn, { backgroundColor: colors.textMuted + '18' }]}
+            accessibilityLabel="Back to profile"
+          >
+            <Ionicons name="chevron-back" size={22} color={colors.text} />
+          </Pressable>
+        ) : (
+          <View style={styles.profileTopIconBtnPlaceholder} />
+        )}
+        <View style={{ flex: 1 }} />
+        {profileMainTab === 'me' ? (
+          <Pressable
+            onPress={() => setProfileMainTab('friends')}
+            hitSlop={12}
+            style={[styles.profileTopIconBtn, { backgroundColor: colors.textMuted + '18' }]}
+            accessibilityLabel="Friends"
+          >
+            <Ionicons name="people" size={20} color={colors.text} />
+            {pendingIncoming.length > 0 ? (
+              <View style={styles.profileFriendsNotifBadge}>
+                <ThemedText style={styles.profileFriendsNotifBadgeText}>
+                  {pendingIncoming.length > 9 ? '9+' : pendingIncoming.length}
+                </ThemedText>
+              </View>
+            ) : null}
+          </Pressable>
+        ) : (
+          <View style={styles.profileTopIconBtnPlaceholder} />
+        )}
+      </View>
+
+      {profileMainTab === 'me' ? (
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
@@ -397,44 +378,23 @@ export default function ProfileScreen() {
           )}
         </ThemedView>
 
-        {/* Highlights (Instagram-style) */}
-        <View style={styles.highlightsSection}>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.highlightsScroll}
+        {pendingIncoming.length > 0 && (
+          <Pressable
+            onPress={() => setProfileMainTab('friends')}
+            style={[
+              styles.pendingFollowRow,
+              { backgroundColor: colors.card, borderColor: colors.tabBarBorder },
+            ]}
           >
-            <Pressable
-              onPress={() => router.push('/manage-highlights')}
-              style={[styles.highlightCircleWrap, { borderColor: colors.tabBarBorder }]}
-            >
-              <View style={[styles.highlightCircle, { backgroundColor: colors.cardElevated }]}>
-                <Ionicons name="add" size={28} color={colors.textMuted} />
-              </View>
-              <ThemedText style={[styles.highlightLabel, { color: colors.textMuted }]} numberOfLines={1}>
-                New
-              </ThemedText>
-            </Pressable>
-            {highlights.filter((h) => h.workouts_count > 0).map((h) => (
-              <Pressable
-                key={h.id}
-                onPress={() => router.push({ pathname: '/highlight-detail', params: { id: h.id } })}
-                style={[styles.highlightCircleWrap, { borderColor: colors.tabBarBorder }]}
-              >
-                <View style={[styles.highlightCircle, { backgroundColor: colors.cardElevated, overflow: 'hidden' }]}>
-                  {h.cover_image_url ? (
-                    <Image source={{ uri: h.cover_image_url }} style={styles.highlightCircleImage} />
-                  ) : (
-                    <Ionicons name="images-outline" size={28} color={colors.textMuted} />
-                  )}
-                </View>
-                <ThemedText style={[styles.highlightLabel, { color: colors.text }]} numberOfLines={1}>
-                  {h.name}
-                </ThemedText>
-              </Pressable>
-            ))}
-          </ScrollView>
-        </View>
+            <ThemedText style={[styles.pendingFollowText, { color: colors.text }]}>
+              {pendingIncoming.length}{' '}
+              {pendingIncoming.length === 1 ? 'person wants' : 'people want'} to follow you
+            </ThemedText>
+            <View style={[styles.pendingFollowViewBtn, { backgroundColor: colors.tint }]}>
+              <ThemedText style={styles.pendingFollowViewBtnText}>View</ThemedText>
+            </View>
+          </Pressable>
+        )}
 
         <ThemedView style={styles.section}>
           <ThemedText type="subtitle" style={[styles.sectionTitle, { color: colors.text }]}>
@@ -556,87 +516,6 @@ export default function ProfileScreen() {
           ))}
         </View>
 
-        {/* Achievements Section */}
-        <ThemedView style={styles.section}>
-          <ThemedText type="subtitle" style={[styles.sectionTitle, { color: colors.text }]}>
-            Achievements
-          </ThemedText>
-          {achievementsLoading ? (
-            <View style={styles.achievementsLoading}>
-              <ActivityIndicator size="small" color={colors.tint} />
-            </View>
-          ) : achievements.length === 0 ? (
-            <View style={[styles.badgesContainer, { backgroundColor: colors.card, borderColor: colors.tabBarBorder }]}>
-              <ThemedText style={[styles.emptyBadgesText, { color: colors.textMuted }]}>
-                Keep working out to earn your first achievement!
-              </ThemedText>
-            </View>
-          ) : (
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.achievementsScroll}
-            >
-              {achievements.map((ach) => {
-                const progress = Math.min(ach.progress_value / ach.requirement_value, 1)
-                const catMeta = ACHIEVEMENT_CATEGORIES[ach.category as keyof typeof ACHIEVEMENT_CATEGORIES]
-                return (
-                  <Pressable
-                    key={ach.achievement_id}
-                    onPress={() => setSelectedAchievement(ach)}
-                    style={[
-                      styles.achievementCard,
-                      {
-                        backgroundColor: colors.card,
-                        borderColor: ach.unlocked
-                          ? catMeta?.color ?? colors.tint
-                          : isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
-                        borderWidth: ach.unlocked ? 1.5 : 1,
-                        shadowColor: ach.unlocked ? catMeta?.color ?? colors.tint : 'transparent',
-                        shadowOpacity: ach.unlocked ? 0.3 : 0,
-                        shadowRadius: ach.unlocked ? 8 : 0,
-                        shadowOffset: { width: 0, height: 2 },
-                        elevation: ach.unlocked ? 4 : 0,
-                      },
-                    ]}
-                  >
-                    <AchievementBadge achievementKey={ach.key} size={48} locked={!ach.unlocked} />
-                    <ThemedText
-                      style={[
-                        styles.achievementName,
-                        { color: ach.unlocked ? colors.text : colors.textMuted },
-                      ]}
-                      numberOfLines={2}
-                    >
-                      {ach.name}
-                    </ThemedText>
-                    {!ach.unlocked && (
-                      <View style={styles.progressBarOuter}>
-                        <View
-                          style={[
-                            styles.progressBarInner,
-                            {
-                              width: `${Math.round(progress * 100)}%`,
-                              backgroundColor: catMeta?.color ?? colors.tint,
-                            },
-                          ]}
-                        />
-                      </View>
-                    )}
-                    {ach.unlocked && (
-                      <View style={[styles.unlockedBadge, { backgroundColor: (catMeta?.color ?? colors.tint) + '20' }]}>
-                        <ThemedText style={[styles.unlockedText, { color: catMeta?.color ?? colors.tint }]}>
-                          ✓ Unlocked
-                        </ThemedText>
-                      </View>
-                    )}
-                  </Pressable>
-                )
-              })}
-            </ScrollView>
-          )}
-        </ThemedView>
-
         <View style={[styles.menuCard, { backgroundColor: colors.card }]}>
           {MENU_ITEMS.map((item, i) => (
             <Pressable
@@ -656,6 +535,11 @@ export default function ProfileScreen() {
 
         <SignOutButton />
       </ScrollView>
+      ) : (
+        <View style={styles.friendsPanelWrap}>
+          <FriendsPanel onFriendsChanged={loadPendingIncoming} />
+        </View>
+      )}
 
       {/* Avatar zoom modal */}
       <Modal
@@ -683,102 +567,42 @@ export default function ProfileScreen() {
         </Pressable>
       </Modal>
 
-      {/* Achievement detail modal */}
-      <Modal
-        visible={!!selectedAchievement}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setSelectedAchievement(null)}
-      >
-        <Pressable style={styles.modalOverlay} onPress={() => setSelectedAchievement(null)}>
-          <View style={styles.achievementDetailCard}>
-            <Pressable onPress={(e) => e.stopPropagation()}>
-              {selectedAchievement && (() => {
-                const catMeta = ACHIEVEMENT_CATEGORIES[
-                  selectedAchievement.category as keyof typeof ACHIEVEMENT_CATEGORIES
-                ]
-                const progress = Math.min(
-                  selectedAchievement.progress_value / selectedAchievement.requirement_value,
-                  1
-                )
-                return (
-                  <View style={[styles.achievementDetailInner, { backgroundColor: colors.card }]}>
-                    <View style={{ marginBottom: 12 }}>
-                      <AchievementBadge achievementKey={selectedAchievement.key} size={72} locked={!selectedAchievement.unlocked} />
-                    </View>
-                    <ThemedText style={[styles.achievementDetailCategory, { color: catMeta?.color ?? colors.tint }]}>
-                      {catMeta?.label ?? selectedAchievement.category}
-                    </ThemedText>
-                    <ThemedText style={[styles.achievementDetailName, { color: colors.text }]}>
-                      {selectedAchievement.name}
-                    </ThemedText>
-                    <ThemedText style={[styles.achievementDetailDesc, { color: colors.textMuted }]}>
-                      {selectedAchievement.description}
-                    </ThemedText>
-
-                    {!selectedAchievement.unlocked ? (
-                      <View style={styles.achievementDetailProgressSection}>
-                        <View style={[styles.achievementDetailProgressOuter, { backgroundColor: colors.cardElevated }]}>
-                          <View
-                            style={[
-                              styles.achievementDetailProgressInner,
-                              {
-                                width: `${Math.round(progress * 100)}%`,
-                                backgroundColor: catMeta?.color ?? colors.tint,
-                              },
-                            ]}
-                          />
-                        </View>
-                        <ThemedText style={[styles.achievementDetailProgressText, { color: colors.textMuted }]}>
-                          {selectedAchievement.progress_value} / {selectedAchievement.requirement_value}
-                        </ThemedText>
-                      </View>
-                    ) : (
-                      <View style={[styles.achievementDetailUnlocked, { backgroundColor: (catMeta?.color ?? colors.tint) + '15' }]}>
-                        <ThemedText style={[styles.achievementDetailUnlockedText, { color: catMeta?.color ?? colors.tint }]}>
-                          ✓ Unlocked{selectedAchievement.unlocked_at
-                            ? ` on ${new Date(selectedAchievement.unlocked_at).toLocaleDateString()}`
-                            : ''}
-                        </ThemedText>
-                      </View>
-                    )}
-
-                    <Pressable
-                      style={[styles.achievementDetailClose, { borderColor: colors.tabBarBorder }]}
-                      onPress={() => setSelectedAchievement(null)}
-                    >
-                      <ThemedText style={[styles.achievementDetailCloseText, { color: colors.text }]}>
-                        Close
-                      </ThemedText>
-                    </Pressable>
-                  </View>
-                )
-              })()}
-            </Pressable>
-          </View>
-        </Pressable>
-      </Modal>
-
-      {/* Celebration modal */}
-      {currentCelebration && (
-        <CelebrationModal
-          visible={showCelebration}
-          icon={currentCelebration.icon}
-          achievementKey={currentCelebration.key}
-          title={currentCelebration.name}
-          description={currentCelebration.description}
-          onDismiss={handleDismissCelebration}
-          accentColor={
-            ACHIEVEMENT_CATEGORIES[currentCelebration.category as keyof typeof ACHIEVEMENT_CATEGORIES]?.color
-          }
-        />
-      )}
     </SafeAreaView>
   )
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  profileTopIconRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingBottom: 8,
+    minHeight: 44,
+  },
+  profileTopIconBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  profileTopIconBtnPlaceholder: { width: 40, height: 40 },
+  profileFriendsNotifBadge: {
+    position: 'absolute',
+    top: 2,
+    right: 2,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    paddingHorizontal: 4,
+    backgroundColor: '#EF4444',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  profileFriendsNotifBadgeText: { color: '#fff', fontSize: 9, fontWeight: '800' },
+  friendsPanelWrap: { flex: 1 },
   scrollView: { flex: 1 },
   scrollContent: { padding: 24, paddingBottom: 40 },
 
@@ -845,6 +669,25 @@ const styles = StyleSheet.create({
   xpBarOuter: { width: '100%', height: 5, borderRadius: 3, overflow: 'hidden' },
   xpBarInner: { height: '100%', borderRadius: 3 },
 
+  pendingFollowRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    marginBottom: 20,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  pendingFollowText: { flex: 1, fontSize: 14, fontWeight: '600', lineHeight: 20 },
+  pendingFollowViewBtn: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+  },
+  pendingFollowViewBtnText: { color: '#fff', fontSize: 13, fontWeight: '700' },
+
   statsRow: { flexDirection: 'row', gap: 8, marginBottom: 28 },
   statBox: {
     flex: 1,
@@ -858,105 +701,8 @@ const styles = StyleSheet.create({
   statValue: { fontSize: 22, lineHeight: 28, fontWeight: '800', letterSpacing: -0.5 },
   statLabel: { marginTop: 2, fontSize: 9, fontWeight: '600', letterSpacing: 0, opacity: 0.6, textAlign: 'center' },
 
-  highlightsSection: { marginBottom: 24 },
-  highlightsScroll: { paddingHorizontal: 4, gap: 14, paddingRight: 20 },
-  highlightCircleWrap: { alignItems: 'center', width: 76 },
-  highlightCircle: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-  },
-  highlightCircleImage: { width: 72, height: 72, borderRadius: 36 },
-  highlightLabel: { fontSize: 11, marginTop: 6, maxWidth: 72, textAlign: 'center', fontWeight: '600', letterSpacing: 0.2 },
   section: { marginBottom: 28 },
   sectionTitle: { marginBottom: 14 },
-  badgesContainer: {
-    borderRadius: 14,
-    padding: 20,
-    minHeight: 100,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  emptyBadgesText: { fontSize: 14, textAlign: 'center', lineHeight: 20 },
-
-  // Achievements
-  achievementsLoading: { paddingVertical: 24, alignItems: 'center' },
-  achievementsScroll: { paddingRight: 24, gap: 12 },
-  achievementCard: {
-    width: 120,
-    padding: 12,
-    borderRadius: 14,
-    alignItems: 'center',
-  },
-  achievementIconWrap: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 8,
-    overflow: 'visible',
-  },
-  achievementIcon: { fontSize: 26, lineHeight: 34 },
-  achievementIconImg: { width: 48, height: 48, borderRadius: 24 },
-  achievementName: { fontSize: 11, fontWeight: '700', textAlign: 'center', marginBottom: 8, lineHeight: 15, letterSpacing: 0.2, paddingHorizontal: 4 },
-  progressBarOuter: {
-    width: '100%',
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    overflow: 'hidden',
-  },
-  progressBarInner: {
-    height: '100%',
-    borderRadius: 2,
-  },
-  unlockedBadge: {
-    paddingVertical: 3,
-    paddingHorizontal: 10,
-    borderRadius: 8,
-  },
-  unlockedText: { fontSize: 10, fontWeight: '700' },
-
-  // Achievement detail modal
-  achievementDetailCard: {
-    width: '100%',
-    height: '100%',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 32,
-  },
-  achievementDetailInner: {
-    width: '100%',
-    borderRadius: 24,
-    padding: 28,
-    alignItems: 'center',
-  },
-  achievementDetailIconWrap: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 12,
-    overflow: 'visible',
-  },
-  achievementDetailIcon: { fontSize: 38, lineHeight: 48 },
-  achievementDetailIconImg: { width: 72, height: 72, borderRadius: 36 },
-  achievementDetailCategory: { fontSize: 12, fontWeight: '700', letterSpacing: 1.5, marginBottom: 4 },
-  achievementDetailName: { fontSize: 22, fontWeight: '800', textAlign: 'center', marginBottom: 8 },
-  achievementDetailDesc: { fontSize: 14, textAlign: 'center', lineHeight: 20, marginBottom: 20 },
-  achievementDetailProgressSection: { width: '100%', marginBottom: 20 },
-  achievementDetailProgressOuter: { width: '100%', height: 8, borderRadius: 4, overflow: 'hidden', marginBottom: 8 },
-  achievementDetailProgressInner: { height: '100%', borderRadius: 4 },
-  achievementDetailProgressText: { fontSize: 13, textAlign: 'center', fontWeight: '600' },
-  achievementDetailUnlocked: { paddingVertical: 8, paddingHorizontal: 20, borderRadius: 12, marginBottom: 20 },
-  achievementDetailUnlockedText: { fontSize: 14, fontWeight: '700' },
-  achievementDetailClose: { paddingVertical: 12, paddingHorizontal: 24, borderRadius: 12 },
-  achievementDetailCloseText: { fontSize: 15, fontWeight: '600' },
 
   menuCard: { borderRadius: 14, overflow: 'hidden', marginBottom: 28 },
   menuItemWrap: { flexDirection: 'row', alignItems: 'center', padding: 16 },

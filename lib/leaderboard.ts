@@ -1,11 +1,10 @@
 import { supabase } from '@/lib/supabase'
 
-export type LeaderboardScope = 'global' | 'friends' | 'groups'
+export type LeaderboardScope = 'global' | 'friends'
 
-/** Point system (monthly): each workout +5, competition win +20, friend added this month +2, group joined this month +1 */
+/** Point system (monthly): each workout +5, competition win +20, friend added this month +2 */
 const POINTS = {
   perFriend: 2,
-  perGroup: 1,
   perWorkout: 5,
   perCompetitionWin: 20,
 } as const
@@ -68,7 +67,7 @@ export async function getLeaderboard(
     ? rawRows.map((row) => normalizeRow(row as Record<string, unknown>))
     : []
 
-  // Deduplicate — RPC can return the same user twice when they share multiple groups
+  // Deduplicate if the RPC ever returns duplicate user rows
   const seen = new Set<string>()
   const rows = normalized.filter((r) => {
     if (seen.has(r.id)) return false

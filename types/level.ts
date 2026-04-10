@@ -1,6 +1,6 @@
 // ──────────────────────────────────────────────
 // Leveling System — "Bronze → Legend"
-// XP is computed from existing profile stats + achievements.
+// Points / level are computed from profile stats (workouts, streak, friends, competition wins).
 // No new DB tables needed — purely derived data.
 // ──────────────────────────────────────────────
 
@@ -17,7 +17,7 @@ export type LevelDefinition = {
   glowColor: string
 }
 
-/** Ordered from lowest → highest. Points: friend +2, group +1, workout +5, win +20, missed -2, every 10 streak +50. */
+/** Ordered from lowest → highest. Points: friend +2, workout +5, win +20, missed -2, every 10 streak +50. */
 export const LEVEL_TIERS: LevelDefinition[] = [
   {
     tier: 'bronze',

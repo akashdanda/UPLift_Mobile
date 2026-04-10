@@ -48,7 +48,7 @@ export default function DeleteAccountScreen() {
           Delete account
         </ThemedText>
         <ThemedText style={[styles.body, { color: colors.textMuted }]}>
-          Deleting your account will permanently remove your profile, workouts, groups, messages, and all other data
+          Deleting your account will permanently remove your profile, workouts, messages, and all other data
           associated with your account. This action cannot be undone.
         </ThemedText>
         <ThemedText style={[styles.body, { color: colors.textMuted, marginTop: 8 }]}>

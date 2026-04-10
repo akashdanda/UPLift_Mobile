@@ -28,14 +28,9 @@ import { getSpecialBadge } from '@/constants/special-badges'
 import { Colors } from '@/constants/theme'
 import { useAuthContext } from '@/hooks/use-auth-context'
 import { useColorScheme } from '@/hooks/use-color-scheme'
-import { AchievementBadge } from '@/components/achievement-badge'
-import { getUserAchievements } from '@/lib/achievements'
-import { getHighlightsForProfile } from '@/lib/highlights'
 import { getUserLevel } from '@/lib/levels'
 import { supabase } from '@/lib/supabase'
 import { acceptFriendRequestByUserId, getFriendshipStatus, sendFriendRequest } from '@/lib/friends'
-import { ACHIEVEMENT_CATEGORIES, type UserAchievementWithDetails } from '@/types/achievement'
-import type { HighlightForProfile } from '@/types/highlight'
 import type { UserLevel } from '@/types/level'
 import type { Profile } from '@/types/profile'
 
@@ -61,10 +56,7 @@ export default function FriendProfileScreen() {
   const [loading, setLoading] = useState(true)
   const [monthWorkoutDates, setMonthWorkoutDates] = useState<Set<string>>(new Set())
   const [monthRestDates, setMonthRestDates] = useState<Set<string>>(new Set())
-  const [highlights, setHighlights] = useState<HighlightForProfile[]>([])
   const [isImageModalVisible, setIsImageModalVisible] = useState(false)
-  const [achievements, setAchievements] = useState<UserAchievementWithDetails[]>([])
-  const [selectedAchievement, setSelectedAchievement] = useState<UserAchievementWithDetails | null>(null)
   const [friendLevel, setFriendLevel] = useState<UserLevel | null>(null)
   const [reportModalVisible, setReportModalVisible] = useState(false)
   const [friendStatus, setFriendStatus] = useState<'none' | 'pending_sent' | 'pending_received' | 'friends'>('none')
@@ -151,14 +143,13 @@ export default function FriendProfileScreen() {
     }
   }, [id])
 
-  // Fetch workouts + achievements once profile is loaded
+  // Fetch workouts for calendar once profile is loaded
   useEffect(() => {
     void fetchMonthWorkouts()
   }, [fetchMonthWorkouts])
 
   useEffect(() => {
     if (!id) return
-    getUserAchievements(id).then(setAchievements).catch(() => {})
     getUserLevel(id).then(setFriendLevel).catch(() => {})
   }, [id])
 
@@ -168,11 +159,6 @@ export default function FriendProfileScreen() {
       .then(setFriendStatus)
       .catch(() => setFriendStatus('none'))
   }, [session, id])
-
-  useEffect(() => {
-    if (!id) return
-    getHighlightsForProfile(id).then(setHighlights).catch(() => {})
-  }, [id])
 
   const displayName = profile?.display_name || 'Athlete'
   const specialBadge = getSpecialBadge(profile?.display_name)
@@ -400,36 +386,6 @@ export default function FriendProfileScreen() {
           )}
         </ThemedView>
 
-        {/* Highlights */}
-        {highlights.some((h) => h.workouts_count > 0) && (
-          <View style={styles.highlightsSection}>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.highlightsScroll}
-            >
-              {highlights.filter((h) => h.workouts_count > 0).map((h) => (
-                <Pressable
-                  key={h.id}
-                  onPress={() => router.push({ pathname: '/highlight-detail', params: { id: h.id } })}
-                  style={[styles.highlightCircleWrap, { borderColor: (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)') }]}
-                >
-                  <View style={[styles.highlightCircle, { backgroundColor: colors.cardElevated, overflow: 'hidden' }]}>
-                    {h.cover_image_url ? (
-                      <Image source={{ uri: h.cover_image_url }} style={styles.highlightCircleImage} />
-                    ) : (
-                      <Ionicons name="images-outline" size={28} color={colors.textMuted} />
-                    )}
-                  </View>
-                  <ThemedText style={[styles.highlightLabel, { color: colors.text }]} numberOfLines={1}>
-                    {h.name}
-                  </ThemedText>
-                </Pressable>
-              ))}
-            </ScrollView>
-          </View>
-        )}
-
         {/* Activity Calendar */}
         <ThemedView style={styles.section}>
           <ThemedText type="subtitle" style={[styles.sectionTitle, { color: colors.text }]}>
@@ -545,91 +501,8 @@ export default function FriendProfileScreen() {
               Streak
             </ThemedText>
           </View>
-          <View style={[styles.statBox, { backgroundColor: colors.card }]}>
-            <ThemedText type="defaultSemiBold" style={[styles.statValue, { color: colors.tint }]}>
-              {profile.groups_count ?? 0}
-            </ThemedText>
-            <ThemedText style={[styles.statLabel, { color: colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit>
-              Groups
-            </ThemedText>
-          </View>
         </View>
 
-        {/* Achievements */}
-        <ThemedView style={styles.section}>
-          <ThemedText type="subtitle" style={[styles.sectionTitle, { color: colors.text }]}>
-            Achievements
-          </ThemedText>
-          {achievements.length === 0 ? (
-            <View style={[styles.badgesContainer, { backgroundColor: colors.card, borderColor: (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)') }]}>
-              <ThemedText style={[styles.emptyBadgesText, { color: colors.textMuted }]}>
-                No achievements yet.
-              </ThemedText>
-            </View>
-          ) : (
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.achievementsScroll}
-            >
-              {achievements.map((ach) => {
-                const progress = Math.min(ach.progress_value / ach.requirement_value, 1)
-                const catMeta = ACHIEVEMENT_CATEGORIES[ach.category as keyof typeof ACHIEVEMENT_CATEGORIES]
-                return (
-                  <Pressable
-                    key={ach.achievement_id}
-                    onPress={() => setSelectedAchievement(ach)}
-                    style={[
-                      styles.achievementCard,
-                      {
-                        backgroundColor: colors.card,
-                        borderColor: ach.unlocked
-                          ? catMeta?.color ?? colors.tint
-                          : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)'),
-                        borderWidth: ach.unlocked ? 1.5 : 1,
-                        shadowColor: ach.unlocked ? catMeta?.color ?? colors.tint : 'transparent',
-                        shadowOpacity: ach.unlocked ? 0.3 : 0,
-                        shadowRadius: ach.unlocked ? 8 : 0,
-                        elevation: ach.unlocked ? 4 : 0,
-                      },
-                    ]}
-                  >
-                    <AchievementBadge achievementKey={ach.key} size={48} locked={!ach.unlocked} />
-                    <ThemedText
-                      style={[
-                        styles.achievementName,
-                        { color: ach.unlocked ? colors.text : colors.textMuted },
-                      ]}
-                      numberOfLines={2}
-                    >
-                      {ach.name}
-                    </ThemedText>
-                    {!ach.unlocked && (
-                      <View style={styles.progressBarOuter}>
-                        <View
-                          style={[
-                            styles.progressBarInner,
-                            {
-                              width: `${Math.round(progress * 100)}%`,
-                              backgroundColor: catMeta?.color ?? colors.tint,
-                            },
-                          ]}
-                        />
-                      </View>
-                    )}
-                    {ach.unlocked && (
-                      <View style={[styles.unlockedBadge, { backgroundColor: (catMeta?.color ?? colors.tint) + '20' }]}>
-                        <ThemedText style={[styles.unlockedText, { color: catMeta?.color ?? colors.tint }]}>
-                          ✓ Unlocked
-                        </ThemedText>
-                      </View>
-                    )}
-                  </Pressable>
-                )
-              })}
-            </ScrollView>
-          )}
-        </ThemedView>
       </ScrollView>
 
       {/* Photo zoom modal */}
@@ -653,85 +526,6 @@ export default function FriendProfileScreen() {
                   )}
                 </Animated.View>
               </GestureDetector>
-            </Pressable>
-          </View>
-        </Pressable>
-      </Modal>
-
-      {/* Achievement detail modal */}
-      <Modal
-        visible={!!selectedAchievement}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setSelectedAchievement(null)}
-      >
-        <Pressable style={styles.modalOverlay} onPress={() => setSelectedAchievement(null)}>
-          <View style={styles.achievementDetailCard}>
-            <Pressable onPress={(e) => e.stopPropagation()}>
-              {selectedAchievement && (() => {
-                const catMeta = ACHIEVEMENT_CATEGORIES[
-                  selectedAchievement.category as keyof typeof ACHIEVEMENT_CATEGORIES
-                ]
-                const progress = Math.min(
-                  selectedAchievement.progress_value / selectedAchievement.requirement_value,
-                  1
-                )
-                return (
-                  <View style={[styles.achievementDetailInner, { backgroundColor: colors.card }]}>
-                    <View
-                      style={[
-                        styles.achievementDetailIconWrap,
-                        { backgroundColor: (catMeta?.color ?? colors.tint) + '15' },
-                      ]}
-                    >
-                      <AchievementBadge achievementKey={selectedAchievement.key} size={72} locked={!selectedAchievement.unlocked} />
-                    </View>
-                    <ThemedText style={[styles.achievementDetailCategory, { color: catMeta?.color ?? colors.tint }]}>
-                      {catMeta?.label ?? selectedAchievement.category}
-                    </ThemedText>
-                    <ThemedText style={[styles.achievementDetailName, { color: colors.text }]}>
-                      {selectedAchievement.name}
-                    </ThemedText>
-                    <ThemedText style={[styles.achievementDetailDesc, { color: colors.textMuted }]}>
-                      {selectedAchievement.description}
-                    </ThemedText>
-                    {!selectedAchievement.unlocked ? (
-                      <View style={styles.achievementDetailProgressSection}>
-                        <View style={[styles.achievementDetailProgressOuter, { backgroundColor: colors.cardElevated }]}>
-                          <View
-                            style={[
-                              styles.achievementDetailProgressInner,
-                              {
-                                width: `${Math.round(progress * 100)}%`,
-                                backgroundColor: catMeta?.color ?? colors.tint,
-                              },
-                            ]}
-                          />
-                        </View>
-                        <ThemedText style={[styles.achievementDetailProgressText, { color: colors.textMuted }]}>
-                          {selectedAchievement.progress_value} / {selectedAchievement.requirement_value}
-                        </ThemedText>
-                      </View>
-                    ) : (
-                      <View style={[styles.achievementDetailUnlocked, { backgroundColor: (catMeta?.color ?? colors.tint) + '15' }]}>
-                        <ThemedText style={[styles.achievementDetailUnlockedText, { color: catMeta?.color ?? colors.tint }]}>
-                          ✓ Unlocked{selectedAchievement.unlocked_at
-                            ? ` on ${new Date(selectedAchievement.unlocked_at).toLocaleDateString()}`
-                            : ''}
-                        </ThemedText>
-                      </View>
-                    )}
-                    <Pressable
-                      style={[styles.achievementDetailClose, { borderColor: (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)') }]}
-                      onPress={() => setSelectedAchievement(null)}
-                    >
-                      <ThemedText style={[styles.achievementDetailCloseText, { color: colors.text }]}>
-                        Close
-                      </ThemedText>
-                    </Pressable>
-                  </View>
-                )
-              })()}
             </Pressable>
           </View>
         </Pressable>
@@ -914,19 +708,6 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
     textAlign: 'center',
   },
-  highlightsSection: { marginBottom: 20 },
-  highlightsScroll: { paddingHorizontal: 4, gap: 16, paddingRight: 20 },
-  highlightCircleWrap: { alignItems: 'center', width: 76 },
-  highlightCircle: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-  },
-  highlightCircleImage: { width: 72, height: 72, borderRadius: 36 },
-  highlightLabel: { fontSize: 11, fontWeight: '600', marginTop: 6, maxWidth: 72, textAlign: 'center', letterSpacing: 0.2 },
   // Calendar styles
   calendarCard: {
     borderRadius: 14,
@@ -1000,57 +781,6 @@ const styles = StyleSheet.create({
   calendarLegendLabel: {
     fontSize: 12,
   },
-  // Badges / Achievements
-  badgesContainer: {
-    borderRadius: 14,
-    padding: 20,
-    minHeight: 100,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  emptyBadgesText: {
-    fontSize: 14,
-    textAlign: 'center',
-    lineHeight: 20,
-  },
-  achievementsScroll: { paddingRight: 24, gap: 12 },
-  achievementCard: {
-    width: 118,
-    padding: 12,
-    borderRadius: 16,
-    alignItems: 'center',
-  },
-  achievementIconWrap: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 8,
-    overflow: 'visible',
-  },
-  achievementIcon: { fontSize: 26, lineHeight: 34 },
-  achievementName: { fontSize: 11, fontWeight: '700', textAlign: 'center', marginBottom: 8, lineHeight: 15, paddingHorizontal: 4 },
-  progressBarOuter: { width: '100%', height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.08)', overflow: 'hidden' },
-  progressBarInner: { height: '100%', borderRadius: 2 },
-  unlockedBadge: { paddingVertical: 3, paddingHorizontal: 10, borderRadius: 8 },
-  unlockedText: { fontSize: 10, fontWeight: '700' },
-  // Achievement detail modal
-  achievementDetailCard: { width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center', padding: 32 },
-  achievementDetailInner: { width: '100%', borderRadius: 24, padding: 28, alignItems: 'center' },
-  achievementDetailIconWrap: { width: 72, height: 72, borderRadius: 36, alignItems: 'center', justifyContent: 'center', marginBottom: 12, overflow: 'visible' },
-  achievementDetailIcon: { fontSize: 38, lineHeight: 48 },
-  achievementDetailCategory: { fontSize: 12, fontWeight: '700', letterSpacing: 1.5, marginBottom: 4 },
-  achievementDetailName: { fontSize: 22, fontWeight: '800', textAlign: 'center', marginBottom: 8 },
-  achievementDetailDesc: { fontSize: 14, textAlign: 'center', lineHeight: 20, marginBottom: 20 },
-  achievementDetailProgressSection: { width: '100%', marginBottom: 20 },
-  achievementDetailProgressOuter: { width: '100%', height: 8, borderRadius: 4, overflow: 'hidden', marginBottom: 8 },
-  achievementDetailProgressInner: { height: '100%', borderRadius: 4 },
-  achievementDetailProgressText: { fontSize: 13, textAlign: 'center', fontWeight: '600' },
-  achievementDetailUnlocked: { paddingVertical: 8, paddingHorizontal: 20, borderRadius: 12, marginBottom: 20 },
-  achievementDetailUnlockedText: { fontSize: 14, fontWeight: '700' },
-  achievementDetailClose: { paddingVertical: 12, paddingHorizontal: 24, borderRadius: 12},
-  achievementDetailCloseText: { fontSize: 15, fontWeight: '600' },
   // Photo zoom modal
   modalOverlay: {
     flex: 1,

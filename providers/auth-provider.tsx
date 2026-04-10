@@ -15,13 +15,30 @@ export default function AuthProvider({ children }: PropsWithChildren) {
   const [isLoading, setIsLoading] = useState<boolean>(true)
   const fetchProfileRef = useRef<() => Promise<void>>(async () => {})
 
-  const signIn = useCallback(async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
-    return { error: error ?? null }
-  }, [])
+  const sendPhoneOtp = useCallback(
+    async (phoneE164: string, options?: { isSignUp?: boolean; fullName?: string }) => {
+      const isSignUp = options?.isSignUp === true
+      const { error } = await supabase.auth.signInWithOtp({
+        phone: phoneE164,
+        options: {
+          channel: 'sms',
+          shouldCreateUser: isSignUp,
+          ...(options?.fullName?.trim()
+            ? { data: { full_name: options.fullName.trim() } }
+            : {}),
+        },
+      })
+      return { error: error ?? null }
+    },
+    []
+  )
 
-  const signUp = useCallback(async (email: string, password: string) => {
-    const { error } = await supabase.auth.signUp({ email, password })
+  const verifyPhoneOtp = useCallback(async (phoneE164: string, token: string) => {
+    const { error } = await supabase.auth.verifyOtp({
+      phone: phoneE164,
+      token: token.replace(/\D/g, ''),
+      type: 'sms',
+    })
     return { error: error ?? null }
   }, [])
 
@@ -60,16 +77,12 @@ export default function AuthProvider({ children }: PropsWithChildren) {
       const now = new Date()
       const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
 
-      const [allWorkoutsRes, groupsRes, friendsRes] = await Promise.all([
+      const [allWorkoutsRes, friendsRes] = await Promise.all([
         supabase
           .from('workouts')
           .select('workout_date, workout_type')
           .eq('user_id', userId)
           .order('workout_date', { ascending: true }),
-        supabase
-          .from('group_members')
-          .select('id', { count: 'exact', head: true })
-          .eq('user_id', userId),
         supabase
           .from('friendships')
           .select('id', { count: 'exact', head: true })
@@ -136,7 +149,7 @@ export default function AuthProvider({ children }: PropsWithChildren) {
         streak: currentStreak,
         longest_streak: longestStreak,
         workouts_count: nonRestCount,
-        groups_count: groupsRes.count ?? profileData.groups_count ?? 0,
+        groups_count: profileData.groups_count ?? 0,
         friends_count: friendsRes.count ?? profileData.friends_count ?? 0,
       })
     } catch {
@@ -239,8 +252,8 @@ export default function AuthProvider({ children }: PropsWithChildren) {
         isLoading,
         profile,
         isLoggedIn: !!session,
-        signIn,
-        signUp,
+        sendPhoneOtp,
+        verifyPhoneOtp,
         signInWithGoogle,
         signInWithApple,
         signOut,

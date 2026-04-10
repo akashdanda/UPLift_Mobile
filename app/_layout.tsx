@@ -57,49 +57,17 @@ function RootNavigator() {
         />
         <Stack.Screen
           name="friend-profile"
-          options={{ title: 'Profile', presentation: 'modal', headerBackTitle: 'Friends' }}
-        />
-        <Stack.Screen
-          name="create-group"
-          options={{ title: 'Create group', presentation: 'modal', headerBackTitle: 'Groups' }}
-        />
-        <Stack.Screen name="group-detail" options={{ title: 'Group', headerBackTitle: 'Groups' }} />
-        <Stack.Screen
-          name="group-settings"
-          options={{ title: 'Group Settings', presentation: 'modal', headerBackTitle: 'Group' }}
-        />
-        <Stack.Screen
-          name="challenge-group"
-          options={{ title: 'Challenge Group', presentation: 'modal', headerBackTitle: 'Groups' }}
-        />
-        <Stack.Screen
-          name="competition-detail"
-          options={{ title: 'Competition Details', headerBackTitle: 'Groups' }}
+          options={{ title: 'Profile', presentation: 'modal', headerBackTitle: 'Profile' }}
         />
         <Stack.Screen name="create-duel" options={{ title: '1v1 Challenge', presentation: 'modal', headerBackTitle: 'Profile' }} />
         <Stack.Screen name="duel-detail" options={{ title: 'Challenge', headerBackTitle: 'Profile' }} />
-        <Stack.Screen
-          name="highlight-detail"
-          options={{
-            headerShown: false,
-            presentation: 'fullScreenModal',
-            animation: 'fade',
-          }}
-        />
-        <Stack.Screen
-          name="manage-highlights"
-          options={{ title: 'Highlights', headerBackTitle: 'Profile' }}
-        />
-        <Stack.Screen
-          name="add-workouts-to-highlight"
-          options={{ title: 'Add workouts', headerBackTitle: 'Highlights' }}
-        />
         <Stack.Screen name="settings" options={{ title: 'Settings', headerBackTitle: 'Profile' }} />
       </Stack.Protected>
       <Stack.Protected guard={!isLoggedIn}>
         <Stack.Screen name="onboarding" options={{ headerShown: false }} />
         <Stack.Screen name="login" options={{ headerShown: false }} />
         <Stack.Screen name="sign-up" options={{ headerShown: false }} />
+        <Stack.Screen name="verify-otp" options={{ headerShown: false }} />
       </Stack.Protected>
       <Stack.Screen name="+not-found" />
     </Stack>

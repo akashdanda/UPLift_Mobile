@@ -7,10 +7,7 @@ export type NotificationType =
   | 'reaction'
   | 'comment'
   | 'friend_streak'
-  | 'achievement'
-  | 'competition_started'
   | 'friend_activity'
-  | 'group_invite'
   | 'duel_update'
 
 export type Notification = {
@@ -30,24 +27,9 @@ export type Notification = {
   friend_display_name?: string
   friend_avatar_url?: string | null
   streak_count?: number
-  // Achievement notifications
-  achievement_id?: string
-  achievement_name?: string
-  achievement_icon?: string
-  achievement_key?: string
-  // Competition notifications
-  competition_id?: string
-  competition_group_name?: string
-  competition_group_avatar_url?: string | null
   // Friend activity notifications
   activity_type?: string
   activity_description?: string
-  // Group invite notifications
-  group_id?: string
-  group_name?: string
-  group_avatar_url?: string | null
-  invited_by_id?: string
-  invited_by_name?: string | null
   // Duel / challenge notifications
   duel_id?: string
   duel_status?: string
@@ -208,130 +190,7 @@ export async function getNotifications(userId: string, limit = 50): Promise<Noti
     }
   }
 
-  // 4. Recent achievements (last 7 days)
-  const { data: recentAchievements } = await supabase
-    .from('user_achievements')
-    .select('id, achievement_id, unlocked_at')
-    .eq('user_id', userId)
-    .gte('unlocked_at', sevenDaysAgoStr)
-    .order('unlocked_at', { ascending: false })
-    .limit(10)
-
-  if (recentAchievements && recentAchievements.length > 0) {
-    const achievementIds = [...new Set(recentAchievements.map((ua) => ua.achievement_id))]
-    const { data: achievements } = await supabase
-      .from('achievements')
-      .select('id, name, icon, key')
-      .in('id', achievementIds)
-
-    const achievementMap = new Map(
-      (achievements ?? []).map((a: { id: string; name: string; icon: string; key: string }) => [a.id, a])
-    )
-
-    for (const ua of recentAchievements) {
-      const achievement = achievementMap.get(ua.achievement_id)
-      notifications.push({
-        id: `achievement_${ua.id}`,
-        type: 'achievement',
-        created_at: ua.unlocked_at,
-        achievement_id: ua.achievement_id,
-        achievement_name: achievement?.name ?? null,
-        achievement_icon: achievement?.icon ?? null,
-        achievement_key: achievement?.key ?? null,
-      })
-    }
-  }
-
-  // 5. Competitions started (groups user is in)
-  const { data: userGroups } = await supabase
-    .from('group_members')
-    .select('group_id')
-    .eq('user_id', userId)
-
-  if (userGroups && userGroups.length > 0) {
-    const groupIds = userGroups.map((g) => g.group_id)
-    const { data: competitions } = await supabase
-      .from('group_competitions')
-      .select('id, group1_id, group2_id, created_at')
-      .or(`group1_id.in.(${groupIds.join(',')}),group2_id.in.(${groupIds.join(',')})`)
-      .eq('status', 'active')
-      .gte('created_at', sevenDaysAgoStr)
-      .order('created_at', { ascending: false })
-      .limit(10)
-
-    if (competitions && competitions.length > 0) {
-      const allGroupIds = new Set<string>()
-      for (const comp of competitions) {
-        if (comp.group1_id) allGroupIds.add(comp.group1_id)
-        if (comp.group2_id) allGroupIds.add(comp.group2_id)
-      }
-
-      const { data: groups } = await supabase
-        .from('groups')
-        .select('id, name, avatar_url')
-        .in('id', [...allGroupIds])
-
-      const groupMap = new Map(
-        (groups ?? []).map((g: { id: string; name: string; avatar_url: string | null }) => [g.id, g])
-      )
-
-      for (const comp of competitions) {
-        // Use group1 as the primary group for notification
-        const group = groupMap.get(comp.group1_id || comp.group2_id || '')
-        notifications.push({
-          id: `competition_${comp.id}`,
-          type: 'competition_started',
-          created_at: comp.created_at,
-          competition_id: comp.id,
-          competition_group_name: group?.name ?? null,
-          competition_group_avatar_url: group?.avatar_url ?? null,
-        })
-      }
-    }
-  }
-
-  // 6. Pending group invites (where user was invited)
-  const { data: invites } = await supabase
-    .from('group_invites')
-    .select('id, group_id, invited_by, created_at, status')
-    .eq('invited_user_id', userId)
-    .eq('status', 'pending')
-    .order('created_at', { ascending: false })
-    .limit(20)
-
-  if (invites && invites.length > 0) {
-    const groupIdsForInvites = [...new Set(invites.map((i) => i.group_id))]
-    const inviterIds = [...new Set(invites.map((i) => i.invited_by))]
-
-    const [{ data: inviteGroups }, { data: inviters }] = await Promise.all([
-      supabase.from('groups').select('id, name, avatar_url').in('id', groupIdsForInvites),
-      supabase.from('profiles').select('id, display_name').in('id', inviterIds),
-    ])
-
-    const inviteGroupMap = new Map(
-      (inviteGroups ?? []).map((g: { id: string; name: string; avatar_url: string | null }) => [g.id, g])
-    )
-    const invitersMap = new Map(
-      (inviters ?? []).map((p: { id: string; display_name: string | null }) => [p.id, p])
-    )
-
-    for (const inv of invites) {
-      const g = inviteGroupMap.get(inv.group_id)
-      const inviter = invitersMap.get(inv.invited_by)
-      notifications.push({
-        id: `group_invite_${inv.id}`,
-        type: 'group_invite',
-        created_at: inv.created_at,
-        group_id: inv.group_id,
-        group_name: g?.name ?? 'Group',
-        group_avatar_url: g?.avatar_url ?? null,
-        invited_by_id: inv.invited_by,
-        invited_by_name: inviter?.display_name ?? null,
-      })
-    }
-  }
-
-  // 7. Recent duel / challenge updates involving the user (last 7 days)
+  // 4. Recent duel / challenge updates involving the user (last 7 days)
   const { data: duels } = await supabase
     .from('duels')
     .select('*')
@@ -372,7 +231,7 @@ export async function getNotifications(userId: string, limit = 50): Promise<Noti
     }
   }
 
-  // 8. Friend activity incentives (friends who worked out today)
+  // 5. Friend activity incentives (friends who worked out today)
   if (friends.length > 0) {
     const friendIds = friends.map((f) => f.id).filter(Boolean)
 

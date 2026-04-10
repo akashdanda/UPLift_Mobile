@@ -16,45 +16,41 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import AppleSignInButton from '@/components/social-auth-buttons/apple-sign-in-button'
 import GoogleSignInButton from '@/components/social-auth-buttons/google-sign-in-button'
 import { ThemedText } from '@/components/themed-text'
-import { useAuthContext } from '@/hooks/use-auth-context'
 import { BrandViolet, Colors } from '@/constants/theme'
+import { useAuthContext } from '@/hooks/use-auth-context'
 import { useColorScheme } from '@/hooks/use-color-scheme'
-
-const MIN_PASSWORD_LENGTH = 6
+import { normalizeToE164 } from '@/lib/phone-auth'
 
 export default function SignUpScreen() {
-  const { signUp } = useAuthContext()
+  const { sendPhoneOtp } = useAuthContext()
   const colorScheme = useColorScheme()
   const colors = Colors[colorScheme ?? 'light']
   const insets = useSafeAreaInsets()
   const isDark = colorScheme === 'dark'
 
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
+  const [fullName, setFullName] = useState('')
+  const [phone, setPhone] = useState('')
   const [loading, setLoading] = useState(false)
 
-  const handleSignUp = async () => {
-    const trimmed = email.trim()
-    if (!trimmed || !password) {
-      Alert.alert('Error', 'Please enter email and password.')
+  const handleContinue = async () => {
+    const name = fullName.trim()
+    if (!name) {
+      Alert.alert('Error', 'Please enter your name.')
       return
     }
-    if (password.length < MIN_PASSWORD_LENGTH) {
-      Alert.alert('Error', `Password must be at least ${MIN_PASSWORD_LENGTH} characters.`)
+    const e164 = normalizeToE164(phone)
+    if (!e164) {
+      Alert.alert('Invalid number', 'Enter a valid US phone number (10 digits) or include country code with +.')
       return
     }
     setLoading(true)
-    const { error } = await signUp(trimmed, password)
+    const { error } = await sendPhoneOtp(e164, { isSignUp: true, fullName: name })
     setLoading(false)
     if (error) {
-      Alert.alert('Sign up failed', error.message)
+      Alert.alert('Could not send code', error.message)
       return
     }
-    Alert.alert(
-      'Check your email',
-      'We sent you a confirmation link. Sign in after confirming your email.',
-      [{ text: 'OK', onPress: () => router.replace('/login') }]
-    )
+    router.push({ pathname: '/verify-otp', params: { phone: e164, displayName: name } })
   }
 
   const inputSurface = {
@@ -85,27 +81,45 @@ export default function SignUpScreen() {
           <View style={styles.brand}>
             <ThemedText style={[styles.brandName, { color: colors.text }]}>UPLIFT</ThemedText>
             <ThemedText style={[styles.logo, { color: colors.text }]}>Create account</ThemedText>
+            <ThemedText style={[styles.tagline, { color: colors.textMuted }]}>
+              Name + phone, or continue with Google or Apple
+            </ThemedText>
+          </View>
+
+          <View style={styles.socialBtns}>
+            <AppleSignInButton />
+            <GoogleSignInButton />
+          </View>
+
+          <View style={styles.divider}>
+            <View style={[styles.dividerLine, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)' }]} />
+            <ThemedText style={[styles.dividerText, { color: colors.textMuted }]}>or</ThemedText>
+            <View style={[styles.dividerLine, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)' }]} />
           </View>
 
           <View style={styles.form}>
+            <ThemedText style={[styles.fieldLabel, { color: colors.textMuted }]}>Name</ThemedText>
             <TextInput
               style={[styles.input, inputSurface, { color: colors.text }]}
-              placeholder="Email"
+              placeholder="Your name"
               placeholderTextColor={colors.textMuted}
-              value={email}
-              onChangeText={setEmail}
-              autoCapitalize="none"
-              autoCorrect={false}
-              keyboardType="email-address"
+              value={fullName}
+              onChangeText={setFullName}
+              autoCapitalize="words"
+              autoCorrect
+              textContentType="name"
               editable={!loading}
             />
+            <ThemedText style={[styles.fieldLabel, { color: colors.textMuted, marginTop: 12 }]}>Phone number</ThemedText>
             <TextInput
               style={[styles.input, inputSurface, { color: colors.text }]}
-              placeholder={`Password (min ${MIN_PASSWORD_LENGTH} chars)`}
+              placeholder="(555) 123-4567"
               placeholderTextColor={colors.textMuted}
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry
+              value={phone}
+              onChangeText={setPhone}
+              keyboardType="phone-pad"
+              textContentType="telephoneNumber"
+              autoComplete="tel"
               editable={!loading}
             />
           </View>
@@ -115,26 +129,15 @@ export default function SignUpScreen() {
               styles.primaryBtn,
               { backgroundColor: BrandViolet.primary, opacity: pressed ? 0.88 : loading ? 0.7 : 1 },
             ]}
-            onPress={handleSignUp}
+            onPress={handleContinue}
             disabled={loading}
           >
             {loading ? (
               <ActivityIndicator color="#FFFFFF" />
             ) : (
-              <ThemedText style={styles.primaryBtnText}>Create account</ThemedText>
+              <ThemedText style={styles.primaryBtnText}>Send code</ThemedText>
             )}
           </Pressable>
-
-          <View style={styles.divider}>
-            <View style={[styles.dividerLine, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)' }]} />
-            <ThemedText style={[styles.dividerText, { color: colors.textMuted }]}>or</ThemedText>
-            <View style={[styles.dividerLine, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)' }]} />
-          </View>
-
-          <View style={styles.socialBtns}>
-            <AppleSignInButton />
-            <GoogleSignInButton />
-          </View>
 
           <View style={styles.footer}>
             <ThemedText style={[styles.footerText, { color: colors.textMuted }]}>
@@ -161,7 +164,7 @@ const styles = StyleSheet.create({
     flexGrow: 1,
   },
   brand: {
-    marginBottom: 40,
+    marginBottom: 28,
     paddingTop: 4,
   },
   brandName: {
@@ -175,16 +178,50 @@ const styles = StyleSheet.create({
     lineHeight: 40,
     fontWeight: '700',
     letterSpacing: -0.5,
+    marginBottom: 8,
   },
-  form: { gap: 12, marginBottom: 24 },
-  input: { borderRadius: 16, paddingHorizontal: 18, paddingVertical: 16, fontSize: 16, fontWeight: '400' },
-  primaryBtn: { borderRadius: 16, paddingVertical: 17, alignItems: 'center', justifyContent: 'center' },
-  primaryBtnText: { color: '#fff', fontSize: 16, fontWeight: '600', letterSpacing: 0.2 },
-  divider: { flexDirection: 'row', alignItems: 'center', gap: 16, marginVertical: 28 },
+  tagline: { fontSize: 14, lineHeight: 20 },
+  socialBtns: { gap: 10, marginBottom: 8 },
+  divider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+    marginVertical: 24,
+  },
   dividerLine: { flex: 1, height: StyleSheet.hairlineWidth },
   dividerText: { fontSize: 13, fontWeight: '400' },
-  socialBtns: { gap: 10 },
-  footer: { flexDirection: 'row', justifyContent: 'center', marginTop: 40 },
+  form: { marginBottom: 16 },
+  fieldLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+    marginBottom: 8,
+  },
+  input: {
+    borderRadius: 16,
+    paddingHorizontal: 18,
+    paddingVertical: 16,
+    fontSize: 16,
+    fontWeight: '400',
+  },
+  primaryBtn: {
+    borderRadius: 16,
+    paddingVertical: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  primaryBtnText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+    letterSpacing: 0.2,
+  },
+  footer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginTop: 40,
+  },
   footerText: { fontSize: 14 },
   footerLink: { fontSize: 14, fontWeight: '600' },
 })
