@@ -1,5 +1,6 @@
 import Ionicons from '@expo/vector-icons/Ionicons'
 import * as Haptics from 'expo-haptics'
+import * as Location from 'expo-location'
 import { LinearGradient } from 'expo-linear-gradient'
 import { router, useLocalSearchParams } from 'expo-router'
 import { StatusBar } from 'expo-status-bar'
@@ -218,6 +219,8 @@ export default function GymArenaScreen() {
   const [gym, setGym] = useState<Gym | null>(null)
   const [presence, setPresence] = useState<PresenceRow[]>([])
   const [loading, setLoading] = useState(true)
+  /** Your current GPS for arena pin (others use their stored check-in coords). */
+  const [liveSelfCoords, setLiveSelfCoords] = useState<{ lat: number; lng: number } | null>(null)
 
   useEffect(() => {
     if (!gymId) {
@@ -251,6 +254,25 @@ export default function GymArenaScreen() {
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success)
   }, [])
 
+  useEffect(() => {
+    if (!coordsOk) return
+    let alive = true
+    ;(async () => {
+      try {
+        const { status } = await Location.getForegroundPermissionsAsync()
+        if (status !== 'granted') return
+        const p = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced })
+        if (!alive) return
+        setLiveSelfCoords({ lat: p.coords.latitude, lng: p.coords.longitude })
+      } catch {
+        /* ignore */
+      }
+    })()
+    return () => {
+      alive = false
+    }
+  }, [coordsOk])
+
   const displayName = gym?.name ?? params.gymName ?? 'Gym'
   const displayAddress = gym?.address ?? params.gymAddress ?? ''
 
@@ -270,18 +292,63 @@ export default function GymArenaScreen() {
 
   const othersCount = Math.max(0, pins.filter((p) => !p.isSelf).length)
 
+  const rowsByUserId = useMemo(() => {
+    const m = new Map<string, PresenceRow>()
+    for (const r of presence) m.set(r.user_id, r)
+    return m
+  }, [presence])
+
   const markerPayload = useMemo(() => {
     if (!coordsOk || pins.length === 0) return []
-    const slots = geoSlotsForPins(pins.length, gymLat, gymLng)
-    return pins.map((p, i) => ({
-      userId: p.userId,
-      displayName: p.displayName,
-      avatarUrl: p.avatarUrl ?? '',
-      isSelf: p.isSelf,
-      lat: slots[i]?.lat ?? gymLat,
-      lng: slots[i]?.lng ?? gymLng,
-    }))
-  }, [pins, coordsOk, gymLat, gymLng])
+
+    const rowHasCoords = (r: PresenceRow | undefined) =>
+      !!r &&
+      typeof r.check_in_lat === 'number' &&
+      typeof r.check_in_lng === 'number' &&
+      Number.isFinite(r.check_in_lat) &&
+      Number.isFinite(r.check_in_lng)
+
+    const needsFallbackSlot: typeof pins = []
+    for (const p of pins) {
+      if (p.isSelf && liveSelfCoords) continue
+      const r = rowsByUserId.get(p.userId)
+      if (!rowHasCoords(r)) needsFallbackSlot.push(p)
+    }
+
+    const slots = geoSlotsForPins(needsFallbackSlot.length, gymLat, gymLng)
+    const slotByUserId = new Map<string, { lat: number; lng: number }>()
+    needsFallbackSlot.forEach((p, i) => {
+      const s = slots[i]
+      if (s) slotByUserId.set(p.userId, s)
+    })
+
+    return pins.map((p) => {
+      let lat: number
+      let lng: number
+      if (p.isSelf && liveSelfCoords) {
+        lat = liveSelfCoords.lat
+        lng = liveSelfCoords.lng
+      } else {
+        const r = rowsByUserId.get(p.userId)
+        if (rowHasCoords(r)) {
+          lat = r!.check_in_lat!
+          lng = r!.check_in_lng!
+        } else {
+          const s = slotByUserId.get(p.userId) ?? { lat: gymLat, lng: gymLng }
+          lat = s.lat
+          lng = s.lng
+        }
+      }
+      return {
+        userId: p.userId,
+        displayName: p.displayName,
+        avatarUrl: p.avatarUrl ?? '',
+        isSelf: p.isSelf,
+        lat,
+        lng,
+      }
+    })
+  }, [pins, coordsOk, gymLat, gymLng, rowsByUserId, liveSelfCoords])
 
   const arenaHtml = useMemo(() => {
     if (!coordsOk) return ''
@@ -318,6 +385,18 @@ export default function GymArenaScreen() {
       Alert.alert('Sign in required', 'Log in to log a workout.')
       return
     }
+    let checkInLat: number | undefined
+    let checkInLng: number | undefined
+    try {
+      const { status } = await Location.getForegroundPermissionsAsync()
+      if (status === 'granted') {
+        const p = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced })
+        checkInLat = p.coords.latitude
+        checkInLng = p.coords.longitude
+      }
+    } catch {
+      /* optional */
+    }
     try {
       await checkIn({
         userId: session.user.id,
@@ -326,6 +405,8 @@ export default function GymArenaScreen() {
         avatarUrl: profile.avatar_url,
         streak: profile.streak ?? 0,
         shareWithOthers: profile.location_visible ?? false,
+        checkInLat,
+        checkInLng,
       })
     } catch {
       Alert.alert('Check-in failed', 'Could not verify you at this gym. Try again.')
@@ -440,7 +521,7 @@ export default function GymArenaScreen() {
           </View>
         )}
         <ThemedText style={styles.mapCaption}>
-          {`Zoomed map · Pins show who's checked in here`}
+          {`Zoomed map · Pins use each person's check-in GPS when available`}
         </ThemedText>
       </View>
 

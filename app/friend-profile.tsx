@@ -133,15 +133,24 @@ export default function FriendProfileScreen() {
 
     if (error) return
 
-    const dates = new Set<string>()
-    const restDates = new Set<string>()
+    const dateMap = new Map<string, string | null>()
     for (const row of data ?? []) {
       const r = row as { workout_date?: string | null; workout_type?: string | null }
-      if (typeof r.workout_date === 'string' && r.workout_date.length >= 10) {
-        const dateStr = r.workout_date.slice(0, 10)
-        dates.add(dateStr)
-        if (r.workout_type === 'rest') restDates.add(dateStr)
+      if (typeof r.workout_date !== 'string' || r.workout_date.length < 10) continue
+      const iso = r.workout_date.slice(0, 10)
+      const wt = r.workout_type ?? null
+      const existing = dateMap.get(iso)
+      if (existing === undefined) {
+        dateMap.set(iso, wt)
+      } else if (wt !== 'rest') {
+        dateMap.set(iso, wt)
       }
+    }
+    const dates = new Set<string>()
+    const restDates = new Set<string>()
+    for (const [iso, wt] of dateMap) {
+      dates.add(iso)
+      if (wt === 'rest') restDates.add(iso)
     }
     setMonthWorkoutDates(dates)
     setMonthRestDates(restDates)
@@ -230,7 +239,16 @@ export default function FriendProfileScreen() {
 
   if (loading) {
     return (
-      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['bottom']}>
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top', 'bottom']}>
+        <Pressable
+          onPress={() => router.back()}
+          style={[styles.floatingBack, { top: 8 }]}
+          hitSlop={12}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+        >
+          <Ionicons name="chevron-back" size={28} color={colors.text} />
+        </Pressable>
         <View style={styles.centered}>
           <ActivityIndicator size="large" color={colors.tint} />
         </View>
@@ -240,7 +258,16 @@ export default function FriendProfileScreen() {
 
   if (!profile) {
     return (
-      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['bottom']}>
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top', 'bottom']}>
+        <Pressable
+          onPress={() => router.back()}
+          style={[styles.floatingBack, { top: 8 }]}
+          hitSlop={12}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+        >
+          <Ionicons name="chevron-back" size={28} color={colors.text} />
+        </Pressable>
         <View style={styles.centered}>
           <ThemedText style={{ color: colors.textMuted }}>Profile not found.</ThemedText>
         </View>
@@ -249,7 +276,7 @@ export default function FriendProfileScreen() {
   }
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['bottom']}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top', 'bottom']}>
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
@@ -257,6 +284,15 @@ export default function FriendProfileScreen() {
       >
         {/* Header: Avatar, Name, Bio */}
         <ThemedView style={styles.header}>
+          <Pressable
+            onPress={() => router.back()}
+            style={styles.headerBack}
+            hitSlop={12}
+            accessibilityRole="button"
+            accessibilityLabel="Go back"
+          >
+            <Ionicons name="chevron-back" size={28} color={colors.text} />
+          </Pressable>
           {/* Report flag — top right corner */}
           {session && id !== session.user.id && (
             <Pressable
@@ -491,15 +527,15 @@ export default function FriendProfileScreen() {
                 </ThemedText>
               </View>
               <View style={styles.calendarLegendItem}>
-                <View style={[styles.calendarLegendDot, styles.calendarDayRest]} />
-                <ThemedText style={[styles.calendarLegendLabel, { color: colors.textMuted }]}>
-                  Rest day
-                </ThemedText>
-              </View>
-              <View style={styles.calendarLegendItem}>
                 <View style={[styles.calendarLegendDot, styles.calendarDayMissed]} />
                 <ThemedText style={[styles.calendarLegendLabel, { color: colors.textMuted }]}>
                   Missed day
+                </ThemedText>
+              </View>
+              <View style={styles.calendarLegendItem}>
+                <View style={[styles.calendarLegendDot, styles.calendarDayRest]} />
+                <ThemedText style={[styles.calendarLegendLabel, { color: colors.textMuted }]}>
+                  Rest day
                 </ThemedText>
               </View>
             </View>
@@ -600,12 +636,27 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 28,
     position: 'relative',
+    paddingTop: 4,
+  },
+  headerBack: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    padding: 4,
+    zIndex: 2,
+  },
+  floatingBack: {
+    position: 'absolute',
+    left: 16,
+    zIndex: 10,
+    padding: 4,
   },
   reportFlag: {
     position: 'absolute',
     top: 0,
     right: 0,
     padding: 4,
+    zIndex: 2,
   },
   avatarRing: {
     width: 96,
@@ -796,7 +847,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#22c55e',
   },
   calendarDayRest: {
-    backgroundColor: '#eab308',
+    backgroundColor: '#6366f1',
   },
   calendarDayMissed: {
     backgroundColor: '#ef4444',
@@ -806,7 +857,7 @@ const styles = StyleSheet.create({
   },
   calendarLegendRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'space-around',
     marginTop: 12,
   },
   calendarLegendItem: {

@@ -504,20 +504,16 @@ window.reloadGymsFromOverpass=function(){
   pins.clearLayers();
   map.invalidateSize();
   setTimeout(function(){load(0);},0);
-  setTimeout(function(){load(0);},100);
-  setTimeout(function(){load(0);},280);
 };
 
-map.on('moveend',function(){clearTimeout(timer);timer=setTimeout(load,50)});
+map.on('moveend',function(){clearTimeout(timer);timer=setTimeout(load,220)});
 
 map.whenReady(function(){
   function kick(){
     try{map.invalidateSize();load();}catch(e){}
   }
   requestAnimationFrame(kick);
-  requestAnimationFrame(function(){requestAnimationFrame(kick);});
-  setTimeout(kick,32);
-  setTimeout(kick,100);
+  setTimeout(kick,140);
 });
 
 window.recenter=function(lt,ln){map.setView([lt,ln],15,{animate:true})};

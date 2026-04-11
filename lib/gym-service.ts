@@ -14,6 +14,14 @@ export type Gym = {
 
 const RADIUS_METERS = 50_000
 
+/**
+ * Manual check-in from map pin: max distance from gym centroid (OSM / Supabase).
+ * ~250 ft balances big-box & campus gyms (you can move around the floor) with indoor GPS drift,
+ * without letting people check in from blocks away.
+ */
+export const MANUAL_MAP_CHECKIN_RADIUS_FT = 250
+export const MANUAL_MAP_CHECKIN_RADIUS_M = MANUAL_MAP_CHECKIN_RADIUS_FT * 0.3048
+
 /** Simple tag predicates for Overpass (node/way each). */
 const OVERPASS_SIMPLE_TAGS = [
   '"leisure"="fitness_centre"',

@@ -165,15 +165,24 @@ export default function ProfileScreen() {
 
     if (error) return
 
-    const dates = new Set<string>()
-    const restDates = new Set<string>()
+    const dateMap = new Map<string, string | null>()
     for (const row of data ?? []) {
       const r = row as { workout_date?: string | null; workout_type?: string | null }
-      if (typeof r.workout_date === 'string' && r.workout_date.length >= 10) {
-        const dateStr = r.workout_date.slice(0, 10)
-        dates.add(dateStr)
-        if (r.workout_type === 'rest') restDates.add(dateStr)
+      if (typeof r.workout_date !== 'string' || r.workout_date.length < 10) continue
+      const iso = r.workout_date.slice(0, 10)
+      const wt = r.workout_type ?? null
+      const existing = dateMap.get(iso)
+      if (existing === undefined) {
+        dateMap.set(iso, wt)
+      } else if (wt !== 'rest') {
+        dateMap.set(iso, wt)
       }
+    }
+    const dates = new Set<string>()
+    const restDates = new Set<string>()
+    for (const [iso, wt] of dateMap) {
+      dates.add(iso)
+      if (wt === 'rest') restDates.add(iso)
     }
     setMonthWorkoutDates(dates)
     setMonthRestDates(restDates)
@@ -477,15 +486,15 @@ export default function ProfileScreen() {
                 </ThemedText>
               </View>
               <View style={styles.calendarLegendItem}>
-                <View style={[styles.calendarLegendDot, styles.calendarDayRest]} />
-                <ThemedText style={[styles.calendarLegendLabel, { color: colors.textMuted }]}>
-                  Rest day
-                </ThemedText>
-              </View>
-              <View style={styles.calendarLegendItem}>
                 <View style={[styles.calendarLegendDot, styles.calendarDayMissed]} />
                 <ThemedText style={[styles.calendarLegendLabel, { color: colors.textMuted }]}>
                   Missed day
+                </ThemedText>
+              </View>
+              <View style={styles.calendarLegendItem}>
+                <View style={[styles.calendarLegendDot, styles.calendarDayRest]} />
+                <ThemedText style={[styles.calendarLegendLabel, { color: colors.textMuted }]}>
+                  Rest day
                 </ThemedText>
               </View>
             </View>
@@ -755,7 +764,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#22c55e',
   },
   calendarDayRest: {
-    backgroundColor: '#eab308',
+    backgroundColor: '#6366f1',
   },
   calendarDayMissed: {
     backgroundColor: '#ef4444',
@@ -765,7 +774,7 @@ const styles = StyleSheet.create({
   },
   calendarLegendRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'space-around',
     marginTop: 12,
   },
   calendarLegendItem: {
