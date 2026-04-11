@@ -1,332 +1,90 @@
 import Ionicons from '@expo/vector-icons/Ionicons'
 import AsyncStorage from '@react-native-async-storage/async-storage'
-import * as ImagePicker from 'expo-image-picker'
+import * as Haptics from 'expo-haptics'
 import * as Location from 'expo-location'
 import { useFocusEffect } from '@react-navigation/native'
 import { router } from 'expo-router'
-import { Image } from 'expo-image'
-import { useCallback, useEffect, useRef, useState } from 'react'
-import {
-  ActivityIndicator,
-  Alert,
-  Animated,
-  Dimensions,
-  Linking,
-  Modal,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  View,
-} from 'react-native'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Alert, Linking, Modal, Platform, Pressable, StyleSheet, Text, View } from 'react-native'
+import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated'
 import { WebView } from 'react-native-webview'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
+import { MapGymBottomSheet, type MapGymSheetPin } from '@/components/map-gym-bottom-sheet'
 import { ThemedText } from '@/components/themed-text'
 import { BrandViolet, Colors } from '@/constants/theme'
 import { useAuthContext } from '@/hooks/use-auth-context'
 import { useColorScheme } from '@/hooks/use-color-scheme'
 import {
   distanceMeters,
+  ensureGymFromOsmInSupabase,
+  fetchGymById,
   findGymIdByOsm,
   getNearbyGyms,
-  OVERPASS_COMPOUND_TAG_CHAINS,
-  OVERPASS_TAGS,
   resolveGymIdFromList,
   type Gym,
 } from '@/lib/gym-service'
+import { getGhostPresenceNearUser, getPresenceCountsForGymIds } from '@/lib/presence-map-helpers'
+import { buildUpliftMapLeafletHTML } from '@/lib/uplift-map-leaflet-html'
 import {
   checkIn,
   checkOut,
-  crowdLevelFromCount,
   getActivePresence,
   subscribeToPresence,
   type PresenceRow,
 } from '@/lib/presence-service'
 
-const { height: SCREEN_H } = Dimensions.get('window')
-const ACTIVE_RADIUS = 15 // ~50 feet — GPS accuracy floor
-const POLL_INTERVAL = 10_000
+/** Base radius (m). GPS + building centroid error often exceeds 15m; we add accuracy slack in the poll. */
+const ACTIVE_RADIUS_M = 72
+/** Manual check-in from pin popup: max distance to gym center (m). */
+const MANUAL_CHECKIN_MAX_M = 160
+const GHOST_RADIUS_M = 2000
+const PROXIMITY_ARENA_DELAY_MS = 1200
+
+/**
+ * Dev-only: synthetic gym at your GPS for map / check-in / proximity QA.
+ * Set to `false` (or remove) before shipping; `__pinTestGym` stays in WebView unused.
+ */
+const TEMP_QA_GYM_AT_GPS = __DEV__
+const QA_TEST_GYM_OSM_ID = 'UPLIFT_DEV_TEST'
+
+/** Stable boot center embedded in WebView HTML so `source` never changes when GPS updates (no full reload). */
+const MAP_BOOT_CENTER = { lat: 40.1028, lng: -88.2272 }
+const MAP_LAST_CAMERA_KEY = 'uplift_map_last_camera_v1'
+const MAP_GYM_SNAPSHOT_KEY = 'uplift_map_gym_snapshot_v1'
+const SNAPSHOT_MAX_AGE_MS = 1000 * 60 * 60 * 18
+const SNAPSHOT_MAX_DISTANCE_M = 55_000
+
+type GymSnapItem = {
+  gymOsmType: string
+  gymOsmId: string
+  lat: number
+  lng: number
+  tagsJson: string
+}
+
+/** Spread peer markers in a small ring so stacked check-ins stay tappable. */
+function peerOffsetsAroundGym(lat: number, lng: number, count: number, ringMeters = 14) {
+  const out: { lat: number; lng: number }[] = []
+  if (count <= 0) return out
+  const cosLat = Math.cos((lat * Math.PI) / 180)
+  for (let i = 0; i < count; i++) {
+    const angle = (2 * Math.PI * i) / count - Math.PI / 2
+    const dx = ringMeters * Math.sin(angle)
+    const dy = ringMeters * Math.cos(angle)
+    const dLat = dy / 111320
+    const dLng = dx / (111320 * Math.max(0.2, Math.abs(cosLat)))
+    out.push({ lat: lat + dLat, lng: lng + dLng })
+  }
+  return out
+}
 const PRIVACY_SHOWN_KEY = 'gym_privacy_prompt_shown'
 
-// ---------------------------------------------------------------------------
-// Leaflet HTML — lives entirely inside the WebView
-// ---------------------------------------------------------------------------
-function buildMapHTML(
-  lat: number,
-  lng: number,
-  isDark: boolean,
-  avatarUrl: string | null | undefined,
-  displayName: string | null | undefined,
-) {
-  const tile = isDark
-    ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
-    : 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png'
-  const pin = BrandViolet.primary
-  const pinGradientEnd = BrandViolet.mid
-  const popTitle = isDark ? '#f2f0f7' : '#111111'
-  const popMuted = isDark ? '#9a94b0' : '#666666'
-  const popCard = isDark ? '#1c1828' : '#ffffff'
-  const popTip = isDark ? '#1c1828' : '#ffffff'
-  // Leaflet defaults to #ddd; at min zoom tiles don’t fill the view — match basemap so no gray/white bars.
-  const mapBaseBg = isDark ? '#000000' : '#d4d4d4'
-  const avatarJs = JSON.stringify(avatarUrl ?? '')
-  const nameJs = JSON.stringify(displayName ?? '')
-
-  const nodeQ = OVERPASS_TAGS.map((t) => `node[${t}](around:'+r+','+cLat+','+cLng+');`).join('')
-  const wayQ = OVERPASS_TAGS.map((t) => `way[${t}](around:'+r+','+cLat+','+cLng+');`).join('')
-  const compoundQ = OVERPASS_COMPOUND_TAG_CHAINS.map(
-    (c) => `node[${c}](around:'+r+','+cLat+','+cLng+');way[${c}](around:'+r+','+cLat+','+cLng+');`,
-  ).join('')
-
-  return `<!DOCTYPE html><html><head>
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"><\/script>
-<style>
-*{margin:0;padding:0;box-sizing:border-box}
-html,body{background:${mapBaseBg}}
-html,body,#map{width:100%;height:100%;background:${mapBaseBg}}
-.leaflet-container{background:${mapBaseBg}!important}
-.leaflet-control-attribution{display:none!important}
-.pin{display:flex;align-items:center;justify-content:center;border-radius:50%;
-     background:linear-gradient(155deg,${pin} 0%,${pinGradientEnd} 100%);
-     box-shadow:0 2px 12px ${pin}66,0 1px 0 rgba(255,255,255,0.12) inset;color:#fff;font-size:13px}
-.pin .gym-ico{width:17px;height:17px;display:block;flex-shrink:0;
-     filter:drop-shadow(0 0.5px 0.75px rgba(10,6,24,.28))}
-.badge{position:absolute;top:-5px;right:-7px;background:#22C55E;color:#fff;
-       font-size:9px;font-weight:800;min-width:16px;height:16px;border-radius:8px;
-       display:flex;align-items:center;justify-content:center;padding:0 3px}
-#toast{position:fixed;top:10px;left:50%;transform:translateX(-50%);
-       background:rgba(0,0,0,.75);color:#fff;padding:6px 16px;border-radius:20px;
-       font:600 12px/1.4 system-ui;z-index:9999;opacity:0;transition:opacity .3s}
-.leaflet-popup-content-wrapper{border-radius:14px;overflow:hidden;padding:0;
-  box-shadow:0 10px 40px rgba(0,0,0,.35)!important;background:${popCard}!important}
-.leaflet-popup-content{margin:0!important;width:auto!important}
-.leaflet-popup-tip{background:${popTip}!important}
-.user-loc-marker{background:transparent!important;border:none!important}
-</style></head><body>
-<div id="map"></div><div id="toast"></div>
-<script>
-var PIN='${pin}';
-var POP_TITLE='${popTitle}';
-var POP_MUTED='${popMuted}';
-var USER_AVATAR=${avatarJs};
-var USER_NAME=${nameJs};
-var CROWD_BORDER='${isDark ? 'rgba(255,255,255,.12)' : 'rgba(0,0,0,.08)'}';
-var map=L.map('map',{zoomControl:false}).setView([${lat},${lng}],14);
-L.tileLayer('${tile}',{maxZoom:19,subdomains:'abcd'}).addTo(map);
-
-var pins=L.layerGroup().addTo(map);
-window.__applyGymCrowd=function(p){
-  var root=document.querySelector('.leaflet-popup-content .gym-crowd');
-  if(!root)return;
-  var st=root.querySelector('.gym-crowd-status');
-  var bar=root.querySelector('.gym-crowd-bar');
-  var det=root.querySelector('.gym-crowd-detail');
-  if(!st||!bar||!det)return;
-  var idx={quiet:0,light:1,moderate:2,busy:3}[p.level];
-  if(idx==null)idx=0;
-  var cols={quiet:'#22C55E',light:'#84CC16',moderate:'#F59E0B',busy:'#EF4444'};
-  var active=cols[p.level]||'#888';
-  var mute='rgba(128,128,128,.22)';
-  st.textContent=p.label;
-  det.textContent=p.detail||'';
-  var segs=bar.querySelectorAll('.gym-crowd-seg');
-  for(var i=0;i<segs.length;i++)segs[i].style.background=i<=idx?active:mute;
-};
-map.on('popupopen',function(ev){
-  var m=ev.popup._source;
-  if(!m||m.options==null||m.options.gymOsmId==null)return;
-  var t=m.options.gymOsmType||'node',id=m.options.gymOsmId;
-  window.__applyGymCrowd({level:'quiet',label:'Updating…',detail:'',n:0});
-  if(window.ReactNativeWebView&&window.ReactNativeWebView.postMessage){
-    window.ReactNativeWebView.postMessage(JSON.stringify({type:'gymCrowdOpen',gymOsmType:t,gymOsmId:String(id)}));
-  }
-});
-map.on('popupclose',function(){
-  if(window.ReactNativeWebView&&window.ReactNativeWebView.postMessage){
-    window.ReactNativeWebView.postMessage(JSON.stringify({type:'gymCrowdClose'}));
-  }
-});
-var loaded=[];
-var seenOsm={};
-var timer=null;
-var toastEl=document.getElementById('toast');
-function toast(msg){toastEl.textContent=msg;toastEl.style.opacity=1;
-  setTimeout(function(){toastEl.style.opacity=0},2500)}
-
-function gymLabel(tg){
-  if(!tg)return'Fitness center';
-  if(tg.name&&String(tg.name).trim())return String(tg.name).trim();
-  if(tg.operator&&String(tg.operator).trim())return String(tg.operator).trim();
-  if(tg.brand&&String(tg.brand).trim())return String(tg.brand).trim();
-  var b=tg.building,a=tg.access,i=tg.indoor;
-  if((b==='apartments'||b==='residential'||tg['building:use']==='apartments')&&
-     (a==='private'||a==='customers'||a==='permissive'))return'Apartment gym';
-  if(i==='yes'||i==='room')return'Fitness room';
-  if(a==='private'||a==='customers'||a==='permissive')return'Resident gym';
-  return'Fitness center';
-}
-
-function escHtml(s){
-  return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
-function escAttr(s){
-  return String(s==null?'':s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
-}
-function userLocationIcon(){
-  var size=40,inner=size-6;
-  var url=USER_AVATAR&&String(USER_AVATAR).trim();
-  var body;
-  if(url){
-    body='<img src="'+escAttr(url)+'" alt="" style="width:'+inner+'px;height:'+inner+'px;border-radius:50%;object-fit:cover;display:block" draggable="false"/>';
-  }else{
-    var ch='?';
-    if(USER_NAME&&String(USER_NAME).trim())ch=String(USER_NAME).trim().charAt(0).toUpperCase();
-    body='<div style="width:'+inner+'px;height:'+inner+'px;border-radius:50%;background:#4285F4;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:15px;font-family:system-ui,sans-serif">'+escHtml(ch)+'</div>';
-  }
-  var h='<div style="width:'+size+'px;height:'+size+'px;border-radius:50%;border:3px solid #fff;box-shadow:0 2px 10px rgba(0,0,0,.4);overflow:hidden;background:#1a1a1a;display:flex;align-items:center;justify-content:center">'+body+'</div>';
-  return L.divIcon({className:'user-loc-marker',html:h,iconSize:[size,size],iconAnchor:[size/2,size/2]});
-}
-window.userDot=L.marker([${lat},${lng}],{icon:userLocationIcon(),zIndexOffset:1000}).addTo(map);
-
-function gymAddress(tg){
-  if(!tg)return'';
-  if(tg['addr:full'])return escHtml(tg['addr:full']);
-  var p1='';
-  if(tg['addr:housenumber']&&tg['addr:street'])p1=escHtml(tg['addr:housenumber']+' '+tg['addr:street']);
-  else if(tg['addr:street'])p1=escHtml(tg['addr:street']);
-  else if(tg['addr:place'])p1=escHtml(tg['addr:place']);
-  else if(tg['addr:road'])p1=escHtml(tg['addr:road']);
-  var city=tg['addr:city']||tg['addr:town']||tg['addr:village'];
-  var parts=[];
-  if(city)parts.push(escHtml(city));
-  if(tg['addr:state'])parts.push(escHtml(tg['addr:state']));
-  if(tg['addr:postcode'])parts.push(escHtml(tg['addr:postcode']));
-  var line2=parts.join(', ');
-  var out=(p1||'')+(p1&&line2?'<br>':'')+line2;
-  return out||escHtml(tg['addr:street']||'');
-}
-
-function gymPhoto(tg){
-  if(!tg)return null;
-  function norm(u){
-    if(!u)return null;u=String(u).trim();
-    if(/^https?:\\/\\//i.test(u))return u;
-    if(u.indexOf('//')===0)return'https:'+u;
-    return null;
-  }
-  var u=norm(tg.image)||norm(tg['image:0'])||norm(tg.photo);
-  if(u)return u;
-  var ut=tg.url;
-  if(ut&&/\\.(jpe?g|png|gif|webp)(\\?|$)/i.test(String(ut)))return norm(ut)||String(ut).trim();
-  var wc=tg.wikimedia_commons;
-  if(wc){
-    wc=String(wc).trim();
-    var fn=wc.indexOf('File:')===0?wc.substring(5):wc;
-    return'https://commons.wikimedia.org/wiki/Special:FilePath/'+encodeURIComponent(fn.replace(/ /g,'_'));
-  }
-  return null;
-}
-
-function gymPopup(tg){
-  var nm=gymLabel(tg);
-  var ad=gymAddress(tg);
-  var ph=gymPhoto(tg);
-  var fallback='<div style="height:112px;background:linear-gradient(155deg,'+PIN+',#1a0d35);display:flex;align-items:center;justify-content:center;font-size:40px">💪</div>';
-  var top=ph
-    ? '<div style="height:112px;position:relative;overflow:hidden;background:linear-gradient(155deg,'+PIN+',#1a0d35)">'+
-      '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:40px">💪</div>'+
-      '<img src="'+escAttr(ph)+'" alt="" loading="lazy" '+
-      'style="position:relative;z-index:1;display:block;width:100%;height:112px;object-fit:cover" onerror="this.style.display=\\'none\\'"/>'+
-      '</div>'
-    : fallback;
-  var addrHtml=ad
-    ? '<div style="color:'+POP_MUTED+';font-size:13px;line-height:1.5;margin-top:8px">'+ad+'</div>'
-    : '<div style="color:'+POP_MUTED+';font-size:12px;margin-top:8px;opacity:.75;font-style:italic">Address not on map yet</div>';
-  var crowd='<div class="gym-crowd" style="margin-top:12px;padding-top:12px;border-top:1px solid '+CROWD_BORDER+'">'+
-    '<div style="font:700 10px/1 system-ui;letter-spacing:.06em;text-transform:uppercase;color:'+POP_MUTED+'">Live activity</div>'+
-    '<div class="gym-crowd-status" style="margin-top:6px;font:700 15px/1.25 system-ui;color:'+POP_TITLE+'">Open for status</div>'+
-    '<div class="gym-crowd-bar" style="display:flex;gap:3px;margin-top:10px">'+
-    '<div class="gym-crowd-seg" style="flex:1;height:5px;border-radius:3px;background:rgba(128,128,128,.22)"></div>'+
-    '<div class="gym-crowd-seg" style="flex:1;height:5px;border-radius:3px;background:rgba(128,128,128,.22)"></div>'+
-    '<div class="gym-crowd-seg" style="flex:1;height:5px;border-radius:3px;background:rgba(128,128,128,.22)"></div>'+
-    '<div class="gym-crowd-seg" style="flex:1;height:5px;border-radius:3px;background:rgba(128,128,128,.22)"></div>'+
-    '</div>'+
-    '<div class="gym-crowd-detail" style="margin-top:8px;font:12px/1.45 system-ui;color:'+POP_MUTED+'"></div>'+
-    '</div>';
-  return'<div style="width:268px;font-family:system-ui,-apple-system,BlinkMacSystemFont,sans-serif">'+top+
-    '<div style="padding:12px 14px 16px"><div style="font-weight:800;font-size:16px;letter-spacing:-0.2px;color:'+POP_TITLE+'">'+escHtml(nm)+'</div>'+addrHtml+crowd+'</div></div>';
-}
-
-function seen(b){for(var i=0;i<loaded.length;i++){var a=loaded[i];
-  if(b.s>=a.s&&b.n<=a.n&&b.w>=a.w&&b.e<=a.e)return true}return false}
-
-function load(){
-  var b=map.getBounds();
-  if(!b||!b.isValid())return;
-  var box={s:b.getSouth(),n:b.getNorth(),w:b.getWest(),e:b.getEast()};
-  if(seen(box))return;
-  var cLat=(box.s+box.n)/2, cLng=(box.w+box.e)/2;
-  var latD=(box.n-box.s)*111320;
-  var lngD=(box.e-box.w)*111320*Math.cos(cLat*Math.PI/180);
-  var r=Math.min(Math.max(latD,lngD)/2,30000);
-  if(r<1200)r=1200;
-  toast('Loading gyms…');
-  var q='[out:json][timeout:30];(${nodeQ}${wayQ}${compoundQ});out center;';
-  fetch('https://overpass-api.de/api/interpreter?data='+encodeURIComponent(q))
-    .then(function(r){return r.json()})
-    .then(function(d){
-      loaded.push({s:box.s-.01,n:box.n+.01,w:box.w-.01,e:box.e+.01});
-      var c=0;
-      d.elements.forEach(function(el){
-        var oid=(el.type||'n')+'-'+el.id;
-        if(seenOsm[oid])return;
-        seenOsm[oid]=true;
-        var lt=el.lat||(el.center&&el.center.lat);
-        var ln=el.lon||(el.center&&el.center.lon);
-        if(!lt||!ln)return;
-        var s=30;
-        var h='<div style="position:relative;width:'+s+'px;height:'+s+'px">'+
-          '<div class="pin" style="width:'+s+'px;height:'+s+'px">'+
-          '<svg class="gym-ico" viewBox="0 0 24 24" aria-hidden="true" shape-rendering="geometricPrecision">'+
-          '<path fill="#fff" d="M5.85 7.68H7.5C8.18 7.68 8.82 8.18 8.95 8.9V11.02H15.05V8.9C15.18 8.18 15.82 7.68 16.5 7.68H18.15C19.25 7.68 20.05 8.52 20.05 9.65V14.35C20.05 15.48 19.25 16.32 18.15 16.32H16.5C15.82 16.32 15.18 15.78 15.05 15.08V12.98H8.95V15.08C8.82 15.78 8.18 16.32 7.5 16.32H5.85C4.75 16.32 3.95 15.48 3.95 14.35V9.65C3.95 8.52 4.75 7.68 5.85 7.68Z"/>'+
-          '<ellipse cx="4.78" cy="12" rx="0.92" ry="3.32" fill="rgba(255,255,255,.24)"/>'+
-          '<ellipse cx="19.22" cy="12" rx="0.92" ry="3.32" fill="rgba(255,255,255,.24)"/>'+
-          '</svg>'+
-          '</div></div>';
-        var icon=L.divIcon({className:'',iconSize:[s,s],iconAnchor:[s/2,s/2],html:h});
-        L.marker([lt,ln],{icon:icon,gymOsmType:el.type||'node',gymOsmId:el.id})
-          .bindPopup(gymPopup(el.tags),{maxWidth:300,closeButton:true})
-          .addTo(pins);
-        c++;
-      });
-      toast(c+' places loaded');
-    }).catch(function(){toast('Could not load gyms')});
-}
-
-window.reloadGymsFromOverpass=function(){
-  loaded=[];
-  for(var k in seenOsm)delete seenOsm[k];
-  pins.clearLayers();
-  map.invalidateSize();
-  load();
-};
-
-map.on('moveend',function(){clearTimeout(timer);timer=setTimeout(load,120)});
-
-map.whenReady(function(){
-  function kick(){
-    map.invalidateSize();
-    load();
-  }
-  requestAnimationFrame(kick);
-  setTimeout(kick,280);
-});
-
-window.recenter=function(lt,ln){map.setView([lt,ln],15,{animate:true})};
-<\/script></body></html>`
+function webOsmKeyFromGym(g: Gym): string {
+  const raw = (g.osm_id ?? '').trim().toLowerCase()
+  if (!raw) return ''
+  if (raw.includes('-')) return raw
+  return `node-${raw}`
 }
 
 // ---------------------------------------------------------------------------
@@ -341,37 +99,225 @@ export default function MapScreen() {
 
   const webRef = useRef<WebView>(null)
   const gymsRef = useRef<Gym[]>([])
-  const popupCrowdUnsubRef = useRef<(() => void) | null>(null)
-  const sheetAnim = useRef(new Animated.Value(0)).current
+  const activeGymRef = useRef<Gym | null>(null)
+  const enterGymRef = useRef<(gym: Gym) => Promise<void>>(async () => {})
+  const leaveGymRef = useRef<() => Promise<void>>(async () => {})
   const unsubRef = useRef<(() => void) | null>(null)
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const pollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const proximityArenaDelayRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const lastHapticGymRef = useRef<string | null>(null)
   const checkedInGymRef = useRef<string | null>(null)
   const notifiedGymRef = useRef<string | null>(null)
 
   const [perm, setPerm] = useState<boolean | null>(null)
-  const [initialCoords, setInitialCoords] = useState<{ lat: number; lng: number } | null>(null)
   const coordsRef = useRef<{ lat: number; lng: number } | null>(null)
   const [gyms, setGyms] = useState<Gym[]>([])
-  const [loading, setLoading] = useState(true)
   const [activeGym, setActiveGym] = useState<Gym | null>(null)
+  /** Only after a successful check-in at `activeGym` — peer pins stay hidden until then. */
+  const [mapPresenceGymId, setMapPresenceGymId] = useState<string | null>(null)
   const [presenceList, setPresenceList] = useState<PresenceRow[]>([])
   const [showPrivacy, setShowPrivacy] = useState(false)
   /** After the user leaves this tab once, the next focus should refetch pins (WebView stays mounted). */
   const mapTabWasBlurredRef = useRef(false)
 
+  const [gymSheetVisible, setGymSheetVisible] = useState(false)
+  const [gymSheetPin, setGymSheetPin] = useState<MapGymSheetPin | null>(null)
+  const [gymSheetPresence, setGymSheetPresence] = useState<PresenceRow[]>([])
+  const [gymSheetLoading, setGymSheetLoading] = useState(false)
+
+  const [proximityToast, setProximityToast] = useState<string | null>(null)
+  const toastOpacity = useSharedValue(0)
+
   useEffect(() => {
     gymsRef.current = gyms
   }, [gyms])
 
-  const clearPopupCrowdSub = useCallback(() => {
-    popupCrowdUnsubRef.current?.()
-    popupCrowdUnsubRef.current = null
+  useEffect(() => {
+    activeGymRef.current = activeGym
+  }, [activeGym])
+
+  useEffect(() => {
+    if (!session) setMapPresenceGymId(null)
+  }, [session])
+
+  useEffect(() => {
+    let alive = true
+    ;(async () => {
+      try {
+        const raw = await AsyncStorage.getItem(MAP_LAST_CAMERA_KEY)
+        if (!alive || !raw) return
+        const j = JSON.parse(raw) as { lat: number; lng: number }
+        if (Number.isFinite(j.lat) && Number.isFinite(j.lng)) {
+          coordsRef.current = { lat: j.lat, lng: j.lng }
+        }
+      } catch {
+        /* ignore */
+      }
+    })()
+    return () => {
+      alive = false
+    }
   }, [])
 
-  const injectGymCrowdPayload = useCallback(
-    (p: { n: number; label: string; level: string; detail: string }) => {
-      const json = JSON.stringify(p)
-      webRef.current?.injectJavaScript(`window.__applyGymCrowd(${json});true;`)
+  const mapHtml = useMemo(() => buildUpliftMapLeafletHTML(insets.top, insets.bottom), [insets.top, insets.bottom])
+
+  const mapInjectedBeforeLoad = useMemo(() => {
+    const cfg = {
+      mapboxToken: process.env.EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN ?? '',
+      mapboxStylePath: process.env.EXPO_PUBLIC_MAPBOX_STYLE_PATH ?? 'mapbox/dark-v11',
+      theme: isDark ? 'dark' : 'light',
+    }
+    return `window.__UPLIFT_MAP_CFG=${JSON.stringify(cfg)};true;`
+  }, [isDark])
+
+  const injectQaTestGymPin = useCallback((lat: number, lng: number) => {
+    if (!TEMP_QA_GYM_AT_GPS || !webRef.current) return
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return
+    webRef.current.injectJavaScript(
+      `try{if(window.__pinTestGym)window.__pinTestGym(${lat},${lng});}catch(e){};true;`,
+    )
+  }, [])
+
+  /** Move map + user dot; optionally refetch Overpass (full reload) or soft kick only. */
+  const syncMapCamera = useCallback(
+    (lat: number, lng: number, opts?: { reloadPins?: boolean; persist?: boolean }) => {
+      const reloadPins = opts?.reloadPins ?? false
+      const persist = opts?.persist ?? true
+      coordsRef.current = { lat, lng }
+      if (persist) {
+        void AsyncStorage.setItem(MAP_LAST_CAMERA_KEY, JSON.stringify({ lat, lng }))
+      }
+      const js = reloadPins
+        ? `try{map.setView([${lat},${lng}],14,{animate:false});if(window.userDot)window.userDot.setLatLng([${lat},${lng}]);setTimeout(function(){if(window.reloadGymsFromOverpass)window.reloadGymsFromOverpass();},0);}catch(e){};true;`
+        : `try{map.setView([${lat},${lng}],14,{animate:false});if(window.userDot)window.userDot.setLatLng([${lat},${lng}]);if(window.__kickGymLoad)window.__kickGymLoad();}catch(e){};true;`
+      webRef.current?.injectJavaScript(js)
+    },
+    [],
+  )
+
+  /** Camera + cached pin paint + soft Overpass kick — never clears layers (avoids empty map after modal close). */
+  const runMapPinRestore = useCallback(async (c: { lat: number; lng: number }) => {
+    if (!webRef.current) return
+    try {
+      const rawSnap = await AsyncStorage.getItem(MAP_GYM_SNAPSHOT_KEY)
+      if (rawSnap) {
+        const snap = JSON.parse(rawSnap) as {
+          t: number
+          centerLat: number
+          centerLng: number
+          items: GymSnapItem[]
+        }
+        if (
+          snap.items?.length &&
+          Date.now() - snap.t <= SNAPSHOT_MAX_AGE_MS &&
+          distanceMeters(c.lat, c.lng, snap.centerLat, snap.centerLng) <= SNAPSHOT_MAX_DISTANCE_M
+        ) {
+          const pts = snap.items.map((it) => [it.lat, it.lng] as [number, number])
+          const skelEnc = encodeURIComponent(JSON.stringify(pts))
+          webRef.current?.injectJavaScript(
+            `try{window.__addSkeletonLatLngs(${JSON.stringify(skelEnc)});}catch(e){};true;`,
+          )
+          const enc = encodeURIComponent(JSON.stringify(snap.items))
+          webRef.current?.injectJavaScript(
+            `try{window.__hydrateSnapshot(${JSON.stringify(enc)});}catch(e){};true;`,
+          )
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+    syncMapCamera(c.lat, c.lng, { reloadPins: false, persist: false })
+    webRef.current?.injectJavaScript(
+      `setTimeout(function(){try{window.__kickGymLoad&&window.__kickGymLoad();}catch(e){}},0);` +
+        `setTimeout(function(){try{window.__kickGymLoad&&window.__kickGymLoad();}catch(e){}},120);true;`,
+    )
+    if (TEMP_QA_GYM_AT_GPS) injectQaTestGymPin(c.lat, c.lng)
+  }, [syncMapCamera, injectQaTestGymPin])
+
+  const pushMapChromeToWebView = useCallback(() => {
+    const t = isDark ? 'dark' : 'light'
+    const av = profile?.avatar_url ?? ''
+    const nm = profile?.display_name ?? ''
+    webRef.current?.injectJavaScript(
+      `try{window.__setTheme(${JSON.stringify(t)});window.__updateUserDot(${JSON.stringify(av)},${JSON.stringify(nm)});}catch(e){};true;`,
+    )
+  }, [isDark, profile?.avatar_url, profile?.display_name])
+
+  useEffect(() => {
+    pushMapChromeToWebView()
+  }, [pushMapChromeToWebView])
+
+  const injectPresencePeersOnMap = useCallback(
+    (gym: Gym, rows: PresenceRow[], currentUserId: string | undefined) => {
+      const others = rows.filter((p) => p.user_id !== currentUserId)
+      const ring = peerOffsetsAroundGym(gym.lat, gym.lng, others.length)
+      const payload = others.map((p, i) => ({
+        userId: p.user_id,
+        displayName: p.display_name ?? 'Member',
+        avatarUrl: p.avatar_url ?? '',
+        lat: ring[i]!.lat,
+        lng: ring[i]!.lng,
+      }))
+      const enc = encodeURIComponent(JSON.stringify(payload))
+      webRef.current?.injectJavaScript(
+        `try{window.setPresencePeers(${JSON.stringify(enc)});}catch(e){};true;`,
+      )
+    },
+    [],
+  )
+
+  const openGymArena = useCallback((g: Gym) => {
+    router.push({
+      pathname: '/gym-arena',
+      params: {
+        gymId: g.id,
+        gymName: g.name,
+        gymAddress: g.address ?? '',
+        lat: String(g.lat),
+        lng: String(g.lng),
+        imageUrl: g.image_url ?? '',
+      },
+    })
+  }, [])
+
+  /** Resolve Supabase gym row; if missing, upsert from pin coords + OSM tags (WebView loads pins without RN cache). */
+  const mergeGymFromPinIfNeeded = useCallback(
+    async (msg: {
+      gymOsmType: string
+      gymOsmId: string
+      lat?: number
+      lng?: number
+      tagsJson?: string
+    }): Promise<Gym | null> => {
+      let gymId = resolveGymIdFromList(gymsRef.current, msg.gymOsmType, msg.gymOsmId)
+      if (!gymId) gymId = await findGymIdByOsm(msg.gymOsmType, msg.gymOsmId)
+      let gym: Gym | null = gymId ? gymsRef.current.find((g) => g.id === gymId) ?? null : null
+      if (!gym && gymId) gym = await fetchGymById(gymId)
+
+      const latOk = msg.lat != null && Number.isFinite(msg.lat)
+      const lngOk = msg.lng != null && Number.isFinite(msg.lng)
+      if (!gym && latOk && lngOk) {
+        let tags: Record<string, string> = {}
+        try {
+          const parsed = JSON.parse(msg.tagsJson || '{}') as unknown
+          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+            tags = parsed as Record<string, string>
+          }
+        } catch {
+          tags = {}
+        }
+        gym = await ensureGymFromOsmInSupabase({
+          osmId: msg.gymOsmId,
+          lat: msg.lat!,
+          lng: msg.lng!,
+          tags,
+        })
+        if (gym) {
+          const added = gym
+          setGyms((prev) => (prev.some((x) => x.id === added.id) ? prev : [...prev, added]))
+        }
+      }
+      return gym
     },
     [],
   )
@@ -380,70 +326,69 @@ export default function MapScreen() {
     (ev: { nativeEvent: { data: string } }) => {
       try {
         const msg = JSON.parse(ev.nativeEvent.data) as
-          | { type: 'gymCrowdOpen'; gymOsmType: string; gymOsmId: string }
-          | { type: 'gymCrowdClose' }
-        if (msg.type === 'gymCrowdClose') {
-          clearPopupCrowdSub()
+          | {
+              type: 'gymPinTap'
+              gymOsmType: string
+              gymOsmId: string
+              lat?: number
+              lng?: number
+              tagsJson?: string
+              name: string
+            }
+          | { type: 'gymLoadSuccess' }
+          | { type: 'presencePinTap'; userId: string }
+          | {
+              type: 'gymPinSnapshot'
+              items: GymSnapItem[]
+              centerLat: number
+              centerLng: number
+            }
+
+        if (msg.type === 'gymPinSnapshot' && Array.isArray(msg.items) && msg.items.length > 0) {
+          void AsyncStorage.setItem(
+            MAP_GYM_SNAPSHOT_KEY,
+            JSON.stringify({
+              t: Date.now(),
+              centerLat: msg.centerLat,
+              centerLng: msg.centerLng,
+              items: msg.items.slice(0, 400),
+            }),
+          )
           return
         }
-        if (msg.type !== 'gymCrowdOpen') return
 
-        const run = async () => {
-          clearPopupCrowdSub()
-          if (!session) {
-            injectGymCrowdPayload({
-              n: 0,
-              level: 'quiet',
-              label: 'Sign in to view',
-              detail: 'Log in to see how busy this gym is based on live check-ins.',
-            })
-            return
+        if (msg.type === 'gymLoadSuccess') {
+          webRef.current?.injectJavaScript(`try{window.__clearSkeletonLayer();}catch(e){};true;`)
+          if (TEMP_QA_GYM_AT_GPS) {
+            const c = coordsRef.current
+            if (c) injectQaTestGymPin(c.lat, c.lng)
           }
-          injectGymCrowdPayload({
-            n: 0,
-            level: 'quiet',
-            label: 'Loading…',
-            detail: 'Fetching visible check-ins…',
-          })
-          let gymId = resolveGymIdFromList(gymsRef.current, msg.gymOsmType, msg.gymOsmId)
-          if (!gymId) gymId = await findGymIdByOsm(msg.gymOsmType, msg.gymOsmId)
-          if (!gymId) {
-            injectGymCrowdPayload({
-              n: 0,
-              level: 'quiet',
-              label: 'Not synced yet',
-              detail: 'This place is not in the directory yet. Move the map to load gyms, then try again.',
-            })
-            return
-          }
-          const apply = (rows: PresenceRow[]) => {
-            const n = rows.length
-            const { level, label } = crowdLevelFromCount(n)
-            const detail =
-              n === 0
-                ? 'No visible check-ins in the last ~10 minutes.'
-                : `${n} checked in here now (visible to others).`
-            injectGymCrowdPayload({ n, level, label, detail })
-          }
-          try {
-            apply(await getActivePresence(gymId))
-          } catch {
-            injectGymCrowdPayload({
-              n: 0,
-              level: 'quiet',
-              label: 'Unavailable',
-              detail: 'Could not load activity. Try again.',
-            })
-            return
-          }
-          popupCrowdUnsubRef.current = subscribeToPresence(gymId, apply)
+          return
         }
-        void run()
+
+        if (msg.type === 'presencePinTap' && msg.userId) {
+          router.push({ pathname: '/friend-profile', params: { id: msg.userId } })
+          return
+        }
+
+        if (msg.type === 'gymPinTap') {
+          if (msg.lat == null || msg.lng == null) return
+          setGymSheetPin({
+            gymOsmType: msg.gymOsmType,
+            gymOsmId: msg.gymOsmId,
+            lat: msg.lat,
+            lng: msg.lng,
+            tagsJson: msg.tagsJson ?? '{}',
+            name: msg.name,
+          })
+          setGymSheetVisible(true)
+          return
+        }
       } catch {
         /* ignore non-JSON posts */
       }
     },
-    [session, clearPopupCrowdSub, injectGymCrowdPayload],
+    [injectQaTestGymPin],
   )
 
   // ---- Permission ----
@@ -454,36 +399,51 @@ export default function MapScreen() {
     })()
   }, [])
 
-  // Sync user dot; refetch gyms when coming back from another tab (first focus relies on Leaflet whenReady).
+  // After blur (other tab / gym-arena), repaint pins from snapshot + soft kick — do not clear layers (bounds can be invalid briefly).
   useFocusEffect(
     useCallback(() => {
-      const c = coordsRef.current
-      if (!c) return
+      const c = coordsRef.current ?? MAP_BOOT_CENTER
       const reload = mapTabWasBlurredRef.current
       const id = setTimeout(() => {
         if (!webRef.current) return
-        webRef.current.injectJavaScript(
-          `if(window.userDot)window.userDot.setLatLng([${c.lat},${c.lng}]);` +
-            (reload ? `if(window.reloadGymsFromOverpass)window.reloadGymsFromOverpass();` : '') +
-            `true;`,
-        )
+        if (reload) {
+          void runMapPinRestore(coordsRef.current ?? MAP_BOOT_CENTER)
+        } else {
+          webRef.current.injectJavaScript(
+            `if(window.userDot)window.userDot.setLatLng([${c.lat},${c.lng}]);true;`,
+          )
+        }
       }, reload ? 80 : 0)
       return () => {
         clearTimeout(id)
         mapTabWasBlurredRef.current = true
       }
-    }, []),
+    }, [runMapPinRestore]),
   )
 
-  // ---- Initial load: show map ASAP (last known / low accuracy), then refine + gyms in background ----
+  // ---- Location: never blocks the map UI; push camera + pins via inject only ----
   useEffect(() => {
-    if (!perm) return
+    if (perm === false) return
     let cancelled = false
 
-    const syncDotToWebView = (lat: number, lng: number) => {
-      webRef.current?.injectJavaScript(
-        `if(window.userDot)window.userDot.setLatLng([${lat},${lng}]);true;`,
-      )
+    const refreshGyms = (lat: number, lng: number) => {
+      if (TEMP_QA_GYM_AT_GPS) injectQaTestGymPin(lat, lng)
+      getNearbyGyms(lat, lng)
+        .then(async (nearby) => {
+          if (cancelled) return
+          let list = nearby
+          if (TEMP_QA_GYM_AT_GPS) {
+            const g = await ensureGymFromOsmInSupabase({
+              osmId: QA_TEST_GYM_OSM_ID,
+              lat,
+              lng,
+              tags: { name: 'Test gym (QA)', leisure: 'fitness_centre' },
+            })
+            if (g && !nearby.some((x) => x.id === g.id)) list = [...nearby, g]
+          }
+          if (!cancelled) setGyms(list)
+        })
+        .catch(() => {})
     }
 
     ;(async () => {
@@ -505,25 +465,22 @@ export default function MapScreen() {
           }
         }
         if (!c) {
-          const loc = await Location.getCurrentPositionAsync({
-            accuracy: Location.Accuracy.High,
-          })
-          c = { lat: loc.coords.latitude, lng: loc.coords.longitude }
-        }
-
-        if (cancelled || !c) return
-        coordsRef.current = c
-        setInitialCoords(c)
-        setLoading(false)
-
-        const refreshGyms = (lat: number, lng: number) => {
-          getNearbyGyms(lat, lng)
-            .then((nearby) => {
-              if (!cancelled) setGyms(nearby)
+          try {
+            const loc = await Location.getCurrentPositionAsync({
+              accuracy: Location.Accuracy.High,
             })
-            .catch(() => {})
+            c = { lat: loc.coords.latitude, lng: loc.coords.longitude }
+          } catch {
+            /* no fix */
+          }
         }
-        refreshGyms(c.lat, c.lng)
+
+        if (cancelled) return
+        if (c) {
+          coordsRef.current = c
+          syncMapCamera(c.lat, c.lng, { reloadPins: true })
+          refreshGyms(c.lat, c.lng)
+        }
 
         try {
           const refined = await Location.getCurrentPositionAsync({
@@ -532,20 +489,20 @@ export default function MapScreen() {
           if (cancelled) return
           const r = { lat: refined.coords.latitude, lng: refined.coords.longitude }
           coordsRef.current = r
-          syncDotToWebView(r.lat, r.lng)
+          syncMapCamera(r.lat, r.lng, { reloadPins: false })
           refreshGyms(r.lat, r.lng)
         } catch {
           /* keep first fix */
         }
       } catch {
-        if (!cancelled) setLoading(false)
+        /* ignore */
       }
     })()
 
     return () => {
       cancelled = true
     }
-  }, [perm])
+  }, [perm, syncMapCamera, injectQaTestGymPin])
 
   // ---- Privacy prompt (one-time) ----
   useEffect(() => {
@@ -555,63 +512,10 @@ export default function MapScreen() {
     })
   }, [session])
 
-  // ---- Proximity polling ----
-  useEffect(() => {
-    if (!perm || gyms.length === 0) return
-
-    const poll = async () => {
-      try {
-        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.BestForNavigation })
-        const c = { lat: loc.coords.latitude, lng: loc.coords.longitude }
-        coordsRef.current = c
-
-        // Move the blue dot without reloading the WebView
-        webRef.current?.injectJavaScript(
-          `if(window.userDot)window.userDot.setLatLng([${c.lat},${c.lng}]);true;`,
-        )
-
-        let closest: Gym | null = null
-        let closestDist = Infinity
-        for (const gym of gyms) {
-          const d = distanceMeters(c.lat, c.lng, gym.lat, gym.lng)
-          if (d < closestDist) { closestDist = d; closest = gym }
-        }
-
-        if (closest && closestDist <= ACTIVE_RADIUS) {
-          if (activeGym?.id !== closest.id) {
-            setActiveGym(closest)
-            enterGym(closest)
-
-            // In-app notification
-            if (notifiedGymRef.current !== closest.id) {
-              notifiedGymRef.current = closest.id
-              Alert.alert('Welcome!', `You've entered ${closest.name}`)
-            }
-          }
-        } else if (activeGym) {
-          leaveGym()
-        }
-      } catch { /* retry next tick */ }
-    }
-
-    poll()
-    pollRef.current = setInterval(poll, POLL_INTERVAL)
-    return () => { if (pollRef.current) clearInterval(pollRef.current) }
-  }, [perm, gyms.length]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  // ---- Sheet animation ----
-  useEffect(() => {
-    Animated.spring(sheetAnim, {
-      toValue: activeGym ? 1 : 0,
-      useNativeDriver: true,
-      tension: 65,
-      friction: 11,
-    }).start()
-  }, [activeGym]) // eslint-disable-line react-hooks/exhaustive-deps
-
   // ---- Enter / leave helpers ----
   const enterGym = useCallback(async (gym: Gym) => {
     if (!session || !profile) return
+    setMapPresenceGymId(null)
     unsubRef.current?.()
     unsubRef.current = subscribeToPresence(gym.id, setPresenceList)
     try {
@@ -627,6 +531,7 @@ export default function MapScreen() {
         shareWithOthers: profile.location_visible ?? false,
       })
       checkedInGymRef.current = gym.id
+      setMapPresenceGymId(gym.id)
     } catch {
       /* network / RLS */
     }
@@ -634,20 +539,297 @@ export default function MapScreen() {
 
   const leaveGym = useCallback(async () => {
     if (checkedInGymRef.current && session) {
-      try { await checkOut(session.user.id, checkedInGymRef.current) } catch {}
+      try {
+        await checkOut(session.user.id, checkedInGymRef.current)
+      } catch {}
       checkedInGymRef.current = null
     }
     unsubRef.current?.()
     unsubRef.current = null
     notifiedGymRef.current = null
     setActiveGym(null)
+    setMapPresenceGymId(null)
     setPresenceList([])
+    webRef.current?.injectJavaScript(
+      `try{window.clearPresencePeers&&window.clearPresencePeers();}catch(e){};true;`,
+    )
   }, [session])
+
+  enterGymRef.current = enterGym
+  leaveGymRef.current = leaveGym
+
+  useEffect(() => {
+    if (!gymSheetVisible || !gymSheetPin) {
+      setGymSheetPresence([])
+      setGymSheetLoading(false)
+      return
+    }
+    let alive = true
+    setGymSheetLoading(true)
+    ;(async () => {
+      const gym = await mergeGymFromPinIfNeeded({
+        gymOsmType: gymSheetPin.gymOsmType,
+        gymOsmId: gymSheetPin.gymOsmId,
+        lat: gymSheetPin.lat,
+        lng: gymSheetPin.lng,
+        tagsJson: gymSheetPin.tagsJson,
+      })
+      if (!alive) return
+      if (gym) {
+        try {
+          const rows = await getActivePresence(gym.id)
+          if (!alive) return
+          setGymSheetPresence(rows)
+        } catch {
+          setGymSheetPresence([])
+        }
+      } else {
+        setGymSheetPresence([])
+      }
+      setGymSheetLoading(false)
+    })()
+    return () => {
+      alive = false
+    }
+  }, [gymSheetVisible, gymSheetPin, mergeGymFromPinIfNeeded])
+
+  const completeSheetCheckIn = useCallback(async () => {
+    if (!session || !profile || !gymSheetPin) {
+      Alert.alert('Sign in required', 'Log in to check in at a gym.')
+      return
+    }
+    const gym = await mergeGymFromPinIfNeeded({
+      gymOsmType: gymSheetPin.gymOsmType,
+      gymOsmId: gymSheetPin.gymOsmId,
+      lat: gymSheetPin.lat,
+      lng: gymSheetPin.lng,
+      tagsJson: gymSheetPin.tagsJson,
+    })
+    if (!gym) {
+      Alert.alert(
+        'Could not check in',
+        'We could not save this gym to your account. Check your connection and try again.',
+      )
+      return
+    }
+    const c = coordsRef.current
+    if (!c) {
+      Alert.alert('Location needed', 'We could not read your position.')
+      return
+    }
+    const d = distanceMeters(c.lat, c.lng, gym.lat, gym.lng)
+    if (d > MANUAL_CHECKIN_MAX_M) {
+      Alert.alert(
+        'Too far away',
+        `Move within about ${MANUAL_CHECKIN_MAX_M}m of this gym to check in (you're ~${Math.round(d)}m away).`,
+      )
+      return
+    }
+    setGymSheetVisible(false)
+    setGymSheetPin(null)
+    setActiveGym(gym)
+    await enterGymRef.current(gym)
+    openGymArena(gym)
+    webRef.current?.injectJavaScript(
+      `try{window.recenter(${gym.lat},${gym.lng});}catch(e){};true;`,
+    )
+  }, [session, profile, gymSheetPin, mergeGymFromPinIfNeeded, openGymArena])
+
+  useEffect(() => {
+    if (!gyms.length) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const counts = await getPresenceCountsForGymIds(gyms.map((g) => g.id))
+        if (cancelled) return
+        const mapCounts: Record<string, number> = {}
+        for (const g of gyms) {
+          const n = counts[g.id] ?? 0
+          const k = webOsmKeyFromGym(g)
+          if (k) mapCounts[k] = Math.max(mapCounts[k] ?? 0, n)
+        }
+        const enc = encodeURIComponent(JSON.stringify(mapCounts))
+        webRef.current?.injectJavaScript(
+          `try{window.__applyPresenceToMarkers(${JSON.stringify(enc)});}catch(e){};true;`,
+        )
+      } catch {
+        /* ignore */
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [gyms])
+
+  const ghostSeqRef = useRef(0)
+  useEffect(() => {
+    if (!perm || activeGym || !session?.user?.id || gyms.length === 0) {
+      webRef.current?.injectJavaScript(
+        `try{window.__setGhostPresence(${JSON.stringify(encodeURIComponent(JSON.stringify([])))});}catch(e){};true;`,
+      )
+      return
+    }
+    const c = coordsRef.current
+    if (!c) return
+    const seq = ++ghostSeqRef.current
+    const t = setTimeout(() => {
+      void (async () => {
+        try {
+          const ghosts = await getGhostPresenceNearUser(
+            c.lat,
+            c.lng,
+            gyms,
+            GHOST_RADIUS_M,
+            session.user.id,
+          )
+          if (seq !== ghostSeqRef.current) return
+          const payload = ghosts.map((g) => ({
+            lat: g.lat,
+            lng: g.lng,
+            avatars: g.avatarUrls,
+          }))
+          const enc = encodeURIComponent(JSON.stringify(payload))
+          webRef.current?.injectJavaScript(
+            `try{window.__setGhostPresence(${JSON.stringify(enc)});}catch(e){};true;`,
+          )
+        } catch {
+          /* ignore */
+        }
+      })()
+    }, 500)
+    return () => {
+      clearTimeout(t)
+    }
+  }, [perm, activeGym, session?.user?.id, gyms])
+
+  useEffect(() => {
+    toastOpacity.value = withTiming(proximityToast ? 1 : 0, {
+      duration: 240,
+      easing: Easing.out(Easing.cubic),
+    })
+  }, [proximityToast, toastOpacity])
+
+  const proximityToastStyle = useAnimatedStyle(() => ({ opacity: toastOpacity.value }))
+
+  // Live peer avatars on the map only after this user has successfully checked in here.
+  useEffect(() => {
+    if (!activeGym || !session?.user?.id || mapPresenceGymId !== activeGym.id) {
+      webRef.current?.injectJavaScript(
+        `try{window.clearPresencePeers&&window.clearPresencePeers();}catch(e){};true;`,
+      )
+      return
+    }
+    injectPresencePeersOnMap(activeGym, presenceList, session.user.id)
+  }, [activeGym, presenceList, session?.user?.id, mapPresenceGymId, injectPresencePeersOnMap])
+
+  // ---- Proximity polling (adaptive interval + haptic + delayed arena) ----
+  useEffect(() => {
+    if (!perm || gyms.length === 0) return
+    let cancelled = false
+
+    const minDistToAnyGym = (lat: number, lng: number) => {
+      let m = Infinity
+      for (const gym of gymsRef.current) {
+        m = Math.min(m, distanceMeters(lat, lng, gym.lat, gym.lng))
+      }
+      return m
+    }
+
+    const nextDelay = (lat: number, lng: number) => {
+      const m = minDistToAnyGym(lat, lng)
+      if (m < 500) return 3000
+      if (m > 4000) return 20000
+      return 10000
+    }
+
+    const run = async () => {
+      if (pollTimeoutRef.current) {
+        clearTimeout(pollTimeoutRef.current)
+        pollTimeoutRef.current = null
+      }
+      try {
+        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.BestForNavigation })
+        const c = { lat: loc.coords.latitude, lng: loc.coords.longitude }
+        coordsRef.current = c
+
+        webRef.current?.injectJavaScript(
+          `if(window.userDot)window.userDot.setLatLng([${c.lat},${c.lng}]);true;`,
+        )
+
+        let closest: Gym | null = null
+        let closestDist = Infinity
+        for (const gym of gymsRef.current) {
+          const d = distanceMeters(c.lat, c.lng, gym.lat, gym.lng)
+          if (d < closestDist) {
+            closestDist = d
+            closest = gym
+          }
+        }
+
+        const acc = loc.coords.accuracy ?? 45
+        const thresholdM = Math.min(ACTIVE_RADIUS_M + Math.min(acc, 72), 150)
+
+        if (closest && closestDist <= thresholdM) {
+          if (lastHapticGymRef.current !== closest.id) {
+            lastHapticGymRef.current = closest.id
+            void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium)
+          }
+          if (activeGymRef.current?.id !== closest.id) {
+            const g = closest
+            setActiveGym(g)
+            await enterGymRef.current(g)
+            if (notifiedGymRef.current !== g.id) {
+              notifiedGymRef.current = g.id
+              const osmKey = webOsmKeyFromGym(g)
+              if (osmKey) {
+                webRef.current?.injectJavaScript(
+                  `try{window.__highlightGymForArena(${JSON.stringify(osmKey)});}catch(e){};true;`,
+                )
+              }
+              setProximityToast(`You're at ${g.name}`)
+              if (proximityArenaDelayRef.current) clearTimeout(proximityArenaDelayRef.current)
+              proximityArenaDelayRef.current = setTimeout(() => {
+                setProximityToast(null)
+                openGymArena(g)
+                proximityArenaDelayRef.current = null
+              }, PROXIMITY_ARENA_DELAY_MS)
+            }
+          }
+        } else {
+          lastHapticGymRef.current = null
+          if (proximityArenaDelayRef.current) {
+            clearTimeout(proximityArenaDelayRef.current)
+            proximityArenaDelayRef.current = null
+          }
+          setProximityToast(null)
+          if (activeGymRef.current) {
+            void leaveGymRef.current()
+          }
+          notifiedGymRef.current = null
+        }
+      } catch {
+        /* retry */
+      } finally {
+        if (cancelled) return
+        const cr = coordsRef.current
+        const delay = cr && gymsRef.current.length ? nextDelay(cr.lat, cr.lng) : 20000
+        pollTimeoutRef.current = setTimeout(run, delay)
+      }
+    }
+
+    void run()
+    return () => {
+      cancelled = true
+      if (pollTimeoutRef.current) clearTimeout(pollTimeoutRef.current)
+      pollTimeoutRef.current = null
+      if (proximityArenaDelayRef.current) clearTimeout(proximityArenaDelayRef.current)
+    }
+  }, [perm, gyms.length, openGymArena])
 
   // ---- Cleanup ----
   useEffect(() => () => {
     unsubRef.current?.()
-    if (pollRef.current) clearInterval(pollRef.current)
+    if (pollTimeoutRef.current) clearTimeout(pollTimeoutRef.current)
   }, [])
 
   // ---- Handlers ----
@@ -657,37 +839,11 @@ export default function MapScreen() {
     if (on) await updateProfile({ location_visible: true })
   }
 
-  const handlePost = async () => {
-    if (!activeGym || !session || !profile) return
-    try {
-      await checkIn({
-        userId: session.user.id,
-        gymId: activeGym.id,
-        displayName: profile.display_name,
-        avatarUrl: profile.avatar_url,
-        streak: profile.streak ?? 0,
-        shareWithOthers: profile.location_visible ?? false,
-      })
-      checkedInGymRef.current = activeGym.id
-    } catch {
-      Alert.alert('Check-in failed', 'Could not verify you at this gym. Try again.')
-      return
-    }
-    const r = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.8 })
-    if (r.canceled || !r.assets?.[0]) return
-    router.push({ pathname: '/log-workout', params: { gymId: activeGym.id, gymName: activeGym.name } })
-  }
-
   const handleRecenter = () => {
     const c = coordsRef.current
     if (!c || !webRef.current) return
     webRef.current.injectJavaScript(`window.recenter(${c.lat},${c.lng});true;`)
   }
-
-  const sheetY = sheetAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [SCREEN_H * 0.45, 0],
-  })
 
   // ---- Permission denied ----
   if (perm === false) {
@@ -710,174 +866,113 @@ export default function MapScreen() {
     )
   }
 
-  // ---- Loading ----
-  if (loading || perm === null || !initialCoords) {
-    return (
-      <View style={[styles.center, { backgroundColor: colors.background }]}>
-        <ActivityIndicator size="large" color={colors.tint} />
-        <ThemedText style={[styles.loadingLabel, { color: colors.textMuted }]}>
-          Finding your location…
-        </ThemedText>
-      </View>
-    )
-  }
-
-  const others = presenceList.filter((p) => p.user_id !== session?.user?.id)
-
   return (
     <View style={[styles.root, { backgroundColor: colors.background }]}>
-      {/* Map */}
-      {initialCoords && (
-        <WebView
-          ref={webRef}
+      {/* Map — always mounted when location allowed; WebView HTML stays stable for instant tab switches */}
+      <WebView
+        ref={webRef}
+        style={[
+          StyleSheet.absoluteFillObject,
+          { backgroundColor: isDark ? '#000000' : '#d4d4d4' },
+        ]}
+        originWhitelist={['*']}
+        source={{ html: mapHtml }}
+        scrollEnabled={false}
+        bounces={false}
+        javaScriptEnabled
+        onMessage={handleWebViewMessage}
+        onLoadEnd={() => {
+          void (async () => {
+            let c = coordsRef.current
+            try {
+              const rawCam = await AsyncStorage.getItem(MAP_LAST_CAMERA_KEY)
+              if (rawCam) {
+                const j = JSON.parse(rawCam) as { lat: number; lng: number }
+                if (Number.isFinite(j.lat) && Number.isFinite(j.lng)) {
+                  c = { lat: j.lat, lng: j.lng }
+                  coordsRef.current = c
+                }
+              }
+            } catch {
+              /* ignore */
+            }
+            c = c ?? MAP_BOOT_CENTER
+            await runMapPinRestore(c)
+            pushMapChromeToWebView()
+          })()
+        }}
+        injectedJavaScriptBeforeContentLoaded={mapInjectedBeforeLoad}
+      />
+
+      {proximityToast ? (
+        <Animated.View style={[styles.proximityToast, { top: insets.top + 12 }, proximityToastStyle]}>
+          <Ionicons name="checkmark-circle" size={22} color="#22C55E" />
+          <Text style={styles.proximityToastText}>{proximityToast}</Text>
+        </Animated.View>
+      ) : null}
+
+      <MapGymBottomSheet
+        visible={gymSheetVisible && gymSheetPin != null}
+        pin={gymSheetPin}
+        presence={gymSheetPresence}
+        loading={gymSheetLoading}
+        onClose={() => {
+          setGymSheetVisible(false)
+          setGymSheetPin(null)
+        }}
+        onCheckIn={() => {
+          void completeSheetCheckIn()
+        }}
+      />
+
+      {/* Who's here — zoomed gym map + people (checked in) */}
+      {activeGym ? (
+        <Pressable
+          onPress={() => openGymArena(activeGym)}
           style={[
-            StyleSheet.absoluteFillObject,
-            { backgroundColor: isDark ? '#000000' : '#d4d4d4' },
+            styles.fab,
+            {
+              top: insets.top + 12,
+              left: 16,
+              right: undefined,
+              backgroundColor: BrandViolet.primary,
+              zIndex: 2,
+            },
           ]}
-          originWhitelist={['*']}
-          source={{
-            html: buildMapHTML(
-              initialCoords.lat,
-              initialCoords.lng,
-              isDark,
-              profile?.avatar_url,
-              profile?.display_name,
-            ),
-          }}
-          scrollEnabled={false}
-          bounces={false}
-          javaScriptEnabled
-          onMessage={handleWebViewMessage}
-          onLoadEnd={() => {
-            const c = coordsRef.current
-            if (!c) return
-            webRef.current?.injectJavaScript(
-              `if(window.userDot)window.userDot.setLatLng([${c.lat},${c.lng}]);true;`,
-            )
-          }}
-        />
-      )}
+          accessibilityLabel="See who is checked in at this gym"
+        >
+          <Ionicons name="people" size={20} color="#fff" />
+        </Pressable>
+      ) : null}
 
       {/* Recenter */}
       <Pressable
         onPress={handleRecenter}
-        style={[styles.fab, { top: insets.top + 12, backgroundColor: colors.card }]}
+        style={[styles.fab, { top: insets.top + 12, backgroundColor: colors.card, zIndex: 2 }]}
       >
         <Ionicons name="navigate" size={20} color={colors.text} />
       </Pressable>
 
-      {/* Prompt when no gym */}
-      {!activeGym && (
-        <View style={styles.hintWrap} pointerEvents="none">
-          <View style={[styles.hintPill, { backgroundColor: colors.card }]}>
-            <Ionicons name="walk-outline" size={16} color={colors.textMuted} />
-            <ThemedText style={[styles.hintText, { color: colors.textMuted }]}>
-              Head to a gym to post
-            </ThemedText>
-          </View>
+      {/* Bottom hint */}
+      <View style={styles.hintWrap} pointerEvents="none">
+        <View style={[styles.hintPill, { backgroundColor: colors.card }]}>
+          {activeGym ? (
+            <>
+              <Ionicons name="people" size={16} color={BrandViolet.primary} />
+              <ThemedText style={[styles.hintText, { color: colors.textMuted }]}>
+                Tap people for gym map & log workout
+              </ThemedText>
+            </>
+          ) : (
+            <>
+              <Ionicons name="walk-outline" size={16} color={colors.textMuted} />
+              <ThemedText style={[styles.hintText, { color: colors.textMuted }]}>
+                Get near a gym or tap a pin → Check in here
+              </ThemedText>
+            </>
+          )}
         </View>
-      )}
-
-      {/* Bottom sheet */}
-      <Animated.View
-        style={[
-          styles.sheet,
-          {
-            backgroundColor: colors.card,
-            paddingBottom: insets.bottom + 20,
-            transform: [{ translateY: sheetY }],
-          },
-        ]}
-      >
-        <View style={styles.handle}>
-          <View style={[styles.handleBar, { backgroundColor: colors.textMuted + '30' }]} />
-        </View>
-
-        {activeGym?.image_url ? (
-          <Image
-            source={{ uri: activeGym.image_url }}
-            style={styles.sheetHero}
-            contentFit="cover"
-            transition={200}
-          />
-        ) : (
-          <View style={[styles.sheetHeroPlaceholder, { backgroundColor: BrandViolet.primary + '18' }]}>
-            <Ionicons name="barbell" size={36} color={BrandViolet.primary} />
-          </View>
-        )}
-
-        <ThemedText type="title" style={[styles.sheetName, { color: colors.text }]}>
-          {activeGym?.name ?? ''}
-        </ThemedText>
-
-        {activeGym?.address ? (
-          <ThemedText style={[styles.sheetAddress, { color: colors.textMuted }]}>
-            {activeGym.address}
-          </ThemedText>
-        ) : activeGym ? (
-          <ThemedText style={[styles.sheetAddress, { color: colors.textMuted, fontStyle: 'italic' }]}>
-            Address not on map yet
-          </ThemedText>
-        ) : null}
-
-        {/* Presence avatars */}
-        {others.length > 0 ? (
-          <View style={styles.presenceWrap}>
-            <ThemedText style={[styles.presenceLabel, { color: colors.textMuted }]}>
-              {others.length} {others.length === 1 ? 'person' : 'people'} here now
-            </ThemedText>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.avatarScroll}
-            >
-              {others.map((p) => (
-                <Pressable
-                  key={p.id}
-                  style={styles.avatarItem}
-                  onPress={() =>
-                    Alert.alert(p.display_name ?? 'User', `🔥 ${p.streak} day streak`, [
-                      { text: 'Close', style: 'cancel' },
-                      {
-                        text: 'View Profile',
-                        onPress: () =>
-                          router.push({ pathname: '/friend-profile', params: { id: p.user_id } }),
-                      },
-                    ])
-                  }
-                >
-                  <View style={[styles.avatar, { borderColor: colors.tint + '40' }]}>
-                    {p.avatar_url ? (
-                      <Image source={{ uri: p.avatar_url }} style={styles.avatarImg} />
-                    ) : (
-                      <View style={[styles.avatarFallback, { backgroundColor: colors.tint + '18' }]}>
-                        <ThemedText style={[styles.avatarLetter, { color: colors.tint }]}>
-                          {(p.display_name ?? '?')[0].toUpperCase()}
-                        </ThemedText>
-                      </View>
-                    )}
-                  </View>
-                  <ThemedText
-                    style={[styles.avatarName, { color: colors.textMuted }]}
-                    numberOfLines={1}
-                  >
-                    {p.display_name?.split(' ')[0] ?? 'User'}
-                  </ThemedText>
-                </Pressable>
-              ))}
-            </ScrollView>
-          </View>
-        ) : (
-          <ThemedText style={[styles.emptyPresence, { color: colors.textMuted }]}>
-            No one else here right now
-          </ThemedText>
-        )}
-
-        <Pressable style={[styles.postBtn, { backgroundColor: BrandViolet.primary }]} onPress={handlePost}>
-          <Ionicons name="camera" size={20} color="#fff" />
-          <ThemedText style={styles.postBtnLabel}>Post from here</ThemedText>
-        </Pressable>
-      </Animated.View>
+      </View>
 
       {/* Privacy modal */}
       <Modal visible={showPrivacy} transparent animationType="fade">
@@ -890,7 +985,7 @@ export default function MapScreen() {
               Show yourself at the gym?
             </ThemedText>
             <ThemedText style={[styles.modalBody, { color: colors.textMuted }]}>
-              Let friends see when you're at the same gym. You can change this anytime in Settings.
+              {`Let friends see when you're at the same gym. You can change this anytime in Settings.`}
             </ThemedText>
             <Pressable
               style={[styles.pill, { backgroundColor: BrandViolet.primary, width: '100%' }]}
@@ -918,9 +1013,6 @@ const styles = StyleSheet.create({
   // Permission
   permTitle: { fontSize: 22, fontWeight: '700', textAlign: 'center' },
   permBody: { fontSize: 14, textAlign: 'center', lineHeight: 21, maxWidth: 280 },
-
-  // Loading
-  loadingLabel: { fontSize: 14, fontWeight: '500', marginTop: 4 },
 
   // Shared pill button
   pill: { paddingHorizontal: 28, paddingVertical: 14, borderRadius: 14, alignItems: 'center' },
@@ -957,76 +1049,6 @@ const styles = StyleSheet.create({
   },
   hintText: { fontSize: 13, fontWeight: '600' },
 
-  // Sheet
-  sheet: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingHorizontal: 20,
-    paddingTop: 10,
-    minHeight: SCREEN_H * 0.28,
-    ...Platform.select({
-      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: -3 }, shadowOpacity: 0.10, shadowRadius: 10 },
-      android: { elevation: 8 },
-    }),
-  },
-  handle: { alignItems: 'center', marginBottom: 10 },
-  handleBar: { width: 36, height: 4, borderRadius: 2 },
-  sheetHero: {
-    width: '100%',
-    height: 120,
-    borderRadius: 14,
-    marginBottom: 12,
-    backgroundColor: '#111',
-  },
-  sheetHeroPlaceholder: {
-    width: '100%',
-    height: 120,
-    borderRadius: 14,
-    marginBottom: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  sheetName: { fontSize: 20, fontWeight: '600', marginBottom: 6, letterSpacing: -0.25 },
-  sheetAddress: { fontSize: 13, lineHeight: 19, marginBottom: 14 },
-
-  // Presence
-  presenceWrap: { marginBottom: 18 },
-  presenceLabel: { fontSize: 13, fontWeight: '600', marginBottom: 10 },
-  avatarScroll: { gap: 14 },
-  avatarItem: { alignItems: 'center', width: 58 },
-  avatar: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    borderWidth: 2,
-    overflow: 'hidden',
-  },
-  avatarImg: { width: '100%', height: '100%' },
-  avatarFallback: {
-    width: '100%',
-    height: '100%',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatarLetter: { fontSize: 20, fontWeight: '700' },
-  avatarName: { fontSize: 11, fontWeight: '500', marginTop: 4 },
-  emptyPresence: { fontSize: 14, marginBottom: 18 },
-
-  // Post
-  postBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 14,
-    borderRadius: 14,
-  },
-  postBtnLabel: { color: '#fff', fontSize: 16, fontWeight: '600' },
-
   // Modal
   overlay: {
     flex: 1,
@@ -1048,4 +1070,21 @@ const styles = StyleSheet.create({
   modalBody: { fontSize: 14, textAlign: 'center', lineHeight: 20, marginBottom: 22 },
   modalSkip: { paddingVertical: 10 },
   modalSkipText: { fontSize: 15, fontWeight: '500' },
+
+  proximityToast: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    zIndex: 25,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 16,
+    backgroundColor: 'rgba(12,10,18,0.92)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  proximityToastText: { flex: 1, color: '#fff', fontSize: 15, fontWeight: '700' },
 })

@@ -92,6 +92,8 @@ function TabsLayoutContent() {
         name="map"
         options={{
           title: 'Map',
+          /** Keep mounted so the WebView does not reload every time you switch to Map. */
+          lazy: false,
           tabBarIcon: ({ color }) => (
             <IconSymbol size={TAB_ICON_SIZE} name="map.fill" color={color} />
           ),

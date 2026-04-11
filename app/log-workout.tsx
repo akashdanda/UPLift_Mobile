@@ -1,7 +1,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons'
 import { Image } from 'expo-image'
 import { router, useLocalSearchParams } from 'expo-router'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   Alert,
@@ -95,11 +95,20 @@ export default function LogWorkoutScreen() {
   const [checkInAllowed, setCheckInAllowed] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [caption, setCaption] = useState('')
-  // Photo(s) taken but not yet posted (caption step). BeReal-style: primary + optional secondary.
+  // Dual capture: pendingSecondaryUri = front (selfie), pendingPhotoUri = back (workout) → matches DB + BeRealPreview.
   const [pendingPhotoUri, setPendingPhotoUri] = useState<string | null>(null)
   const [pendingSecondaryUri, setPendingSecondaryUri] = useState<string | null>(null)
   const [cameraOpen, setCameraOpen] = useState(false)
-  const [cameraMode, setCameraMode] = useState<'primary' | 'secondary'>('primary')
+  /** Which lens is active in the open camera modal. */
+  const [cameraPhase, setCameraPhase] = useState<'selfie' | 'workout'>('selfie')
+  /** Same as `cameraPhase` but updated synchronously so `onCapture` never reads a stale phase. */
+  const cameraPhaseRef = useRef<'selfie' | 'workout'>('selfie')
+  /** Only auto-open once per visit when eligible; retake opens camera explicitly. */
+  const hasAutoLaunchedCamera = useRef(false)
+
+  useEffect(() => {
+    cameraPhaseRef.current = cameraPhase
+  }, [cameraPhase])
   // Level-up celebration
   const [levelUpCelebration, setLevelUpCelebration] = useState<UserLevel | null>(null)
   const [showLevelUp, setShowLevelUp] = useState(false)
@@ -148,28 +157,45 @@ export default function LogWorkoutScreen() {
     }
   }, [session, today, gymId])
 
+  // Open camera immediately when you land on the log screen (checked in, no post yet).
+  useEffect(() => {
+    if (loading || todayWorkout || !checkInAllowed) return
+    if (pendingPhotoUri || pendingSecondaryUri) return
+    if (cameraOpen) return
+    if (hasAutoLaunchedCamera.current) return
+    hasAutoLaunchedCamera.current = true
+    cameraPhaseRef.current = 'selfie'
+    setCameraPhase('selfie')
+    setCameraOpen(true)
+  }, [loading, todayWorkout, checkInAllowed, pendingPhotoUri, pendingSecondaryUri, cameraOpen])
+
   const handleTakePhoto = () => {
     if (!session) return
-    // Always start with back camera for the workout shot
-    setCameraMode('primary')
+    if (pendingSecondaryUri && !pendingPhotoUri) {
+      cameraPhaseRef.current = 'workout'
+      setCameraPhase('workout')
+    } else {
+      cameraPhaseRef.current = 'selfie'
+      setCameraPhase('selfie')
+      setPendingSecondaryUri(null)
+      setPendingPhotoUri(null)
+    }
     setCameraOpen(true)
   }
 
   const handleCapture = (uri: string) => {
-    if (cameraMode === 'primary') {
-      // First capture: workout (back camera). Immediately switch to selfie (front) without confirmation.
-      setPendingPhotoUri(uri)
-      setCameraMode('secondary')
-      // Keep camera open; CameraCapture will re-render with facing='front'.
-    } else {
-      // Second capture: selfie (front camera). Now close camera and move to caption step.
+    if (cameraPhaseRef.current === 'selfie') {
       setPendingSecondaryUri(uri)
+      cameraPhaseRef.current = 'workout'
+      setCameraPhase('workout')
+    } else {
+      setPendingPhotoUri(uri)
       setCameraOpen(false)
     }
   }
 
   const handlePost = async () => {
-    if (!session || !pendingPhotoUri || !gymId) return
+    if (!session || !pendingPhotoUri || !pendingSecondaryUri || !gymId) return
     const stillCheckedIn = await isCheckedInAtGym(session.user.id, gymId)
     if (!stillCheckedIn) {
       Alert.alert(
@@ -388,7 +414,9 @@ export default function LogWorkoutScreen() {
               Post today&apos;s workout
             </ThemedText>
             <ThemedText style={[styles.formHint, { color: colors.textMuted }]}>
-              Take a photo of your workout and a quick selfie. One post per day.
+              {pendingSecondaryUri
+                ? 'Selfie done — now take a photo of your workout with the back camera.'
+                : 'You’ll take a quick selfie first, then a shot of your workout. One post per day.'}
             </ThemedText>
 
             <Pressable
@@ -398,7 +426,9 @@ export default function LogWorkoutScreen() {
                 { backgroundColor: colors.tint, shadowOpacity: isDark ? 0.3 : 0.15 },
               ]}
             >
-              <ThemedText style={styles.primaryButtonText}>Take photo</ThemedText>
+              <ThemedText style={styles.primaryButtonText}>
+                {pendingSecondaryUri ? 'Continue with back camera' : 'Open camera'}
+              </ThemedText>
             </Pressable>
           </View>
         ) : (
@@ -416,7 +446,13 @@ export default function LogWorkoutScreen() {
             <View style={styles.retakeRow}>
               <Pressable
                 style={[styles.retakeButton, {  }]}
-                onPress={() => { setPendingPhotoUri(null); setPendingSecondaryUri(null); }}
+                onPress={() => {
+                  setPendingPhotoUri(null)
+                  setPendingSecondaryUri(null)
+                  cameraPhaseRef.current = 'selfie'
+                  setCameraPhase('selfie')
+                  setCameraOpen(true)
+                }}
                 disabled={uploading}
               >
                 <ThemedText style={[styles.retakeButtonText, { color: colors.textMuted }]}>Retake both photos</ThemedText>
@@ -576,9 +612,10 @@ export default function LogWorkoutScreen() {
 
       <Modal visible={cameraOpen} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setCameraOpen(false)}>
         <CameraCapture
+          key={`${cameraPhase}-${pendingSecondaryUri ? '1' : '0'}`}
           onCapture={handleCapture}
           onClose={() => setCameraOpen(false)}
-          facing={cameraMode === 'primary' ? 'back' : 'front'}
+          facing={cameraPhase === 'selfie' ? 'front' : 'back'}
           quality={0.8}
         />
       </Modal>

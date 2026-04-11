@@ -60,6 +60,10 @@ function RootNavigator() {
           options={{ title: 'Log workout', presentation: 'modal', headerBackTitle: 'Profile' }}
         />
         <Stack.Screen
+          name="gym-arena"
+          options={{ headerShown: false, presentation: 'fullScreenModal', animation: 'slide_from_bottom' }}
+        />
+        <Stack.Screen
           name="friend-profile"
           options={{ title: 'Profile', presentation: 'modal', headerBackTitle: 'Profile' }}
         />

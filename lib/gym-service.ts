@@ -206,6 +206,62 @@ export async function findGymIdByOsm(osmType: string, osmId: string): Promise<st
   return (byId?.id as string) ?? null
 }
 
+/**
+ * Create or update a gym row from the map pin (Overpass) when it is missing from Supabase.
+ * Uses numeric OSM id as `osm_id` to match how cached gyms are stored.
+ */
+export async function ensureGymFromOsmInSupabase(params: {
+  osmId: string
+  lat: number
+  lng: number
+  tags?: Record<string, string> | null
+}): Promise<Gym | null> {
+  const idOnly = String(params.osmId).trim()
+  if (!idOnly) return null
+  const tags = params.tags ?? undefined
+  const row = {
+    name: displayNameFromOsmTags(tags),
+    address: formatAddressFromOsmTags(tags),
+    lat: params.lat,
+    lng: params.lng,
+    location: `POINT(${params.lng} ${params.lat})`,
+    osm_id: idOnly,
+  }
+  const { error } = await supabase.from('gyms').upsert(row, { onConflict: 'osm_id' })
+  if (error) return null
+  const { data, error: readErr } = await supabase
+    .from('gyms')
+    .select('id,name,address,lat,lng,osm_id')
+    .eq('osm_id', idOnly)
+    .maybeSingle()
+  if (readErr || !data) return null
+  return {
+    id: data.id as string,
+    name: data.name as string,
+    address: (data.address as string | null) ?? null,
+    lat: data.lat as number,
+    lng: data.lng as number,
+    osm_id: (data.osm_id as string | null) ?? null,
+  }
+}
+
+export async function fetchGymById(id: string): Promise<Gym | null> {
+  const { data, error } = await supabase
+    .from('gyms')
+    .select('id,name,address,lat,lng,osm_id')
+    .eq('id', id)
+    .maybeSingle()
+  if (error || !data) return null
+  return {
+    id: data.id as string,
+    name: data.name as string,
+    address: (data.address as string | null) ?? null,
+    lat: data.lat as number,
+    lng: data.lng as number,
+    osm_id: (data.osm_id as string | null) ?? null,
+  }
+}
+
 export async function getNearbyGyms(lat: number, lng: number): Promise<Gym[]> {
   let cached = await fetchFromSupabase(lat, lng)
 
