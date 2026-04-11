@@ -8,6 +8,18 @@ export type PresenceRow = {
   avatar_url: string | null
   streak: number
   checked_in_at: string
+  share_with_others?: boolean
+}
+
+/** Map visible check-in count to a simple crowdedness tier (for map UI). */
+export function crowdLevelFromCount(n: number): {
+  level: 'quiet' | 'light' | 'moderate' | 'busy'
+  label: string
+} {
+  if (n <= 0) return { level: 'quiet', label: 'Quiet' }
+  if (n <= 2) return { level: 'light', label: 'Light' }
+  if (n <= 5) return { level: 'moderate', label: 'Moderate' }
+  return { level: 'busy', label: 'Busy' }
 }
 
 export async function getActivePresence(gymId: string): Promise<PresenceRow[]> {
@@ -15,6 +27,7 @@ export async function getActivePresence(gymId: string): Promise<PresenceRow[]> {
     .from('gym_presence')
     .select('*')
     .eq('gym_id', gymId)
+    .eq('share_with_others', true)
     .gt('checked_in_at', new Date(Date.now() - 10 * 60_000).toISOString())
 
   if (error) throw error
@@ -27,6 +40,8 @@ export async function checkIn(params: {
   displayName: string | null
   avatarUrl: string | null
   streak: number
+  /** When false, row still authorizes posting but user is omitted from others-at-gym lists. */
+  shareWithOthers: boolean
 }) {
   const { error } = await supabase.from('gym_presence').upsert(
     {
@@ -35,6 +50,7 @@ export async function checkIn(params: {
       display_name: params.displayName,
       avatar_url: params.avatarUrl,
       streak: params.streak,
+      share_with_others: params.shareWithOthers,
       checked_in_at: new Date().toISOString(),
     },
     { onConflict: 'user_id,gym_id' },
@@ -48,6 +64,18 @@ export async function checkOut(userId: string, gymId: string) {
 
 export async function clearAllPresence(userId: string) {
   await supabase.from('gym_presence').delete().eq('user_id', userId)
+}
+
+/** True if this user currently has an active check-in row for the given gym. */
+export async function isCheckedInAtGym(userId: string, gymId: string): Promise<boolean> {
+  const { data, error } = await supabase
+    .from('gym_presence')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('gym_id', gymId)
+    .maybeSingle()
+  if (error) return false
+  return !!data
 }
 
 export function subscribeToPresence(

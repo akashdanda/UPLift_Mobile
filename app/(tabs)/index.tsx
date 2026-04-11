@@ -40,7 +40,7 @@ import {
   getDailyReminderInfo,
   type DailyReminderInfo
 } from '@/lib/daily-reminder';
-import { getFriendsWorkouts, getGlobalWorkouts, type FeedItem } from '@/lib/feed';
+import { formatGymLabel, getFriendsWorkouts, getGlobalWorkouts, type FeedItem } from '@/lib/feed';
 import { getFriends } from '@/lib/friends';
 import { computeXP, getLevelFromXP } from '@/lib/levels';
 import { getUnreadNotificationCount, markNotificationsAsRead } from '@/lib/notifications';
@@ -171,6 +171,7 @@ export default function HomeScreen() {
   const colors = Colors[colorScheme ?? 'light'];
   const { session, profile } = useAuthContext();
   const [todayWorkout, setTodayWorkout] = useState<Workout | null>(null);
+  const [todayWorkoutGymLabel, setTodayWorkoutGymLabel] = useState<string | null>(null);
   const [todayWorkoutReactions, setTodayWorkoutReactions] = useState<WorkoutReactionWithProfile[]>([]);
   const [todayWorkoutComments, setTodayWorkoutComments] = useState<WorkoutCommentWithProfile[]>([]);
   const todayWorkoutIdRef = useRef<string | null>(null);
@@ -221,6 +222,27 @@ export default function HomeScreen() {
 
   // Keep ref in sync for realtime subscriptions
   todayWorkoutIdRef.current = todayWorkout?.id ?? null;
+
+  useEffect(() => {
+    const gymId = todayWorkout?.gym_id;
+    if (!gymId) {
+      setTodayWorkoutGymLabel(null);
+      return;
+    }
+    let cancelled = false;
+    supabase
+      .from('gyms')
+      .select('name,address')
+      .eq('id', gymId)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (cancelled || error || !data) return;
+        setTodayWorkoutGymLabel(formatGymLabel(data.name, data.address));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [todayWorkout?.gym_id]);
 
   // Fetch reactions and comments for the user's own "Today's workout" post
   useEffect(() => {
@@ -793,6 +815,14 @@ export default function HomeScreen() {
                         {todayWorkout.caption}
                       </ThemedText>
                     ) : null}
+                    {todayWorkoutGymLabel ? (
+                      <View style={styles.feedOverlayLocationRow}>
+                        <Ionicons name="location-outline" size={13} color="rgba(255,255,255,0.78)" />
+                        <ThemedText style={styles.feedOverlayLocation} numberOfLines={2}>
+                          {todayWorkoutGymLabel}
+                        </ThemedText>
+                      </View>
+                    ) : null}
                     <ThemedText style={styles.feedOverlayMeta}>
                       {getWorkoutTypeEmoji(todayWorkout.workout_type)} Today
             </ThemedText>
@@ -954,6 +984,14 @@ export default function HomeScreen() {
                             <ThemedText style={styles.feedOverlayCaption} numberOfLines={1}>
                               {item.workout.caption}
                             </ThemedText>
+                          ) : null}
+                          {item.gym_label ? (
+                            <View style={styles.feedOverlayLocationRow}>
+                              <Ionicons name="location-outline" size={13} color="rgba(255,255,255,0.78)" />
+                              <ThemedText style={styles.feedOverlayLocation} numberOfLines={2}>
+                                {item.gym_label}
+                              </ThemedText>
+                            </View>
                           ) : null}
                           <ThemedText style={styles.feedOverlayMeta}>
                             {getWorkoutTypeEmoji(item.workout.workout_type)}{' '}
@@ -1692,6 +1730,23 @@ const styles = StyleSheet.create({
     textShadowColor: 'rgba(0,0,0,0.5)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 3,
+  },
+  feedOverlayLocationRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 5,
+    marginTop: 6,
+    paddingRight: 8,
+  },
+  feedOverlayLocation: {
+    flex: 1,
+    color: 'rgba(255,255,255,0.88)',
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '500',
+    textShadowColor: 'rgba(0,0,0,0.45)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
   },
   feedOverlayMeta: {
     color: 'rgba(255,255,255,0.55)',

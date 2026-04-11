@@ -56,11 +56,11 @@ function TabsLayoutContent() {
         }}
       />
       <Tabs.Screen
-        name="map"
+        name="leaderboard"
         options={{
-          title: 'Map',
+          title: 'Leaderboard',
           tabBarIcon: ({ color }) => (
-            <IconSymbol size={TAB_ICON_SIZE} name="map.fill" color={color} />
+            <IconSymbol size={TAB_ICON_SIZE} name="trophy.fill" color={color} />
           ),
         }}
       />
@@ -89,11 +89,11 @@ function TabsLayoutContent() {
         }}
       />
       <Tabs.Screen
-        name="leaderboard"
+        name="map"
         options={{
-          title: 'Leaderboard',
+          title: 'Map',
           tabBarIcon: ({ color }) => (
-            <IconSymbol size={TAB_ICON_SIZE} name="trophy.fill" color={color} />
+            <IconSymbol size={TAB_ICON_SIZE} name="map.fill" color={color} />
           ),
         }}
       />
