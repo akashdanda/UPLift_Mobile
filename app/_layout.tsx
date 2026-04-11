@@ -57,7 +57,7 @@ function RootNavigator() {
         />
         <Stack.Screen
           name="log-workout"
-          options={{ title: 'Log workout', presentation: 'modal', headerBackTitle: 'Profile' }}
+          options={{ headerShown: false, presentation: 'modal' }}
         />
         <Stack.Screen
           name="gym-arena"
@@ -65,7 +65,7 @@ function RootNavigator() {
         />
         <Stack.Screen
           name="friend-profile"
-          options={{ title: 'Profile', presentation: 'modal', headerBackTitle: 'Profile' }}
+          options={{ headerShown: false, presentation: 'modal' }}
         />
         <Stack.Screen name="create-duel" options={{ title: '1v1 Challenge', presentation: 'modal', headerBackTitle: 'Profile' }} />
         <Stack.Screen name="duel-detail" options={{ title: 'Challenge', headerBackTitle: 'Profile' }} />

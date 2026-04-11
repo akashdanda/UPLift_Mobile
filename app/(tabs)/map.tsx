@@ -5,12 +5,13 @@ import * as Location from 'expo-location'
 import { useFocusEffect } from '@react-navigation/native'
 import { router } from 'expo-router'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Alert, Linking, Modal, Platform, Pressable, StyleSheet, Text, View } from 'react-native'
+import { Linking, Modal, Platform, Pressable, StyleSheet, Text, View } from 'react-native'
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated'
 import { WebView } from 'react-native-webview'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import { MapGymBottomSheet, type MapGymSheetPin } from '@/components/map-gym-bottom-sheet'
+import { MapGymNoticeOverlay, type MapGymNoticeVariant } from '@/components/map-gym-notice-overlay'
 import { ThemedText } from '@/components/themed-text'
 import { BrandViolet, Colors } from '@/constants/theme'
 import { useAuthContext } from '@/hooks/use-auth-context'
@@ -21,6 +22,8 @@ import {
   fetchGymById,
   findGymIdByOsm,
   getNearbyGyms,
+  MANUAL_MAP_CHECKIN_RADIUS_FT,
+  MANUAL_MAP_CHECKIN_RADIUS_M,
   resolveGymIdFromList,
   type Gym,
 } from '@/lib/gym-service'
@@ -36,8 +39,6 @@ import {
 
 /** Base radius (m). GPS + building centroid error often exceeds 15m; we add accuracy slack in the poll. */
 const ACTIVE_RADIUS_M = 72
-/** Manual check-in from pin popup: max distance to gym center (m). */
-const MANUAL_CHECKIN_MAX_M = 160
 const GHOST_RADIUS_M = 2000
 const PROXIMITY_ARENA_DELAY_MS = 1200
 
@@ -124,6 +125,12 @@ export default function MapScreen() {
   const [gymSheetPin, setGymSheetPin] = useState<MapGymSheetPin | null>(null)
   const [gymSheetPresence, setGymSheetPresence] = useState<PresenceRow[]>([])
   const [gymSheetLoading, setGymSheetLoading] = useState(false)
+  const [gymSheetDistanceM, setGymSheetDistanceM] = useState<number | null>(null)
+  const [gymSheetNotice, setGymSheetNotice] = useState<{
+    title: string
+    message: string
+    variant?: MapGymNoticeVariant
+  } | null>(null)
 
   const [proximityToast, setProximityToast] = useState<string | null>(null)
   const toastOpacity = useSharedValue(0)
@@ -159,7 +166,8 @@ export default function MapScreen() {
     }
   }, [])
 
-  const mapHtml = useMemo(() => buildUpliftMapLeafletHTML(insets.top, insets.bottom), [insets.top, insets.bottom])
+  // Safe-area vars in the embedded HTML are unused; keep HTML string stable so insets changes never remount WebView.
+  const mapHtml = useMemo(() => buildUpliftMapLeafletHTML(0, 0), [])
 
   const mapInjectedBeforeLoad = useMemo(() => {
     const cfg = {
@@ -180,16 +188,23 @@ export default function MapScreen() {
 
   /** Move map + user dot; optionally refetch Overpass (full reload) or soft kick only. */
   const syncMapCamera = useCallback(
-    (lat: number, lng: number, opts?: { reloadPins?: boolean; persist?: boolean }) => {
+    (
+      lat: number,
+      lng: number,
+      opts?: { reloadPins?: boolean; persist?: boolean; userDotOnly?: boolean },
+    ) => {
       const reloadPins = opts?.reloadPins ?? false
       const persist = opts?.persist ?? true
+      const userDotOnly = opts?.userDotOnly ?? false
       coordsRef.current = { lat, lng }
       if (persist) {
         void AsyncStorage.setItem(MAP_LAST_CAMERA_KEY, JSON.stringify({ lat, lng }))
       }
-      const js = reloadPins
-        ? `try{map.setView([${lat},${lng}],14,{animate:false});if(window.userDot)window.userDot.setLatLng([${lat},${lng}]);setTimeout(function(){if(window.reloadGymsFromOverpass)window.reloadGymsFromOverpass();},0);}catch(e){};true;`
-        : `try{map.setView([${lat},${lng}],14,{animate:false});if(window.userDot)window.userDot.setLatLng([${lat},${lng}]);if(window.__kickGymLoad)window.__kickGymLoad();}catch(e){};true;`
+      const js = userDotOnly
+        ? `try{if(window.userDot)window.userDot.setLatLng([${lat},${lng}]);if(window.__kickGymLoad)window.__kickGymLoad();}catch(e){};true;`
+        : reloadPins
+          ? `try{map.setView([${lat},${lng}],14,{animate:false});if(window.userDot)window.userDot.setLatLng([${lat},${lng}]);setTimeout(function(){if(window.reloadGymsFromOverpass)window.reloadGymsFromOverpass();},0);}catch(e){};true;`
+          : `try{map.setView([${lat},${lng}],14,{animate:false});if(window.userDot)window.userDot.setLatLng([${lat},${lng}]);if(window.__kickGymLoad)window.__kickGymLoad();}catch(e){};true;`
       webRef.current?.injectJavaScript(js)
     },
     [],
@@ -228,8 +243,7 @@ export default function MapScreen() {
     }
     syncMapCamera(c.lat, c.lng, { reloadPins: false, persist: false })
     webRef.current?.injectJavaScript(
-      `setTimeout(function(){try{window.__kickGymLoad&&window.__kickGymLoad();}catch(e){}},0);` +
-        `setTimeout(function(){try{window.__kickGymLoad&&window.__kickGymLoad();}catch(e){}},120);true;`,
+      `setTimeout(function(){try{window.__kickGymLoad&&window.__kickGymLoad();}catch(e){}},90);true;`,
     )
     if (TEMP_QA_GYM_AT_GPS) injectQaTestGymPin(c.lat, c.lng)
   }, [syncMapCamera, injectQaTestGymPin])
@@ -489,7 +503,12 @@ export default function MapScreen() {
           if (cancelled) return
           const r = { lat: refined.coords.latitude, lng: refined.coords.longitude }
           coordsRef.current = r
-          syncMapCamera(r.lat, r.lng, { reloadPins: false })
+          const jumpM = c ? distanceMeters(c.lat, c.lng, r.lat, r.lng) : 9999
+          if (jumpM > 80) {
+            syncMapCamera(r.lat, r.lng, { reloadPins: false })
+          } else {
+            syncMapCamera(r.lat, r.lng, { reloadPins: false, userDotOnly: true })
+          }
           refreshGyms(r.lat, r.lng)
         } catch {
           /* keep first fix */
@@ -522,6 +541,7 @@ export default function MapScreen() {
       setPresenceList(await getActivePresence(gym.id))
     } catch {}
     try {
+      const c = coordsRef.current
       await checkIn({
         userId: session.user.id,
         gymId: gym.id,
@@ -529,6 +549,8 @@ export default function MapScreen() {
         avatarUrl: profile.avatar_url,
         streak: profile.streak ?? 0,
         shareWithOthers: profile.location_visible ?? false,
+        checkInLat: c?.lat,
+        checkInLng: c?.lng,
       })
       checkedInGymRef.current = gym.id
       setMapPresenceGymId(gym.id)
@@ -593,9 +615,26 @@ export default function MapScreen() {
     }
   }, [gymSheetVisible, gymSheetPin, mergeGymFromPinIfNeeded])
 
+  useEffect(() => {
+    if (!gymSheetVisible || !gymSheetPin) {
+      setGymSheetDistanceM(null)
+      return
+    }
+    const c = coordsRef.current
+    if (!c) {
+      setGymSheetDistanceM(null)
+      return
+    }
+    setGymSheetDistanceM(distanceMeters(c.lat, c.lng, gymSheetPin.lat, gymSheetPin.lng))
+  }, [gymSheetVisible, gymSheetPin])
+
   const completeSheetCheckIn = useCallback(async () => {
     if (!session || !profile || !gymSheetPin) {
-      Alert.alert('Sign in required', 'Log in to check in at a gym.')
+      setGymSheetNotice({
+        title: 'Sign in required',
+        message: 'Log in to check in at a gym.',
+        variant: 'default',
+      })
       return
     }
     const gym = await mergeGymFromPinIfNeeded({
@@ -606,23 +645,29 @@ export default function MapScreen() {
       tagsJson: gymSheetPin.tagsJson,
     })
     if (!gym) {
-      Alert.alert(
-        'Could not check in',
-        'We could not save this gym to your account. Check your connection and try again.',
-      )
+      setGymSheetNotice({
+        title: 'Could not check in',
+        message: 'We could not save this gym to your account. Check your connection and try again.',
+        variant: 'error',
+      })
       return
     }
     const c = coordsRef.current
     if (!c) {
-      Alert.alert('Location needed', 'We could not read your position.')
+      setGymSheetNotice({
+        title: 'Location needed',
+        message: 'We could not read your position. Enable location and try again.',
+        variant: 'warning',
+      })
       return
     }
     const d = distanceMeters(c.lat, c.lng, gym.lat, gym.lng)
-    if (d > MANUAL_CHECKIN_MAX_M) {
-      Alert.alert(
-        'Too far away',
-        `Move within about ${MANUAL_CHECKIN_MAX_M}m of this gym to check in (you're ~${Math.round(d)}m away).`,
-      )
+    if (d > MANUAL_MAP_CHECKIN_RADIUS_M) {
+      setGymSheetNotice({
+        title: 'Too far away',
+        message: `Move within about ${MANUAL_MAP_CHECKIN_RADIUS_FT} feet of this gym to check in. You are about ${Math.round(d * 3.28084)} feet away.`,
+        variant: 'warning',
+      })
       return
     }
     setGymSheetVisible(false)
@@ -664,8 +709,9 @@ export default function MapScreen() {
   const ghostSeqRef = useRef(0)
   useEffect(() => {
     if (!perm || activeGym || !session?.user?.id || gyms.length === 0) {
+      const emptyEnc = encodeURIComponent(JSON.stringify([]))
       webRef.current?.injectJavaScript(
-        `try{window.__setGhostPresence(${JSON.stringify(encodeURIComponent(JSON.stringify([])))});}catch(e){};true;`,
+        `try{window.__setGhostPresence(${JSON.stringify(emptyEnc)});}catch(e){};true;`,
       )
       return
     }
@@ -748,7 +794,12 @@ export default function MapScreen() {
         pollTimeoutRef.current = null
       }
       try {
-        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.BestForNavigation })
+        const cr = coordsRef.current
+        const nearGym =
+          cr != null && gymsRef.current.length > 0 ? minDistToAnyGym(cr.lat, cr.lng) < 650 : false
+        const loc = await Location.getCurrentPositionAsync({
+          accuracy: nearGym ? Location.Accuracy.High : Location.Accuracy.Balanced,
+        })
         const c = { lat: loc.coords.latitude, lng: loc.coords.longitude }
         coordsRef.current = c
 
@@ -880,6 +931,16 @@ export default function MapScreen() {
         scrollEnabled={false}
         bounces={false}
         javaScriptEnabled
+        domStorageEnabled
+        cacheEnabled
+        {...Platform.select({
+          android: {
+            androidLayerType: 'hardware' as const,
+            nestedScrollEnabled: false,
+            overScrollMode: 'never' as const,
+          },
+          ios: { decelerationRate: 'normal' as const },
+        })}
         onMessage={handleWebViewMessage}
         onLoadEnd={() => {
           void (async () => {
@@ -916,6 +977,8 @@ export default function MapScreen() {
         pin={gymSheetPin}
         presence={gymSheetPresence}
         loading={gymSheetLoading}
+        distanceToUserM={gymSheetDistanceM}
+        manualCheckInMaxM={MANUAL_MAP_CHECKIN_RADIUS_M}
         onClose={() => {
           setGymSheetVisible(false)
           setGymSheetPin(null)
@@ -923,6 +986,14 @@ export default function MapScreen() {
         onCheckIn={() => {
           void completeSheetCheckIn()
         }}
+      />
+
+      <MapGymNoticeOverlay
+        visible={gymSheetNotice != null}
+        title={gymSheetNotice?.title ?? ''}
+        message={gymSheetNotice?.message ?? ''}
+        variant={gymSheetNotice?.variant ?? 'default'}
+        onDismiss={() => setGymSheetNotice(null)}
       />
 
       {/* Who's here — zoomed gym map + people (checked in) */}

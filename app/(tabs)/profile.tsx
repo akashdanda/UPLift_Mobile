@@ -79,7 +79,6 @@ export default function ProfileScreen() {
   const showAvatarImage = avatarUrl && !avatarLoadError
 
   const [monthWorkoutDates, setMonthWorkoutDates] = useState<Set<string>>(new Set())
-  const [monthRestDates, setMonthRestDates] = useState<Set<string>>(new Set())
 
   const [userLevel, setUserLevel] = useState<UserLevel | null>(null)
   const [pendingIncoming, setPendingIncoming] = useState<
@@ -158,7 +157,7 @@ export default function ProfileScreen() {
 
     const { data, error } = await supabase
       .from('workouts')
-      .select('workout_date, workout_type')
+      .select('workout_date')
       .eq('user_id', session.user.id)
       .gte('workout_date', start)
       .lte('workout_date', end)
@@ -166,17 +165,13 @@ export default function ProfileScreen() {
     if (error) return
 
     const dates = new Set<string>()
-    const restDates = new Set<string>()
     for (const row of data ?? []) {
-      const r = row as { workout_date?: string | null; workout_type?: string | null }
+      const r = row as { workout_date?: string | null }
       if (typeof r.workout_date === 'string' && r.workout_date.length >= 10) {
-        const dateStr = r.workout_date.slice(0, 10)
-        dates.add(dateStr)
-        if (r.workout_type === 'rest') restDates.add(dateStr)
+        dates.add(r.workout_date.slice(0, 10))
       }
     }
     setMonthWorkoutDates(dates)
-    setMonthRestDates(restDates)
   }, [session, calendarYear, calendarMonth, daysInMonth])
 
   useEffect(() => {
@@ -449,11 +444,7 @@ export default function ProfileScreen() {
                 let isColored = false
 
                 if (hasWorkout) {
-                  if (monthRestDates.has(iso)) {
-                    statusStyle = styles.calendarDayRest
-                  } else {
-                    statusStyle = styles.calendarDayCompleted
-                  }
+                  statusStyle = styles.calendarDayCompleted
                   isColored = true
                 } else if (isOnOrAfterSignup && isPast && hasAnyPreviousWorkout) {
                   // Red: missed a previous day (had a streak going but didn't post)
@@ -483,12 +474,6 @@ export default function ProfileScreen() {
                 <View style={[styles.calendarLegendDot, styles.calendarDayCompleted]} />
                 <ThemedText style={[styles.calendarLegendLabel, { color: colors.textMuted }]}>
                   Worked out
-                </ThemedText>
-              </View>
-              <View style={styles.calendarLegendItem}>
-                <View style={[styles.calendarLegendDot, styles.calendarDayRest]} />
-                <ThemedText style={[styles.calendarLegendLabel, { color: colors.textMuted }]}>
-                  Rest day
                 </ThemedText>
               </View>
               <View style={styles.calendarLegendItem}>
@@ -761,9 +746,6 @@ const styles = StyleSheet.create({
   calendarDayCompleted: {
     backgroundColor: '#22c55e',
   },
-  calendarDayRest: {
-    backgroundColor: '#eab308',
-  },
   calendarDayMissed: {
     backgroundColor: '#ef4444',
   },
@@ -772,7 +754,7 @@ const styles = StyleSheet.create({
   },
   calendarLegendRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'space-around',
     marginTop: 12,
   },
   calendarLegendItem: {

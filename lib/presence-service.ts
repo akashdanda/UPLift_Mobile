@@ -9,6 +9,9 @@ export type PresenceRow = {
   streak: number
   checked_in_at: string
   share_with_others?: boolean
+  /** Device location when they checked in (arena map); null for legacy rows. */
+  check_in_lat?: number | null
+  check_in_lng?: number | null
 }
 
 /** Map visible check-in count to a simple crowdedness tier (for map UI). */
@@ -42,20 +45,35 @@ export async function checkIn(params: {
   streak: number
   /** When false, row still authorizes posting but user is omitted from others-at-gym lists. */
   shareWithOthers: boolean
+  /** Optional GPS at check-in; stored for arena map accuracy. */
+  checkInLat?: number | null
+  checkInLng?: number | null
 }) {
-  const { error } = await supabase.from('gym_presence').upsert(
-    {
-      user_id: params.userId,
-      gym_id: params.gymId,
-      display_name: params.displayName,
-      avatar_url: params.avatarUrl,
-      streak: params.streak,
-      share_with_others: params.shareWithOthers,
-      checked_in_at: new Date().toISOString(),
-    },
-    { onConflict: 'user_id,gym_id' },
-  )
+  const baseRow = {
+    user_id: params.userId,
+    gym_id: params.gymId,
+    display_name: params.displayName,
+    avatar_url: params.avatarUrl,
+    streak: params.streak,
+    share_with_others: params.shareWithOthers,
+    checked_in_at: new Date().toISOString(),
+  }
+  const { error } = await supabase.from('gym_presence').upsert(baseRow, { onConflict: 'user_id,gym_id' })
   if (error) throw error
+
+  const lat = params.checkInLat
+  const lng = params.checkInLng
+  if (lat != null && lng != null && Number.isFinite(lat) && Number.isFinite(lng)) {
+    const { error: coordErr } = await supabase
+      .from('gym_presence')
+      .update({ check_in_lat: lat, check_in_lng: lng })
+      .eq('user_id', params.userId)
+      .eq('gym_id', params.gymId)
+    // Projects without the migration have no columns — check-in must still succeed.
+    if (coordErr && typeof __DEV__ !== 'undefined' && __DEV__) {
+      console.warn('[presence] check_in_lat/lng update skipped:', coordErr.message)
+    }
+  }
 }
 
 export async function checkOut(userId: string, gymId: string) {
