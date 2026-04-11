@@ -72,7 +72,6 @@ export default function EditProfileScreen() {
 
   const [displayName, setDisplayName] = useState('')
   const [fullName, setFullName] = useState('')
-  const [bio, setBio] = useState('')
   const [phoneInput, setPhoneInput] = useState('')
   const [discoverableByPhone, setDiscoverableByPhone] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -91,7 +90,6 @@ export default function EditProfileScreen() {
   useEffect(() => {
     setDisplayName(getInitialDisplayName(session, profile))
     setFullName(getInitialFullName(session, profile))
-    setBio(profile?.bio || '')
     setPhoneInput(profile?.phone_e164 ?? '')
     setDiscoverableByPhone(profile?.discoverable_by_phone ?? false)
     setLocalAvatarUrl(null)
@@ -166,15 +164,16 @@ export default function EditProfileScreen() {
     const { error } = await updateProfile({
       display_name: displayName.trim() || null,
       full_name: fullName.trim() || null,
-      bio: bio.trim() || null,
       phone_e164: normalized,
       discoverable_by_phone: discoverableByPhone && !!normalized,
     })
-    setSaving(false)
     if (error) {
+      setSaving(false)
       Alert.alert('Error', error.message)
       return
     }
+
+    setSaving(false)
     router.back()
   }
 
@@ -339,36 +338,6 @@ export default function EditProfileScreen() {
             </View>
           </View>
 
-          {/* Bio */}
-          <View style={styles.section}>
-            <ThemedText style={[styles.label, { color: colors.textMuted }]}>BIO</ThemedText>
-            <View
-              style={[
-                styles.inputRow,
-                styles.textAreaRow,
-                { backgroundColor: colors.card, borderColor: inputBorderColor },
-              ]}
-            >
-              <Ionicons
-                name="create-outline"
-                size={18}
-                color={colors.textMuted}
-                style={[styles.inputIcon, { marginTop: 2 }]}
-              />
-              <TextInput
-                style={[styles.inputInner, styles.textArea, { color: colors.text }]}
-                placeholder="Tell us about yourself..."
-                placeholderTextColor={colors.textMuted}
-                value={bio}
-                onChangeText={setBio}
-                editable={!saving}
-                multiline
-                numberOfLines={4}
-                textAlignVertical="top"
-              />
-            </View>
-          </View>
-
           {/* Save Button */}
           <Pressable
             onPress={handleSave}
@@ -443,13 +412,6 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 16,
     paddingVertical: 14,
-  },
-  textAreaRow: {
-    alignItems: 'flex-start',
-  },
-  textArea: {
-    minHeight: 100,
-    paddingTop: 14,
   },
   button: {
     borderRadius: 16,

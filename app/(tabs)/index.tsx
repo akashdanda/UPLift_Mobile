@@ -679,30 +679,38 @@ export default function HomeScreen() {
   type ShareData = {
     primaryUrl: string;
     secondaryUrl?: string | null;
-    workoutType?: string | null;
     workoutDate?: string | null;
     caption?: string | null;
     displayName?: string | null;
+    /** Top-right pill: resolved from label and/or gym id at tap time */
+    gymLabel?: string | null;
   };
   const [shareData, setShareData] = useState<ShareData | null>(null);
   const shareViewRef = useRef<ViewShot>(null);
 
-  const handleShareWorkout = (
+  const handleShareWorkout = async (
     imageUrl: string,
     secondaryImageUrl?: string | null,
-    workoutType?: string | null,
     workoutDate?: string | null,
     caption?: string | null,
     displayName?: string | null,
+    gymLabel?: string | null,
+    gymId?: string | null,
   ) => {
-    // Always render the branded composite card (with or without dual camera)
+    let resolvedGymLabel = gymLabel?.trim() || null;
+    if (!resolvedGymLabel && gymId) {
+      const { data, error } = await supabase.from('gyms').select('name, address').eq('id', gymId).maybeSingle();
+      if (!error && data) {
+        resolvedGymLabel = formatGymLabel(data.name, data.address);
+      }
+    }
     setShareData({
       primaryUrl: imageUrl,
       secondaryUrl: secondaryImageUrl,
-      workoutType,
       workoutDate,
       caption,
       displayName,
+      gymLabel: resolvedGymLabel,
     });
   };
 
@@ -1082,7 +1090,17 @@ export default function HomeScreen() {
                   )}
           </Pressable>
           <Pressable
-                  onPress={() => handleShareWorkout(todayWorkout.image_url, todayWorkout.secondary_image_url, todayWorkout.workout_type, todayWorkout.workout_date, todayWorkout.caption, profile?.display_name)}
+                  onPress={() =>
+                    void handleShareWorkout(
+                      todayWorkout.image_url,
+                      todayWorkout.secondary_image_url,
+                      todayWorkout.workout_date,
+                      todayWorkout.caption,
+                      profile?.display_name,
+                      todayWorkoutGymLabel,
+                      todayWorkout.gym_id ?? null,
+                    )
+                  }
                   style={styles.feedActionBtn}
                 >
                   <Ionicons name="paper-plane" size={22} color="rgba(255,255,255,0.9)" />
@@ -1246,7 +1264,17 @@ export default function HomeScreen() {
                       </Pressable>
                       {item.workout.user_id === session?.user?.id && (
                         <Pressable
-                          onPress={() => handleShareWorkout(item.workout.image_url, item.workout.secondary_image_url, item.workout.workout_type, item.workout.workout_date, item.workout.caption, item.display_name)}
+                          onPress={() =>
+                            void handleShareWorkout(
+                              item.workout.image_url,
+                              item.workout.secondary_image_url,
+                              item.workout.workout_date,
+                              item.workout.caption,
+                              item.display_name,
+                              item.gym_label,
+                              item.workout.gym_id ?? null,
+                            )
+                          }
                           style={styles.feedActionBtn}
                         >
                           <Ionicons name="paper-plane" size={22} color="rgba(255,255,255,0.9)" />
@@ -1861,7 +1889,7 @@ export default function HomeScreen() {
     {/* Share card — story-optimized 9:16 branded card, rendered off-screen */}
     <Modal visible={!!shareData} transparent animationType="none" statusBarTranslucent>
       {shareData && (() => {
-        const wt = WORKOUT_TYPES.find((t) => t.value === shareData.workoutType);
+        const locationLine = shareData.gymLabel?.trim() ?? '';
         const dateLabel = shareData.workoutDate ? formatFeedDate(shareData.workoutDate) : 'Today';
         const screenW = Dimensions.get('window').width;
         const cardW = screenW;
@@ -1890,17 +1918,23 @@ export default function HomeScreen() {
                 }}
               />
 
-              {/* Top bar — left: UPLIFT; right: workout type */}
+              {/* Top bar — left: UPLIFT; right: gym location (never workout type) */}
               <View style={shareStyles.topBar}>
                 <View style={shareStyles.brandPill}>
                   <ThemedText style={shareStyles.brandText}>UPLIFT</ThemedText>
                 </View>
-                {wt && (
-                  <View style={shareStyles.typePill}>
-                    <ThemedText style={shareStyles.typePillEmoji}>{wt.emoji}</ThemedText>
-                    <ThemedText style={shareStyles.typePillLabel}>{wt.label}</ThemedText>
+                {locationLine.length > 0 ? (
+                  <View style={[shareStyles.typePill, { maxWidth: cardW * 0.52 }]}>
+                    <Ionicons name="location-outline" size={14} color="rgba(255,255,255,0.92)" />
+                    <ThemedText
+                      style={[shareStyles.typePillLabel, { flexShrink: 1, minWidth: 0 }]}
+                      numberOfLines={1}
+                      ellipsizeMode="tail"
+                    >
+                      {locationLine}
+                    </ThemedText>
                   </View>
-                )}
+                ) : null}
               </View>
 
               {/* Selfie overlay — top-left with glow border */}

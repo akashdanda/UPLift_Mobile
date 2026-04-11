@@ -3,6 +3,7 @@ export type Profile = {
   display_name: string | null
   full_name: string | null
   avatar_url: string | null
+  /** @deprecated Kept for older rows; no longer shown in UI. */
   bio: string | null
   workouts_count: number
   streak: number
@@ -28,7 +29,6 @@ export type ProfileUpdate = {
   display_name?: string | null
   full_name?: string | null
   avatar_url?: string | null
-  bio?: string | null
   notifications_enabled?: boolean
   expo_push_token?: string | null
   phone_e164?: string | null

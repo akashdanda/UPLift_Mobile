@@ -23,10 +23,8 @@ import { Colors } from '@/constants/theme'
 import { useAuthContext } from '@/hooks/use-auth-context'
 import { useColorScheme } from '@/hooks/use-color-scheme'
 import { getPendingReceived } from '@/lib/friends'
-import { getUserLevel } from '@/lib/levels'
 import { supabase } from '@/lib/supabase'
 import type { ProfilePublic } from '@/types/friendship'
-import type { UserLevel } from '@/types/level'
 
 function getDisplayName(session: { user: { user_metadata?: { full_name?: string }; email?: string } }): string {
   const name = session.user.user_metadata?.full_name
@@ -79,23 +77,10 @@ export default function ProfileScreen() {
   const showAvatarImage = avatarUrl && !avatarLoadError
 
   const [monthWorkoutDates, setMonthWorkoutDates] = useState<Set<string>>(new Set())
-  const [monthRestDates, setMonthRestDates] = useState<Set<string>>(new Set())
 
-  const [userLevel, setUserLevel] = useState<UserLevel | null>(null)
   const [pendingIncoming, setPendingIncoming] = useState<
     { friendship: { id: string }; requester: ProfilePublic }[]
   >([])
-
-  const loadUserLevel = useCallback(async () => {
-    if (!session) return
-    try {
-      const level = await getUserLevel(session.user.id)
-      setUserLevel(level)
-    } catch {
-      // ignore
-    }
-  }, [session])
-
   const loadPendingIncoming = useCallback(async () => {
     if (!session) return
     try {
@@ -158,34 +143,21 @@ export default function ProfileScreen() {
 
     const { data, error } = await supabase
       .from('workouts')
-      .select('workout_date, workout_type')
+      .select('workout_date')
       .eq('user_id', session.user.id)
       .gte('workout_date', start)
       .lte('workout_date', end)
 
     if (error) return
 
-    const dateMap = new Map<string, string | null>()
+    const dates = new Set<string>()
     for (const row of data ?? []) {
-      const r = row as { workout_date?: string | null; workout_type?: string | null }
-      if (typeof r.workout_date !== 'string' || r.workout_date.length < 10) continue
-      const iso = r.workout_date.slice(0, 10)
-      const wt = r.workout_type ?? null
-      const existing = dateMap.get(iso)
-      if (existing === undefined) {
-        dateMap.set(iso, wt)
-      } else if (wt !== 'rest') {
-        dateMap.set(iso, wt)
+      const r = row as { workout_date?: string | null }
+      if (typeof r.workout_date === 'string' && r.workout_date.length >= 10) {
+        dates.add(r.workout_date.slice(0, 10))
       }
     }
-    const dates = new Set<string>()
-    const restDates = new Set<string>()
-    for (const [iso, wt] of dateMap) {
-      dates.add(iso)
-      if (wt === 'rest') restDates.add(iso)
-    }
     setMonthWorkoutDates(dates)
-    setMonthRestDates(restDates)
   }, [session, calendarYear, calendarMonth, daysInMonth])
 
   useEffect(() => {
@@ -195,9 +167,8 @@ export default function ProfileScreen() {
   useFocusEffect(
     useCallback(() => {
       void fetchMonthWorkouts()
-      void loadUserLevel()
       void loadPendingIncoming()
-    }, [fetchMonthWorkouts, loadUserLevel, loadPendingIncoming])
+    }, [fetchMonthWorkouts, loadPendingIncoming])
   )
 
   useEffect(() => {
@@ -308,7 +279,7 @@ export default function ProfileScreen() {
                 styles.avatarRing,
                 {
                   borderColor: colors.tint + '30',
-                  shadowColor: userLevel?.level.color ?? colors.tint,
+                  shadowColor: colors.tint,
                   shadowOpacity: 0.08,
                   shadowRadius: 6,
                   shadowOffset: { width: 0, height: 0 },
@@ -330,16 +301,6 @@ export default function ProfileScreen() {
             </View>
           </Pressable>
 
-          {/* Level title */}
-          {userLevel && (
-            <View style={[styles.levelBadge, { backgroundColor: userLevel.level.glowColor }]}>
-              <ThemedText style={styles.levelEmoji}>{userLevel.level.emoji}</ThemedText>
-              <ThemedText style={[styles.levelTitle, { color: userLevel.level.color }]}>
-                {userLevel.level.title}
-              </ThemedText>
-            </View>
-          )}
-
           <ThemedText type="title" style={[styles.displayName, { color: colors.text }]}>
             {displayName}
           </ThemedText>
@@ -349,40 +310,6 @@ export default function ProfileScreen() {
               <ThemedText style={[styles.specialBadgeLabel, { color: specialBadge.color }]}>
                 {specialBadge.label}
               </ThemedText>
-            </View>
-          )}
-          {profile?.bio ? (
-            <ThemedText style={[styles.bio, { color: colors.textMuted }]}>{profile.bio}</ThemedText>
-          ) : null}
-
-          {/* Points progress bar */}
-          {userLevel && (
-            <View style={styles.xpSection}>
-              <View style={styles.xpLabelRow}>
-                <ThemedText style={[styles.xpLabel, { color: colors.textMuted }]}>
-                  {userLevel.xp} pts
-                </ThemedText>
-                {userLevel.nextLevel ? (
-                  <ThemedText style={[styles.xpLabel, { color: colors.textMuted }]}>
-                    {userLevel.xpToNext} pts to {userLevel.nextLevel.emoji} {userLevel.nextLevel.title}
-                  </ThemedText>
-                ) : (
-                  <ThemedText style={[styles.xpLabel, { color: userLevel.level.color }]}>
-                    Max level reached!
-                  </ThemedText>
-                )}
-              </View>
-              <View style={[styles.xpBarOuter, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)' }]}>
-                <View
-                  style={[
-                    styles.xpBarInner,
-                    {
-                      width: `${Math.round(userLevel.progress * 100)}%`,
-                      backgroundColor: userLevel.level.color,
-                    },
-                  ]}
-                />
-              </View>
             </View>
           )}
         </ThemedView>
@@ -457,11 +384,7 @@ export default function ProfileScreen() {
                 let statusStyle = styles.calendarDayNeutral
 
                 if (hasWorkout) {
-                  if (monthRestDates.has(iso)) {
-                    statusStyle = styles.calendarDayRest
-                  } else {
-                    statusStyle = styles.calendarDayCompleted
-                  }
+                  statusStyle = styles.calendarDayCompleted
                 } else if (isOnOrAfterSignup && isPast && hasAnyPreviousWorkout) {
                   // Red: missed a previous day (had a streak going but didn't post)
                   statusStyle = styles.calendarDayMissed
@@ -489,12 +412,6 @@ export default function ProfileScreen() {
                 <View style={[styles.calendarLegendDot, styles.calendarDayMissed]} />
                 <ThemedText style={[styles.calendarLegendLabel, { color: colors.textMuted }]}>
                   Missed day
-                </ThemedText>
-              </View>
-              <View style={styles.calendarLegendItem}>
-                <View style={[styles.calendarLegendDot, styles.calendarDayRest]} />
-                <ThemedText style={[styles.calendarLegendLabel, { color: colors.textMuted }]}>
-                  Rest day
                 </ThemedText>
               </View>
             </View>
@@ -633,17 +550,6 @@ const styles = StyleSheet.create({
     lineHeight: 40,
     textAlign: 'center',
   },
-  levelBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 14,
-    paddingVertical: 5,
-    borderRadius: 999,
-    marginBottom: 8,
-  },
-  levelEmoji: { fontSize: 14 },
-  levelTitle: { fontSize: 11, fontWeight: '800', letterSpacing: 1.5 },
   displayName: { fontSize: 22, fontWeight: '800', textAlign: 'center', marginBottom: 4, letterSpacing: -0.3 },
   specialBadge: {
     flexDirection: 'row',
@@ -657,19 +563,6 @@ const styles = StyleSheet.create({
   },
   specialBadgeEmoji: { fontSize: 13 },
   specialBadgeLabel: { fontSize: 12, fontWeight: '700' },
-  bio: {
-    fontSize: 14,
-    textAlign: 'center',
-    marginTop: 10,
-    paddingHorizontal: 24,
-    lineHeight: 21,
-    letterSpacing: 0.1,
-  },
-  xpSection: { width: '100%', marginTop: 14, paddingHorizontal: 20 },
-  xpLabelRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 },
-  xpLabel: { fontSize: 10, fontWeight: '700', letterSpacing: 0.8 },
-  xpBarOuter: { width: '100%', height: 5, borderRadius: 3, overflow: 'hidden' },
-  xpBarInner: { height: '100%', borderRadius: 3 },
 
   pendingFollowRow: {
     flexDirection: 'row',
@@ -762,9 +655,6 @@ const styles = StyleSheet.create({
   },
   calendarDayCompleted: {
     backgroundColor: '#22c55e',
-  },
-  calendarDayRest: {
-    backgroundColor: '#6366f1',
   },
   calendarDayMissed: {
     backgroundColor: '#ef4444',

@@ -61,7 +61,7 @@ export default function SettingsScreen() {
             <Ionicons name="person-outline" size={20} color={colors.text} />
             <View style={styles.rowText}>
               <ThemedText style={[styles.rowLabel, { color: colors.text }]}>Edit profile</ThemedText>
-              <ThemedText style={[styles.rowHint, { color: colors.textMuted }]}>Name, photo, bio</ThemedText>
+              <ThemedText style={[styles.rowHint, { color: colors.textMuted }]}>Name, photo</ThemedText>
             </View>
             <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
           </Pressable>

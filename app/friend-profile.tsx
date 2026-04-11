@@ -28,10 +28,8 @@ import { getSpecialBadge } from '@/constants/special-badges'
 import { Colors } from '@/constants/theme'
 import { useAuthContext } from '@/hooks/use-auth-context'
 import { useColorScheme } from '@/hooks/use-color-scheme'
-import { getUserLevel } from '@/lib/levels'
 import { supabase } from '@/lib/supabase'
 import { acceptFriendRequestByUserId, getFriendshipStatus, sendFriendRequest } from '@/lib/friends'
-import type { UserLevel } from '@/types/level'
 import type { Profile } from '@/types/profile'
 
 function getInitials(displayName: string | null): string {
@@ -55,9 +53,7 @@ export default function FriendProfileScreen() {
   const [profile, setProfile] = useState<Profile | null>(null)
   const [loading, setLoading] = useState(true)
   const [monthWorkoutDates, setMonthWorkoutDates] = useState<Set<string>>(new Set())
-  const [monthRestDates, setMonthRestDates] = useState<Set<string>>(new Set())
   const [isImageModalVisible, setIsImageModalVisible] = useState(false)
-  const [friendLevel, setFriendLevel] = useState<UserLevel | null>(null)
   const [reportModalVisible, setReportModalVisible] = useState(false)
   const [friendStatus, setFriendStatus] = useState<'none' | 'pending_sent' | 'pending_received' | 'friends'>('none')
   const [friendActionLoading, setFriendActionLoading] = useState(false)
@@ -126,34 +122,21 @@ export default function FriendProfileScreen() {
 
     const { data, error } = await supabase
       .from('workouts')
-      .select('workout_date, workout_type')
+      .select('workout_date')
       .eq('user_id', id)
       .gte('workout_date', start)
       .lte('workout_date', end)
 
     if (error) return
 
-    const dateMap = new Map<string, string | null>()
+    const dates = new Set<string>()
     for (const row of data ?? []) {
-      const r = row as { workout_date?: string | null; workout_type?: string | null }
-      if (typeof r.workout_date !== 'string' || r.workout_date.length < 10) continue
-      const iso = r.workout_date.slice(0, 10)
-      const wt = r.workout_type ?? null
-      const existing = dateMap.get(iso)
-      if (existing === undefined) {
-        dateMap.set(iso, wt)
-      } else if (wt !== 'rest') {
-        dateMap.set(iso, wt)
+      const r = row as { workout_date?: string | null }
+      if (typeof r.workout_date === 'string' && r.workout_date.length >= 10) {
+        dates.add(r.workout_date.slice(0, 10))
       }
     }
-    const dates = new Set<string>()
-    const restDates = new Set<string>()
-    for (const [iso, wt] of dateMap) {
-      dates.add(iso)
-      if (wt === 'rest') restDates.add(iso)
-    }
     setMonthWorkoutDates(dates)
-    setMonthRestDates(restDates)
   }, [id, calendarYear, calendarMonth, daysInMonth])
 
   // Fetch profile
@@ -182,11 +165,6 @@ export default function FriendProfileScreen() {
   useEffect(() => {
     void fetchMonthWorkouts()
   }, [fetchMonthWorkouts])
-
-  useEffect(() => {
-    if (!id) return
-    getUserLevel(id).then(setFriendLevel).catch(() => {})
-  }, [id])
 
   useEffect(() => {
     if (!session || !id) return
@@ -282,7 +260,7 @@ export default function FriendProfileScreen() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* Header: Avatar, Name, Bio */}
+        {/* Header: avatar, name */}
         <ThemedView style={styles.header}>
           <Pressable
             onPress={() => router.back()}
@@ -308,8 +286,8 @@ export default function FriendProfileScreen() {
               style={[
                 styles.avatarRing,
                 {
-                  borderColor: (friendLevel?.level.color ?? colors.tint) + '50',
-                  shadowColor: friendLevel?.level.color ?? colors.tint,
+                  borderColor: colors.tint + '50',
+                  shadowColor: colors.tint,
                   },
               ]}
             >
@@ -325,16 +303,6 @@ export default function FriendProfileScreen() {
             </View>
           </Pressable>
 
-          {/* Level badge */}
-          {friendLevel && (
-            <View style={[styles.levelBadge, { backgroundColor: friendLevel.level.glowColor }]}>
-              <ThemedText style={styles.levelEmoji}>{friendLevel.level.emoji}</ThemedText>
-              <ThemedText style={[styles.levelTitle, { color: friendLevel.level.color }]}>
-                {friendLevel.level.title}
-              </ThemedText>
-            </View>
-          )}
-
           <ThemedText type="title" style={[styles.displayName, { color: colors.text }]}>
             {displayName}
           </ThemedText>
@@ -346,10 +314,6 @@ export default function FriendProfileScreen() {
               </ThemedText>
             </View>
           )}
-          {profile.bio && (
-            <ThemedText style={[styles.bio, { color: colors.textMuted }]}>{profile.bio}</ThemedText>
-          )}
-
           {/* Action buttons */}
           {session && id !== session.user.id && (
             <View style={styles.actionButtonsRow}>
@@ -499,11 +463,7 @@ export default function FriendProfileScreen() {
                 let statusStyle = styles.calendarDayNeutral
 
                 if (hasWorkout) {
-                  if (monthRestDates.has(iso)) {
-                    statusStyle = styles.calendarDayRest
-                  } else {
-                    statusStyle = styles.calendarDayCompleted
-                  }
+                  statusStyle = styles.calendarDayCompleted
                 } else if (isOnOrAfterSignup && isPast && hasAnyPreviousWorkout) {
                   statusStyle = styles.calendarDayMissed
                 }
@@ -530,12 +490,6 @@ export default function FriendProfileScreen() {
                 <View style={[styles.calendarLegendDot, styles.calendarDayMissed]} />
                 <ThemedText style={[styles.calendarLegendLabel, { color: colors.textMuted }]}>
                   Missed day
-                </ThemedText>
-              </View>
-              <View style={styles.calendarLegendItem}>
-                <View style={[styles.calendarLegendDot, styles.calendarDayRest]} />
-                <ThemedText style={[styles.calendarLegendLabel, { color: colors.textMuted }]}>
-                  Rest day
                 </ThemedText>
               </View>
             </View>
@@ -692,17 +646,6 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     lineHeight: 38,
   },
-  levelBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 14,
-    paddingVertical: 5,
-    borderRadius: 999,
-    marginBottom: 8,
-  },
-  levelEmoji: { fontSize: 14 },
-  levelTitle: { fontSize: 11, fontWeight: '800', letterSpacing: 1.5 },
   displayName: {
     marginBottom: 4,
     textAlign: 'center',
@@ -720,14 +663,6 @@ const styles = StyleSheet.create({
   },
   specialBadgeEmoji: { fontSize: 13 },
   specialBadgeLabel: { fontSize: 12, fontWeight: '700' },
-  bio: {
-    fontSize: 14,
-    textAlign: 'center',
-    marginTop: 10,
-    paddingHorizontal: 24,
-    lineHeight: 21,
-    letterSpacing: 0.1,
-  },
   actionButtonsRow: {
     flexDirection: 'row',
     gap: 10,
@@ -845,9 +780,6 @@ const styles = StyleSheet.create({
   },
   calendarDayCompleted: {
     backgroundColor: '#22c55e',
-  },
-  calendarDayRest: {
-    backgroundColor: '#6366f1',
   },
   calendarDayMissed: {
     backgroundColor: '#ef4444',
