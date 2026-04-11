@@ -1,6 +1,6 @@
 import Ionicons from '@expo/vector-icons/Ionicons'
 import { Image } from 'expo-image'
-import { router } from 'expo-router'
+import { router, useLocalSearchParams } from 'expo-router'
 import { useEffect, useState } from 'react'
 import {
   ActivityIndicator,
@@ -14,7 +14,7 @@ import {
   TextInput,
   View,
 } from 'react-native'
-import { SafeAreaView } from 'react-native-safe-area-context'
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import { CameraCapture } from '@/components/camera-capture'
 import { CelebrationModal } from '@/components/celebration-modal'
@@ -25,6 +25,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme'
 import { getFriends, type FriendWithProfile } from '@/lib/friends'
 import { computeXP, getLevelFromXP } from '@/lib/levels'
 import { pushFirstFriendWorkout } from '@/lib/push-notifications'
+import { isCheckedInAtGym } from '@/lib/presence-service'
 import { supabase } from '@/lib/supabase'
 import { addWorkoutTags } from '@/lib/tags'
 import { uploadWorkoutImage } from '@/lib/workout-upload'
@@ -73,14 +74,25 @@ function getTodayLocalDate(): string {
   return `${y}-${m}-${day}`
 }
 
+function paramString(v: string | string[] | undefined): string | undefined {
+  if (typeof v === 'string' && v.length > 0) return v
+  if (Array.isArray(v) && v[0]) return v[0]
+  return undefined
+}
+
 export default function LogWorkoutScreen() {
   const { session, profile, refreshProfile } = useAuthContext()
+  const params = useLocalSearchParams<{ gymId?: string; gymName?: string }>()
+  const gymId = paramString(params.gymId)
+  const gymName = paramString(params.gymName)
   const colorScheme = useColorScheme()
   const colors = Colors[colorScheme ?? 'light']
   const isDark = colorScheme === 'dark'
+  const insets = useSafeAreaInsets()
 
   const [todayWorkout, setTodayWorkout] = useState<Workout | null>(null)
   const [loading, setLoading] = useState(true)
+  const [checkInAllowed, setCheckInAllowed] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [caption, setCaption] = useState('')
   // Photo(s) taken but not yet posted (caption step). BeReal-style: primary + optional secondary.
@@ -112,14 +124,29 @@ export default function LogWorkoutScreen() {
         .eq('user_id', session.user.id)
         .eq('workout_date', today)
         .maybeSingle()
-      if (!cancelled && data) setTodayWorkout(data as Workout)
-      if (!cancelled) setLoading(false)
+      if (cancelled) return
+      if (data) {
+        setTodayWorkout(data as Workout)
+        setCheckInAllowed(true)
+        setLoading(false)
+        return
+      }
+      if (!gymId) {
+        setCheckInAllowed(false)
+        setLoading(false)
+        return
+      }
+      const ok = await isCheckedInAtGym(session.user.id, gymId)
+      if (!cancelled) {
+        setCheckInAllowed(ok)
+        setLoading(false)
+      }
     })()
     getFriends(session.user.id).then(setFriends).catch(() => {})
     return () => {
       cancelled = true
     }
-  }, [session, today])
+  }, [session, today, gymId])
 
   const handleTakePhoto = () => {
     if (!session) return
@@ -142,7 +169,15 @@ export default function LogWorkoutScreen() {
   }
 
   const handlePost = async () => {
-    if (!session || !pendingPhotoUri) return
+    if (!session || !pendingPhotoUri || !gymId) return
+    const stillCheckedIn = await isCheckedInAtGym(session.user.id, gymId)
+    if (!stillCheckedIn) {
+      Alert.alert(
+        'Not checked in',
+        'You need to be checked in at this gym on the Map to post. Open the Map and step back into the gym.',
+      )
+      return
+    }
     setUploading(true)
     const uploadResult = await uploadWorkoutImage(session.user.id, pendingPhotoUri, 'primary')
     if ('error' in uploadResult) {
@@ -160,6 +195,7 @@ export default function LogWorkoutScreen() {
       .from('workouts')
       .insert({
         user_id: session.user.id,
+        gym_id: gymId,
         workout_date: today,
         image_url: uploadResult.url,
         secondary_image_url: secondaryUrl,
@@ -174,6 +210,11 @@ export default function LogWorkoutScreen() {
     if (error) {
       if (error.code === '23505') {
         Alert.alert('Already logged', "You've already logged a workout for today.")
+      } else if (error.code === '42501' || /row-level security|violates row level security/i.test(error.message)) {
+        Alert.alert(
+          'Check-in required',
+          'You must be checked in at this gym to post. Open the Map and check in at your gym, then try again.',
+        )
       } else {
         Alert.alert('Error', error.message)
       }
@@ -198,6 +239,7 @@ export default function LogWorkoutScreen() {
     setTodayWorkout({
       id: '',
       user_id: session.user.id,
+      gym_id: gymId,
       workout_date: today,
       image_url: uploadResult.url,
       secondary_image_url: secondaryUrl ?? null,
@@ -244,6 +286,60 @@ export default function LogWorkoutScreen() {
           <ActivityIndicator size="large" color={colors.tint} />
           <ThemedText style={[styles.loadingText, { color: colors.textMuted }]}>Loading…</ThemedText>
         </View>
+      </SafeAreaView>
+    )
+  }
+
+  if (!todayWorkout && !checkInAllowed) {
+    return (
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['left', 'right', 'bottom']}>
+        <ScrollView
+          contentContainerStyle={[
+            styles.gateScrollContent,
+            {
+              paddingTop: 12,
+              paddingBottom: Math.max(insets.bottom, 16) + 16,
+            },
+          ]}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          <View
+            style={[
+              styles.gateCard,
+              {
+                backgroundColor: colors.card,
+                borderColor: colors.tabBarBorder,
+              },
+            ]}
+          >
+            <View style={[styles.gateIconWrap, { backgroundColor: colors.tint + '18' }]}>
+              <Ionicons name="location-outline" size={32} color={colors.tint} />
+            </View>
+            <ThemedText type="subtitle" style={[styles.gateTitle, { color: colors.text }]}>
+              Check in to post
+            </ThemedText>
+            <ThemedText style={[styles.gateBody, { color: colors.textMuted }]}>
+              {!gymId
+                ? 'Open the Map, go to a gym, and check in. Then tap Post from the gym sheet to log your workout.'
+                : gymName
+                  ? `You must be checked in at ${gymName}. Open the Map, step into the gym, then use Post from the bottom sheet.`
+                  : 'You must be checked in at this gym on the Map. Step into the gym and open Post from the Map.'}
+            </ThemedText>
+            <Pressable
+              style={[styles.primaryButton, styles.gatePrimaryBtn, { backgroundColor: colors.tint }]}
+              onPress={() => router.replace('/(tabs)/map')}
+            >
+              <ThemedText style={styles.primaryButtonText}>Open Map</ThemedText>
+            </Pressable>
+            <Pressable
+              style={[styles.gateSecondaryBtn, { borderColor: colors.tint }]}
+              onPress={() => router.back()}
+            >
+              <ThemedText style={[styles.backButtonText, { color: colors.tint }]}>Go back</ThemedText>
+            </Pressable>
+          </View>
+        </ScrollView>
       </SafeAreaView>
     )
   }
@@ -496,6 +592,53 @@ const styles = StyleSheet.create({
   scrollView: { flex: 1 },
   scrollContent: { padding: 24, paddingBottom: 40 },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 },
+  gateScrollContent: {
+    flexGrow: 1,
+    paddingHorizontal: 20,
+    justifyContent: 'flex-start',
+  },
+  gateCard: {
+    width: '100%',
+    maxWidth: 400,
+    alignSelf: 'center',
+    borderRadius: 20,
+    paddingHorizontal: 24,
+    paddingVertical: 28,
+    alignItems: 'center',
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  gateIconWrap: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 18,
+  },
+  gateTitle: { textAlign: 'center', marginBottom: 10 },
+  gateBody: {
+    textAlign: 'center',
+    lineHeight: 24,
+    fontSize: 15,
+    marginBottom: 8,
+    paddingHorizontal: 4,
+    maxWidth: 320,
+  },
+  gatePrimaryBtn: {
+    alignSelf: 'stretch',
+    width: '100%',
+    marginTop: 20,
+  },
+  gateSecondaryBtn: {
+    alignSelf: 'stretch',
+    marginTop: 12,
+    paddingVertical: 14,
+    minHeight: 48,
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   loadingText: { marginTop: 12 },
   doneSection: { alignItems: 'center' },
   doneTitle: { marginBottom: 8 },

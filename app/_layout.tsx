@@ -1,6 +1,7 @@
 import { DarkTheme, DefaultTheme, ThemeProvider, type Theme } from '@react-navigation/native'
 import { Stack } from 'expo-router'
 import { StatusBar } from 'expo-status-bar'
+import { LogBox } from 'react-native'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
 import 'react-native-reanimated'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
@@ -12,6 +13,9 @@ import { useAuthContext } from '@/hooks/use-auth-context'
 import { useColorScheme } from '@/hooks/use-color-scheme'
 import AuthProvider from '@/providers/auth-provider'
 import { BrandViolet } from '@/constants/theme'
+
+// Supabase auth-js logs transient refresh failures with console.error; RN shows that as a red banner.
+LogBox.ignoreLogs(['Auto refresh tick failed with error'])
 
 const UpliftDark: Theme = {
   ...DarkTheme,

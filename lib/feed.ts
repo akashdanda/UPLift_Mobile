@@ -11,9 +11,22 @@ export type FeedItem = {
   workout: Workout
   display_name: string | null
   avatar_url: string | null
+  /** Single line for feed UI: "Gym name" or "Gym name · address" */
+  gym_label: string | null
   reactions?: WorkoutReactionWithProfile[]
   comments?: WorkoutCommentWithProfile[]
   tags?: WorkoutTagWithProfile[]
+}
+
+/** Build display string for a gym row (feed / today's workout). */
+export function formatGymLabel(
+  name: string | null | undefined,
+  address: string | null | undefined,
+): string | null {
+  const n = name?.trim()
+  if (!n) return null
+  const a = address?.trim()
+  return a ? `${n} · ${a}` : n
 }
 
 async function enrichWorkouts(workouts: Workout[]): Promise<FeedItem[]> {
@@ -29,12 +42,24 @@ async function enrichWorkouts(workouts: Workout[]): Promise<FeedItem[]> {
     (profiles ?? []).map((p: { id: string; display_name: string | null; avatar_url: string | null }) => [p.id, p])
   )
 
+  const gymIds = [...new Set(workouts.map((w) => w.gym_id).filter((id): id is string => !!id))]
+  const gymMap = new Map<string, { name: string; address: string | null }>()
+  if (gymIds.length > 0) {
+    const { data: gymRows } = await supabase.from('gyms').select('id,name,address').in('id', gymIds)
+    for (const row of gymRows ?? []) {
+      const g = row as { id: string; name: string; address: string | null }
+      gymMap.set(g.id, { name: g.name, address: g.address })
+    }
+  }
+
   const items: FeedItem[] = workouts.map((workout) => {
     const p = profileMap.get(workout.user_id)
+    const g = workout.gym_id ? gymMap.get(workout.gym_id) : undefined
     return {
       workout,
       display_name: p?.display_name ?? null,
       avatar_url: p?.avatar_url ?? null,
+      gym_label: g ? formatGymLabel(g.name, g.address) : null,
     }
   })
 

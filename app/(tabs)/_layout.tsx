@@ -53,20 +53,20 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="map"
-        options={{
-          title: 'Map',
-          tabBarIcon: ({ color }) => (
-            <IconSymbol size={TAB_ICON_SIZE} name="map.fill" color={color} />
-          ),
-        }}
-      />
-      <Tabs.Screen
         name="leaderboard"
         options={{
           title: 'Leaderboard',
           tabBarIcon: ({ color }) => (
             <IconSymbol size={TAB_ICON_SIZE} name="trophy.fill" color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="map"
+        options={{
+          title: 'Map',
+          tabBarIcon: ({ color }) => (
+            <IconSymbol size={TAB_ICON_SIZE} name="map.fill" color={color} />
           ),
         }}
       />

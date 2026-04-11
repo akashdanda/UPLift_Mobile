@@ -12,6 +12,8 @@ export type WorkoutVisibility = 'friends' | 'public'
 export type Workout = {
   id: string
   user_id: string
+  /** Gym where the user was checked in when posting (optional on older rows). */
+  gym_id?: string | null
   workout_date: string // YYYY-MM-DD
   image_url: string
   /** Optional second photo (BeReal-style dual camera); tap to swap which is big. */
