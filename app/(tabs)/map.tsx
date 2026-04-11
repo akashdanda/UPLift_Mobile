@@ -33,6 +33,7 @@ import {
   OVERPASS_COMPOUND_TAG_CHAINS,
   OVERPASS_TAGS,
   resolveGymIdFromList,
+  resolveGymUuidForCheckIn,
   type Gym,
 } from '@/lib/gym-service'
 import {
@@ -45,7 +46,12 @@ import {
 } from '@/lib/presence-service'
 
 const { height: SCREEN_H } = Dimensions.get('window')
-const ACTIVE_RADIUS = 15 // ~50 feet — GPS accuracy floor
+/** Max distance to treat as "at" a gym. OSM pins and phone GPS rarely align within a few meters; 15m was too strict. */
+const ACTIVE_RADIUS = 120
+/** Re-query the gym directory when the user moves this far from the last query point (new area). */
+const REFETCH_GYMS_MOVE_METERS = 150
+/** Even if nearly stationary, refresh the nearby gym list this often (venues load incrementally). */
+const REFETCH_GYMS_MAX_AGE_MS = 60_000
 const POLL_INTERVAL = 10_000
 const PRIVACY_SHOWN_KEY = 'gym_privacy_prompt_shown'
 
@@ -347,6 +353,8 @@ export default function MapScreen() {
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const checkedInGymRef = useRef<string | null>(null)
   const notifiedGymRef = useRef<string | null>(null)
+  /** Last GPS point we used to call `getNearbyGyms` (so we re-fetch after the user travels). */
+  const lastGymQueryRef = useRef<{ lat: number; lng: number; t: number } | null>(null)
 
   const [perm, setPerm] = useState<boolean | null>(null)
   const [initialCoords, setInitialCoords] = useState<{ lat: number; lng: number } | null>(null)
@@ -362,6 +370,11 @@ export default function MapScreen() {
   useEffect(() => {
     gymsRef.current = gyms
   }, [gyms])
+
+  const activeGymRef = useRef<Gym | null>(null)
+  useEffect(() => {
+    activeGymRef.current = activeGym
+  }, [activeGym])
 
   const clearPopupCrowdSub = useCallback(() => {
     popupCrowdUnsubRef.current?.()
@@ -555,50 +568,6 @@ export default function MapScreen() {
     })
   }, [session])
 
-  // ---- Proximity polling ----
-  useEffect(() => {
-    if (!perm || gyms.length === 0) return
-
-    const poll = async () => {
-      try {
-        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.BestForNavigation })
-        const c = { lat: loc.coords.latitude, lng: loc.coords.longitude }
-        coordsRef.current = c
-
-        // Move the blue dot without reloading the WebView
-        webRef.current?.injectJavaScript(
-          `if(window.userDot)window.userDot.setLatLng([${c.lat},${c.lng}]);true;`,
-        )
-
-        let closest: Gym | null = null
-        let closestDist = Infinity
-        for (const gym of gyms) {
-          const d = distanceMeters(c.lat, c.lng, gym.lat, gym.lng)
-          if (d < closestDist) { closestDist = d; closest = gym }
-        }
-
-        if (closest && closestDist <= ACTIVE_RADIUS) {
-          if (activeGym?.id !== closest.id) {
-            setActiveGym(closest)
-            enterGym(closest)
-
-            // In-app notification
-            if (notifiedGymRef.current !== closest.id) {
-              notifiedGymRef.current = closest.id
-              Alert.alert('Welcome!', `You've entered ${closest.name}`)
-            }
-          }
-        } else if (activeGym) {
-          leaveGym()
-        }
-      } catch { /* retry next tick */ }
-    }
-
-    poll()
-    pollRef.current = setInterval(poll, POLL_INTERVAL)
-    return () => { if (pollRef.current) clearInterval(pollRef.current) }
-  }, [perm, gyms.length]) // eslint-disable-line react-hooks/exhaustive-deps
-
   // ---- Sheet animation ----
   useEffect(() => {
     Animated.spring(sheetAnim, {
@@ -612,21 +581,27 @@ export default function MapScreen() {
   // ---- Enter / leave helpers ----
   const enterGym = useCallback(async (gym: Gym) => {
     if (!session || !profile) return
+    const gymId = await resolveGymUuidForCheckIn(gym)
+    if (!gymId) return
+    const resolved = gym.id === gymId ? gym : { ...gym, id: gymId }
     unsubRef.current?.()
-    unsubRef.current = subscribeToPresence(gym.id, setPresenceList)
+    unsubRef.current = subscribeToPresence(gymId, setPresenceList)
     try {
-      setPresenceList(await getActivePresence(gym.id))
+      setPresenceList(await getActivePresence(gymId))
     } catch {}
     try {
       await checkIn({
         userId: session.user.id,
-        gymId: gym.id,
+        gymId,
         displayName: profile.display_name,
         avatarUrl: profile.avatar_url,
         streak: profile.streak ?? 0,
         shareWithOthers: profile.location_visible ?? false,
       })
-      checkedInGymRef.current = gym.id
+      checkedInGymRef.current = gymId
+      if (gym.id !== gymId) {
+        setActiveGym(resolved)
+      }
     } catch {
       /* network / RLS */
     }
@@ -644,6 +619,70 @@ export default function MapScreen() {
     setPresenceList([])
   }, [session])
 
+  // ---- Proximity polling (after enterGym / leaveGym) ----
+  useEffect(() => {
+    if (!perm) return
+
+    const poll = async () => {
+      try {
+        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.BestForNavigation })
+        const c = { lat: loc.coords.latitude, lng: loc.coords.longitude }
+        coordsRef.current = c
+
+        webRef.current?.injectJavaScript(
+          `if(window.userDot)window.userDot.setLatLng([${c.lat},${c.lng}]);true;`,
+        )
+
+        const q = lastGymQueryRef.current
+        const movedSinceQuery = q ? distanceMeters(c.lat, c.lng, q.lat, q.lng) : Infinity
+        const queryStale = !q || Date.now() - q.t > REFETCH_GYMS_MAX_AGE_MS
+        const needFreshList =
+          !q ||
+          movedSinceQuery >= REFETCH_GYMS_MOVE_METERS ||
+          queryStale ||
+          gymsRef.current.length === 0
+
+        let list = gymsRef.current
+        if (needFreshList) {
+          list = await getNearbyGyms(c.lat, c.lng)
+          lastGymQueryRef.current = { lat: c.lat, lng: c.lng, t: Date.now() }
+          setGyms(list)
+        }
+
+        let closest: Gym | null = null
+        let closestDist = Infinity
+        for (const gym of list) {
+          const d = distanceMeters(c.lat, c.lng, gym.lat, gym.lng)
+          if (d < closestDist) {
+            closestDist = d
+            closest = gym
+          }
+        }
+
+        if (closest && closestDist <= ACTIVE_RADIUS) {
+          if (activeGymRef.current?.id !== closest.id) {
+            setActiveGym(closest)
+            void enterGym(closest)
+            if (notifiedGymRef.current !== closest.id) {
+              notifiedGymRef.current = closest.id
+              Alert.alert('Welcome!', `You've entered ${closest.name}`)
+            }
+          }
+        } else if (activeGymRef.current) {
+          void leaveGym()
+        }
+      } catch {
+        /* retry next tick */
+      }
+    }
+
+    poll()
+    pollRef.current = setInterval(poll, POLL_INTERVAL)
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current)
+    }
+  }, [perm, enterGym, leaveGym])
+
   // ---- Cleanup ----
   useEffect(() => () => {
     unsubRef.current?.()
@@ -659,23 +698,43 @@ export default function MapScreen() {
 
   const handlePost = async () => {
     if (!activeGym || !session || !profile) return
+    const gymId = await resolveGymUuidForCheckIn(activeGym)
+    if (!gymId) {
+      Alert.alert(
+        'Gym not ready',
+        'We could not load this place in our directory. Open the map again or move slightly and wait a few seconds, then try Post.',
+      )
+      return
+    }
+    if (activeGym.id !== gymId) {
+      setActiveGym({ ...activeGym, id: gymId })
+    }
     try {
       await checkIn({
         userId: session.user.id,
-        gymId: activeGym.id,
+        gymId,
         displayName: profile.display_name,
         avatarUrl: profile.avatar_url,
         streak: profile.streak ?? 0,
         shareWithOthers: profile.location_visible ?? false,
       })
-      checkedInGymRef.current = activeGym.id
-    } catch {
-      Alert.alert('Check-in failed', 'Could not verify you at this gym. Try again.')
+      checkedInGymRef.current = gymId
+    } catch (e) {
+      const msg =
+        e instanceof Error
+          ? e.message
+          : typeof e === 'object' &&
+              e !== null &&
+              'message' in e &&
+              typeof (e as { message: unknown }).message === 'string'
+            ? (e as { message: string }).message
+            : 'Could not verify you at this gym. Try again.'
+      Alert.alert('Check-in failed', msg)
       return
     }
     const r = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.8 })
     if (r.canceled || !r.assets?.[0]) return
-    router.push({ pathname: '/log-workout', params: { gymId: activeGym.id, gymName: activeGym.name } })
+    router.push({ pathname: '/log-workout', params: { gymId, gymName: activeGym.name } })
   }
 
   const handleRecenter = () => {

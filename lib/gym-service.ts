@@ -161,18 +161,33 @@ async function fetchGymsFromOverpass(lat: number, lng: number, radiusMeters: num
 async function upsertGymsToCache(gyms: Gym[]) {
   if (gyms.length === 0) return
   try {
+    // `location` is set by DB trigger from lat/lng (see migration 20260411120000).
     await supabase.from('gyms').upsert(
       gyms.map((g) => ({
         name: g.name,
         address: g.address,
         lat: g.lat,
         lng: g.lng,
-        location: `POINT(${g.lng} ${g.lat})`,
         osm_id: g.osm_id,
       })),
       { onConflict: 'osm_id' },
     )
-  } catch { /* non-fatal */ }
+  } catch {
+    /* non-fatal */
+  }
+}
+
+/** Load real gym rows (UUID ids) after upsert when RPC is empty or lags. Never use Overpass `osm-*` placeholder ids for check-in. */
+async function hydrateGymsFromDbByOsm(fresh: Gym[]): Promise<Gym[]> {
+  const osmIds = [...new Set(fresh.map((g) => g.osm_id).filter(Boolean) as string[])]
+  if (osmIds.length === 0) return []
+  const { data, error } = await supabase.from('gyms').select('id,name,address,lat,lng,osm_id').in('osm_id', osmIds)
+  if (error || !data?.length) return []
+  const imageByOsm = new Map(fresh.filter((g) => g.osm_id).map((g) => [g.osm_id as string, g.image_url]))
+  return data.map((row) => ({
+    ...row,
+    image_url: imageByOsm.get(row.osm_id ?? '') ?? null,
+  })) as Gym[]
 }
 
 async function fetchFromSupabase(lat: number, lng: number): Promise<Gym[]> {
@@ -215,13 +230,57 @@ export async function getNearbyGyms(lat: number, lng: number): Promise<Gym[]> {
       await upsertGymsToCache(fresh)
       const refreshed = await fetchFromSupabase(lat, lng)
       if (refreshed.length > 0) return refreshed
-      return fresh
+      const hydrated = await hydrateGymsFromDbByOsm(fresh)
+      if (hydrated.length > 0) return hydrated
     } catch {
       return cached
     }
   }
 
   return cached
+}
+
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+export function isUuidString(s: string): boolean {
+  return UUID_RE.test(s.trim())
+}
+
+/**
+ * `gym.id` must be a real `gyms.id` UUID for `gym_presence` / FK. Overpass fallbacks use `osm-*` placeholders.
+ * Resolves via DB lookup; if missing, re-upserts this row so a failed batch cache still works.
+ */
+export async function resolveGymUuidForCheckIn(gym: Gym): Promise<string | null> {
+  if (isUuidString(gym.id)) return gym.id
+  if (!gym.osm_id?.trim()) return null
+
+  const osm = gym.osm_id.trim()
+  const { data: row } = await supabase.from('gyms').select('id').eq('osm_id', osm).maybeSingle()
+  if (row?.id && isUuidString(String(row.id))) return String(row.id)
+
+  for (const prefix of ['node', 'way', 'relation'] as const) {
+    const composite = `${prefix}-${osm}`
+    const { data: r2 } = await supabase.from('gyms').select('id').eq('osm_id', composite).maybeSingle()
+    if (r2?.id && isUuidString(String(r2.id))) return String(r2.id)
+  }
+
+  try {
+    await supabase.from('gyms').upsert(
+      {
+        name: gym.name,
+        address: gym.address,
+        lat: gym.lat,
+        lng: gym.lng,
+        osm_id: osm,
+      },
+      { onConflict: 'osm_id' },
+    )
+  } catch {
+    return null
+  }
+  const { data: after } = await supabase.from('gyms').select('id').eq('osm_id', osm).maybeSingle()
+  return after?.id && isUuidString(String(after.id)) ? String(after.id) : null
 }
 
 /** Haversine distance in meters. */

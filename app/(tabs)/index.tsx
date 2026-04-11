@@ -3,6 +3,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { useFocusEffect } from '@react-navigation/native';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import * as Sharing from 'expo-sharing';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -25,13 +26,14 @@ import Animated, {
   useSharedValue,
   withSpring
 } from 'react-native-reanimated';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import ViewShot from 'react-native-view-shot';
 
 import { NotificationsModal } from '@/components/notifications-modal';
+import { ReactionsAddIcon } from '@/components/reactions-add-icon';
 import { ReportModal } from '@/components/report-modal';
 import { ThemedText } from '@/components/themed-text';
-import { Colors } from '@/constants/theme';
+import { BrandViolet, Colors, Fonts } from '@/constants/theme';
 import { useAuthContext } from '@/hooks/use-auth-context';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { hasStreakFreezeAvailable } from '@/lib/streak-freeze';
@@ -51,16 +53,24 @@ import type { WorkoutCommentWithProfile } from '@/types/comment';
 import type { WorkoutReactionWithProfile } from '@/types/reaction';
 import { WORKOUT_TYPES, type Workout } from '@/types/workout';
 
-const REACTION_EMOJIS_FREQUENT = ['🔥', '💪', '👍', '❤️', '😂', '😮', '🙌', '😊'];
+const { width: SCREEN_W } = Dimensions.get('window');
+const REACT_MODAL_H_PAD = 48;
+const REACT_EMOJI_GAP = 8;
+const REACT_EMOJI_COLS = 6;
+/** One screen — no nested emoji scroll */
+const reactEmojiCellSize = Math.min(
+  46,
+  Math.floor(
+    (SCREEN_W - REACT_MODAL_H_PAD - REACT_EMOJI_GAP * (REACT_EMOJI_COLS - 1)) / REACT_EMOJI_COLS,
+  ),
+);
 
-const REACTION_EMOJI_SECTIONS: { title: string; emojis: string[] }[] = [
-  { title: 'Smileys', emojis: ['😀', '😃', '😄', '😁', '😆', '😅', '🤣', '😂', '🙂', '😉', '😊', '😇', '🥰', '😍', '🤩', '😘', '😋', '😛', '😜', '🤪', '😝', '🤗', '🤭', '🤫', '🤔', '🫡', '🤐', '🤨', '😐', '😑', '😶', '😏', '😒', '🙄', '😬', '😮‍💨', '🤥', '😌', '😔', '🤤', '😴', '😷', '🤒', '🤕', '🤢', '🤮', '🥵', '🥶', '🥴', '😵', '🤯', '🤠', '🥳', '🥸', '😎', '🤓', '🧐', '😱', '😨', '😰', '😥', '😢', '😭', '😤', '😡', '🤬', '💀', '☠️', '💩', '🤡', '👹', '👻', '👽', '🤖', '😺', '😸', '😹', '😻', '😼', '😽', '🙀', '😿', '😾'] },
-  { title: 'Gestures & People', emojis: ['👋', '🤚', '🖐️', '✋', '🖖', '👌', '🤌', '🤏', '✌️', '🤞', '🫰', '🤟', '🤘', '🤙', '👈', '👉', '👆', '👇', '☝️', '👍', '👎', '✊', '👊', '🤛', '🤜', '👏', '🙌', '🫶', '👐', '🤲', '🤝', '🙏', '💪', '🦾', '🏋️', '🚴', '🏃', '🧘', '🏄', '⛹️', '🤸'] },
-  { title: 'Hearts & Symbols', emojis: ['❤️', '🧡', '💛', '💚', '💙', '💜', '🖤', '🤍', '🤎', '💔', '❤️‍🔥', '💕', '💞', '💓', '💗', '💖', '💘', '💝', '💟', '❣️', '💯', '💢', '💥', '💫', '💦', '💨', '🔥', '⭐', '🌟', '✨', '⚡', '🎯', '🏆', '🥇', '🥈', '🥉', '🏅', '🎖️', '🎉', '🎊'] },
-  { title: 'Fitness & Sport', emojis: ['💪', '🏋️', '🏃', '🚴', '🏊', '🧘', '🤸', '⛹️', '🏄', '🚣', '🧗', '🤾', '🏌️', '🤺', '🥊', '🥋', '⚽', '🏀', '🏈', '⚾', '🎾', '🏐', '🏓', '🏸', '🥅', '⛳', '🥏', '🎳', '🏒', '🤿'] },
-  { title: 'Food & Drink', emojis: ['🍎', '🍌', '🥑', '🥦', '🥕', '🍗', '🥩', '🍳', '🥚', '🥛', '🧃', '💧', '☕', '🍵', '🧋', '🥤', '🍺', '🍷', '🥂', '🍾'] },
-  { title: 'Animals & Nature', emojis: ['🐶', '🐱', '🐭', '🐹', '🐰', '🦊', '🐻', '🐼', '🐨', '🐯', '🦁', '🐮', '🐷', '🐸', '🐵', '🐔', '🐧', '🐦', '🦅', '🦋', '🌸', '🌺', '🌻', '🌹', '🌳', '🌴', '🌵', '🍀', '🌈', '☀️'] },
-];
+/** Curated picker (gym + hype + faces); 6×3 grid */
+const REACTION_PICKER_EMOJIS = [
+  '🔥', '💪', '👍', '❤️', '😂', '😮',
+  '🙌', '😊', '🏋️', '🏃', '⚡', '🎯',
+  '🤩', '😍', '👏', '🫶', '💯', '✨',
+] as const;
 
 // Zoomable feed image (single or BeReal-style dual: tap to swap main/overlay)
 function ZoomableFeedImage({
@@ -169,6 +179,7 @@ function getWorkoutTypeEmoji(type: string | null | undefined): string {
 export default function HomeScreen() {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
+  const insets = useSafeAreaInsets();
   const { session, profile } = useAuthContext();
   const [todayWorkout, setTodayWorkout] = useState<Workout | null>(null);
   const [todayWorkoutGymLabel, setTodayWorkoutGymLabel] = useState<string | null>(null);
@@ -718,6 +729,7 @@ export default function HomeScreen() {
   );
 
   const streak = profile?.streak ?? 0;
+  const reactionPostButtonSolid = !!reactPendingEmoji || reactSubmitting;
 
   return (
   <>
@@ -1054,9 +1066,9 @@ export default function HomeScreen() {
                       ))}
                 </View>
                   )}
-                  {/* Reaction row — always visible with + button */}
+                  {/* Reaction row — add control uses reactions glyph (not a plain +) */}
                   <View style={[styles.reactionRow, { borderTopColor: colors.tint + '10' }]}>
-                    {/* Add reaction + button */}
+                    {/* Add reaction */}
                     {session && (
                       <Pressable
                         onPress={() => {
@@ -1073,7 +1085,7 @@ export default function HomeScreen() {
                           pressed && { opacity: 0.7, transform: [{ scale: 0.92 }] },
                         ]}
                       >
-                        <Ionicons name="add" size={20} color={colors.tint} />
+                        <ReactionsAddIcon size={20} color={colors.tint} />
                       </Pressable>
                     )}
                     <ScrollView
@@ -1139,78 +1151,152 @@ export default function HomeScreen() {
       >
         <View style={styles.reactModalOverlay}>
           <Pressable style={styles.reactModalDismiss} onPress={closeReactModal} />
-          <View key={reactModalKey} style={[styles.reactModalContent, { backgroundColor: colors.card }]}>
-            <ThemedText type="subtitle" style={[styles.reactModalTitle, { color: colors.text }]}>
-              Add reaction
-            </ThemedText>
-            <ThemedText style={[styles.reactModalHint, { color: colors.textMuted }]}>
-              Take a selfie and pick an emoji
-            </ThemedText>
+          <View
+            key={reactModalKey}
+            style={[
+              styles.reactModalContent,
+              {
+                backgroundColor: colors.card,
+                paddingBottom: Math.max(20, insets.bottom + 16),
+              },
+            ]}
+          >
+            <LinearGradient
+              colors={[BrandViolet.deep, BrandViolet.primary, BrandViolet.highlight]}
+              start={{ x: 0, y: 0.5 }}
+              end={{ x: 1, y: 0.5 }}
+              style={[styles.reactModalAccentBar, { width: SCREEN_W, marginLeft: -24 }]}
+            />
+            <View style={[styles.reactModalHandle, { backgroundColor: colors.textMuted + '40' }]} />
+            <View
+              style={[
+                styles.reactModalHeaderBlock,
+                { borderBottomColor: colors.tint + '12', backgroundColor: colors.tint + '06' },
+              ]}
+            >
+              <View style={styles.reactModalTitleRow}>
+                <View style={[styles.reactModalIconBadge, { backgroundColor: colors.tint + '18', borderColor: colors.tint + '35' }]}>
+                  <ReactionsAddIcon size={22} color={colors.tint} />
+                </View>
+                <View style={styles.reactModalTitleStack}>
+                  <ThemedText style={[styles.reactModalTitle, { color: colors.text }]}>
+                    Add reaction
+                  </ThemedText>
+                  <ThemedText style={[styles.reactModalHint, { color: colors.textMuted }]}>
+                    Optional selfie — choose an emoji to send
+                  </ThemedText>
+                </View>
+              </View>
+            </View>
             <Pressable
               onPress={handleTakeReactionPhoto}
-              style={[styles.reactPhotoBox, { backgroundColor: colors.cardElevated, borderColor: colors.tabBarBorder }]}
+              style={({ pressed }) => [
+                styles.reactPhotoBox,
+                {
+                  borderColor: reactPendingPhoto ? colors.tint + '70' : colors.tint + '40',
+                  shadowColor: BrandViolet.primary,
+                  opacity: pressed ? 0.94 : 1,
+                },
+              ]}
             >
               {reactPendingPhoto ? (
                 <Image source={{ uri: reactPendingPhoto }} style={styles.reactPhotoPreview} />
               ) : (
                 <>
-                  <Ionicons name="camera" size={36} color={colors.textMuted} />
-                  <ThemedText style={[styles.reactPhotoLabel, { color: colors.textMuted }]}>Take photo</ThemedText>
+                  <LinearGradient
+                    colors={
+                      colorScheme === 'dark'
+                        ? [BrandViolet.shadow, BrandViolet.deep + 'E6', colors.cardElevated]
+                        : [colors.cardElevated, BrandViolet.primary + '18', '#F5F2FC']
+                    }
+                    start={{ x: 0.5, y: 0 }}
+                    end={{ x: 0.5, y: 1 }}
+                    style={StyleSheet.absoluteFillObject}
+                  />
+                  <View style={styles.reactPhotoInner}>
+                    <Ionicons name="camera" size={34} color={colors.tint} />
+                    <ThemedText style={[styles.reactPhotoLabel, { color: colors.text }]}>Take photo</ThemedText>
+                  </View>
                 </>
               )}
             </Pressable>
-            <View style={styles.reactEmojiRow}>
-              {REACTION_EMOJIS_FREQUENT.map((emoji) => (
-                <Pressable
-                  key={emoji}
-                  onPress={() => setReactPendingEmoji(emoji)}
-                  style={[
-                    styles.reactEmojiOption,
-                    { backgroundColor: reactPendingEmoji === emoji ? colors.tint + '25' : colors.cardElevated },
-                    reactPendingEmoji === emoji && { borderColor: colors.tint, borderWidth: 2 },
-                  ]}
-                >
-                  <ThemedText style={styles.reactEmojiOptionText}>{emoji}</ThemedText>
-                </Pressable>
-              ))}
+            <ThemedText style={[styles.reactEmojiSectionLabel, { color: colors.tint + 'CC' }]}>
+              Pick emoji
+            </ThemedText>
+            <View style={[styles.reactEmojiPickerGrid, { gap: REACT_EMOJI_GAP }]}>
+              {REACTION_PICKER_EMOJIS.map((emoji) => {
+                const selected = reactPendingEmoji === emoji;
+                return (
+                  <Pressable
+                    key={emoji}
+                    onPress={() => {
+                      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      setReactPendingEmoji(emoji);
+                    }}
+                    style={({ pressed }) => [
+                      styles.reactEmojiCell,
+                      {
+                        width: reactEmojiCellSize,
+                        height: reactEmojiCellSize,
+                        borderRadius: reactEmojiCellSize / 2,
+                        backgroundColor: selected ? colors.tint + '28' : colors.cardElevated,
+                        borderColor: selected ? colors.tint : colors.tabBarBorder,
+                        transform: [{ scale: pressed ? 0.94 : selected ? 1.04 : 1 }],
+                        shadowColor: selected ? colors.tint : 'transparent',
+                        shadowOffset: { width: 0, height: 0 },
+                        shadowOpacity: selected ? 0.45 : 0,
+                        shadowRadius: selected ? 8 : 0,
+                        elevation: selected ? 3 : 0,
+                      },
+                    ]}
+                  >
+                    <ThemedText
+                      style={[styles.reactEmojiCellText, { fontSize: Math.round(reactEmojiCellSize * 0.5) }]}
+                    >
+                      {emoji}
+                    </ThemedText>
+                  </Pressable>
+                );
+              })}
             </View>
-            <ScrollView style={styles.reactEmojiScroll} showsVerticalScrollIndicator={false} nestedScrollEnabled>
-              {REACTION_EMOJI_SECTIONS.map((section) => (
-                <View key={section.title} style={styles.reactEmojiSection}>
-                  <ThemedText style={[styles.reactEmojiSectionTitle, { color: colors.textMuted }]}>{section.title}</ThemedText>
-                  <View style={styles.reactEmojiGrid}>
-                    {section.emojis.map((emoji) => (
-                      <Pressable
-                        key={emoji}
-                        onPress={() => setReactPendingEmoji(emoji)}
-                        style={[
-                          styles.reactEmojiGridItem,
-                          reactPendingEmoji === emoji && { backgroundColor: colors.tint + '25', borderColor: colors.tint, borderWidth: 2 },
-                        ]}
-                      >
-                        <ThemedText style={styles.reactEmojiOptionText}>{emoji}</ThemedText>
-                      </Pressable>
-                    ))}
-                  </View>
-                </View>
-              ))}
-            </ScrollView>
             <View style={styles.reactModalActions}>
               <Pressable
                 onPress={handlePostReaction}
                 disabled={!reactPendingEmoji || reactSubmitting}
-                style={[
+                style={({ pressed }) => [
                   styles.reactSubmitButton,
-                  { backgroundColor: reactPendingEmoji ? colors.tint : colors.textMuted + '40' },
+                  reactionPostButtonSolid
+                    ? {
+                        backgroundColor: colors.tint,
+                        shadowColor: BrandViolet.primary,
+                        opacity: pressed && !reactSubmitting ? 0.9 : 1,
+                      }
+                    : {
+                        backgroundColor: colors.tint + '12',
+                        borderWidth: 1.5,
+                        borderColor: colors.tint + '40',
+                        shadowOpacity: 0,
+                        elevation: 0,
+                      },
                 ]}
               >
                 {reactSubmitting ? (
                   <ActivityIndicator color="#fff" size="small" />
                 ) : (
-                  <ThemedText style={styles.reactSubmitButtonText}>Post reaction</ThemedText>
+                  <ThemedText
+                    style={[
+                      styles.reactSubmitButtonText,
+                      !reactPendingEmoji && { color: colors.textMuted },
+                    ]}
+                  >
+                    Post reaction
+                  </ThemedText>
                 )}
               </Pressable>
-              <Pressable onPress={closeReactModal} style={[styles.reactCancelButton, { borderColor: colors.tabBarBorder }]}>
+              <Pressable
+                onPress={closeReactModal}
+                style={({ pressed }) => [styles.reactCancelButton, { opacity: pressed ? 0.75 : 1 }]}
+              >
                 <ThemedText style={[styles.reactCancelText, { color: colors.textMuted }]}>Cancel</ThemedText>
               </Pressable>
             </View>
@@ -2049,93 +2135,141 @@ const styles = StyleSheet.create({
   // React modal
   reactModalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: 'rgba(0,0,0,0.55)',
     justifyContent: 'flex-end',
   },
   reactModalDismiss: {
     flex: 1,
   },
   reactModalContent: {
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    padding: 24,
-    paddingBottom: 40,
-    maxHeight: '85%',
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    paddingHorizontal: 24,
+    paddingTop: 0,
+    overflow: 'hidden',
+    maxHeight: '82%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 16,
+    elevation: 12,
   },
-  reactModalTitle: { marginBottom: 4, textAlign: 'center', fontWeight: '800', letterSpacing: -0.3 },
-  reactModalHint: { fontSize: 12, textAlign: 'center', marginBottom: 20, letterSpacing: 0.1 },
+  reactModalAccentBar: {
+    height: 3,
+    marginBottom: 8,
+  },
+  reactModalHandle: {
+    width: 40,
+    height: 5,
+    borderRadius: 3,
+    alignSelf: 'center',
+    marginBottom: 10,
+  },
+  reactModalHeaderBlock: {
+    marginHorizontal: -24,
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    marginBottom: 16,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  reactModalTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+  },
+  reactModalIconBadge: {
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  reactModalTitleStack: {
+    flex: 1,
+    gap: 4,
+  },
+  reactModalTitle: {
+    fontWeight: '800',
+    letterSpacing: -0.35,
+    fontFamily: Fonts?.rounded,
+    fontSize: 19,
+  },
+  reactModalHint: {
+    fontSize: 13,
+    letterSpacing: 0.12,
+    lineHeight: 18,
+    textAlign: 'left',
+  },
   reactPhotoBox: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
+    width: 128,
+    height: 128,
+    borderRadius: 64,
     alignSelf: 'center',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 20,
+    marginBottom: 18,
     borderWidth: 2,
     overflow: 'hidden',
+    shadowColor: BrandViolet.primary,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.28,
+    shadowRadius: 14,
+    elevation: 8,
   },
-  reactPhotoPreview: { width: 120, height: 120, borderRadius: 60 },
-  reactPhotoLabel: { fontSize: 12, marginTop: 6 },
-  reactEmojiRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+  reactPhotoInner: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
     justifyContent: 'center',
-    gap: 10,
-    marginBottom: 12,
+    paddingBottom: 4,
   },
-  reactEmojiScroll: {
-    flexShrink: 1,
-    marginBottom: 20,
-  },
-  reactEmojiSection: {
-    marginBottom: 12,
-  },
-  reactEmojiSectionTitle: {
-    fontSize: 12,
-    fontWeight: '600',
-    marginBottom: 6,
+  reactPhotoPreview: { width: 128, height: 128, borderRadius: 64 },
+  reactPhotoLabel: { fontSize: 12, marginTop: 8, fontFamily: Fonts?.rounded, fontWeight: '700' },
+  reactEmojiSectionLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 1.2,
+    textTransform: 'uppercase',
+    marginBottom: 10,
     marginLeft: 2,
+    fontFamily: Fonts?.rounded,
   },
-  reactEmojiGrid: {
+  reactEmojiPickerGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
+    justifyContent: 'center',
+    marginBottom: 22,
   },
-  reactEmojiGridItem: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+  reactEmojiCell: {
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: 'transparent',
   },
-  reactEmojiOption: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: 'transparent',
-    overflow: 'visible',
+  reactEmojiCellText: {
+    textAlign: 'center',
   },
-  reactEmojiOptionText: { fontSize: 24, lineHeight: 32 },
   reactModalActions: { gap: 10 },
   reactSubmitButton: {
-    paddingVertical: 14,
+    paddingVertical: 15,
     borderRadius: 14,
     alignItems: 'center',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+    elevation: 4,
   },
-  reactSubmitButtonText: { color: '#fff', fontSize: 14, fontWeight: '800', letterSpacing: 0.5 },
+  reactSubmitButtonText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '800',
+    letterSpacing: 0.4,
+    fontFamily: Fonts?.rounded,
+  },
   reactCancelButton: {
     paddingVertical: 12,
-    borderRadius: 14,
-    borderWidth: 1,
     alignItems: 'center',
   },
-  reactCancelText: { fontSize: 15 },
+  reactCancelText: { fontSize: 15, fontWeight: '600', fontFamily: Fonts?.rounded },
 });
 
 // ─── Share Card Styles (story-optimized) ─────────────────

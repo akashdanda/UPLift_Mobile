@@ -27,11 +27,12 @@ export async function getActivePresence(gymId: string): Promise<PresenceRow[]> {
     .from('gym_presence')
     .select('*')
     .eq('gym_id', gymId)
-    .eq('share_with_others', true)
     .gt('checked_in_at', new Date(Date.now() - 10 * 60_000).toISOString())
 
   if (error) throw error
-  return (data ?? []) as PresenceRow[]
+  const rows = (data ?? []) as PresenceRow[]
+  // Filter in memory so it works before migration `share_with_others` exists; omitting column reads as visible.
+  return rows.filter((r) => r.share_with_others !== false)
 }
 
 export async function checkIn(params: {
@@ -43,19 +44,32 @@ export async function checkIn(params: {
   /** When false, row still authorizes posting but user is omitted from others-at-gym lists. */
   shareWithOthers: boolean
 }) {
-  const { error } = await supabase.from('gym_presence').upsert(
-    {
-      user_id: params.userId,
-      gym_id: params.gymId,
-      display_name: params.displayName,
-      avatar_url: params.avatarUrl,
-      streak: params.streak,
-      share_with_others: params.shareWithOthers,
-      checked_in_at: new Date().toISOString(),
-    },
+  const base = {
+    user_id: params.userId,
+    gym_id: params.gymId,
+    display_name: params.displayName,
+    avatar_url: params.avatarUrl,
+    streak: params.streak,
+    checked_in_at: new Date().toISOString(),
+  }
+
+  let { error } = await supabase.from('gym_presence').upsert(
+    { ...base, share_with_others: params.shareWithOthers },
     { onConflict: 'user_id,gym_id' },
   )
-  if (error) throw error
+
+  // Older DBs without migration 20260410201000 — column missing in PostgREST schema cache
+  if (
+    error &&
+    (/share_with_others|schema cache/i.test(error.message) || /share_with_others/i.test(String(error.details)))
+  ) {
+    ;({ error } = await supabase.from('gym_presence').upsert(base, { onConflict: 'user_id,gym_id' }))
+  }
+
+  if (error) {
+    const msg = [error.message, error.details].filter(Boolean).join(' — ') || 'Check-in request failed'
+    throw new Error(msg)
+  }
 }
 
 export async function checkOut(userId: string, gymId: string) {
