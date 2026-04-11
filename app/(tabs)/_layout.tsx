@@ -1,4 +1,4 @@
-import { Tabs } from 'expo-router';
+import { Tabs, useRouter } from 'expo-router';
 import React from 'react';
 import { Platform } from 'react-native';
 
@@ -6,12 +6,15 @@ import { HapticTab } from '@/components/haptic-tab';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { BrandViolet, Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { LoggedTodayTabProvider, useLoggedTodayTab } from '@/providers/logged-today-tab-context';
 
 const TAB_ICON_SIZE = 24;
 
-export default function TabLayout() {
+function TabsLayoutContent() {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
+  const router = useRouter();
+  const { hasLoggedTodayWorkout } = useLoggedTodayTab();
 
   return (
     <Tabs
@@ -62,6 +65,30 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="log"
+        options={{
+          title: '',
+          tabBarShowLabel: false,
+          tabBarLabel: () => null,
+          tabBarAccessibilityLabel: 'Log workout',
+          tabBarIcon: ({ color }) => (
+            <IconSymbol size={TAB_ICON_SIZE} name="plus" color={color} />
+          ),
+          tabBarButton: (props) => {
+            if (hasLoggedTodayWorkout) {
+              return null;
+            }
+            return <HapticTab {...props} />;
+          },
+        }}
+        listeners={{
+          tabPress: (e) => {
+            e.preventDefault();
+            router.push('/log-workout');
+          },
+        }}
+      />
+      <Tabs.Screen
         name="leaderboard"
         options={{
           title: 'Leaderboard',
@@ -80,5 +107,13 @@ export default function TabLayout() {
         }}
       />
     </Tabs>
+  );
+}
+
+export default function TabLayout() {
+  return (
+    <LoggedTodayTabProvider>
+      <TabsLayoutContent />
+    </LoggedTodayTabProvider>
   );
 }

@@ -41,7 +41,6 @@ import {
   type DailyReminderInfo
 } from '@/lib/daily-reminder';
 import { getFriendsWorkouts, getGlobalWorkouts, type FeedItem } from '@/lib/feed';
-import { getFlashbacks, type FlashbackItem } from '@/lib/flashbacks';
 import { getFriends } from '@/lib/friends';
 import { computeXP, getLevelFromXP } from '@/lib/levels';
 import { getUnreadNotificationCount, markNotificationsAsRead } from '@/lib/notifications';
@@ -169,7 +168,6 @@ function getWorkoutTypeEmoji(type: string | null | undefined): string {
 
 export default function HomeScreen() {
   const colorScheme = useColorScheme();
-  const isDark = colorScheme === 'dark';
   const colors = Colors[colorScheme ?? 'light'];
   const { session, profile } = useAuthContext();
   const [todayWorkout, setTodayWorkout] = useState<Workout | null>(null);
@@ -179,7 +177,6 @@ export default function HomeScreen() {
   const [feedTab, setFeedTab] = useState<'friends' | 'public'>('friends');
   const [feedItems, setFeedItems] = useState<FeedItem[]>([]);
   const [globalFeedItems, setGlobalFeedItems] = useState<FeedItem[]>([]);
-  const [flashbacks, setFlashbacks] = useState<FlashbackItem[]>([]);
   const [socialNudges, setSocialNudges] = useState<SocialNudge[]>([]);
   const [freezeAvailable, setFreezeAvailable] = useState(false);
   const [freezeLoading, setFreezeLoading] = useState(false);
@@ -627,7 +624,6 @@ export default function HomeScreen() {
       if (!session) {
         setTodayWorkout(null);
         setFeedItems([]);
-        setFlashbacks([]);
         return;
       }
       const today = getTodayLocalDate();
@@ -646,8 +642,6 @@ export default function HomeScreen() {
         if (items.length === 0) setFeedTab('public');
       });
       getGlobalWorkouts(session.user.id).then(setGlobalFeedItems);
-      // Load flashbacks
-      getFlashbacks(session.user.id).then(setFlashbacks);
       // Load social nudges
       supabase
         .from('workouts')
@@ -712,24 +706,54 @@ export default function HomeScreen() {
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
-        {/* Header */}
+        {/* Header — Friends / Global feed scope + notifications */}
         <View style={styles.headerRow}>
-            <ThemedText type="title" style={styles.greeting}>
+          <ThemedText type="title" style={styles.greeting}>
             UPLIFT
-            </ThemedText>
+          </ThemedText>
           <View style={styles.headerActions}>
-            {!todayWorkout && (
+            <View
+              style={[
+                styles.feedScopeSegmented,
+                {
+                  backgroundColor: colorScheme === 'dark' ? colors.cardElevated : colors.card,
+                  borderColor: colors.tabBarBorder,
+                },
+              ]}
+            >
               <Pressable
-                onPress={() => router.push('/log-workout')}
-                style={({ pressed }) => [
-                  styles.headerLogBtn,
-                  { backgroundColor: colors.tint },
-                  pressed && { opacity: 0.8, transform: [{ scale: 0.94 }] },
+                onPress={() => setFeedTab('friends')}
+                accessibilityRole="button"
+                accessibilityLabel="Friends feed"
+                accessibilityState={{ selected: feedTab === 'friends' }}
+                style={[
+                  styles.feedScopeSeg,
+                  feedTab === 'friends' && { backgroundColor: colors.tint },
                 ]}
               >
-                <Ionicons name="add" size={20} color="#fff" />
+                <Ionicons
+                  name={feedTab === 'friends' ? 'people' : 'people-outline'}
+                  size={18}
+                  color={feedTab === 'friends' ? '#fff' : colors.textMuted}
+                />
               </Pressable>
-            )}
+              <Pressable
+                onPress={() => setFeedTab('public')}
+                accessibilityRole="button"
+                accessibilityLabel="Global feed"
+                accessibilityState={{ selected: feedTab === 'public' }}
+                style={[
+                  styles.feedScopeSeg,
+                  feedTab === 'public' && { backgroundColor: colors.tint },
+                ]}
+              >
+                <Ionicons
+                  name={feedTab === 'public' ? 'globe' : 'globe-outline'}
+                  size={18}
+                  color={feedTab === 'public' ? '#fff' : colors.textMuted}
+                />
+              </Pressable>
+            </View>
             <Pressable
               onPress={handleOpenNotifications}
               style={({ pressed }) => [
@@ -742,41 +766,11 @@ export default function HomeScreen() {
                 <View style={[styles.notificationBadge, { backgroundColor: '#EF4444' }]}>
                   <ThemedText style={styles.notificationBadgeText}>
                     {unreadCount > 99 ? '99+' : unreadCount}
-            </ThemedText>
+                  </ThemedText>
                 </View>
               )}
             </Pressable>
           </View>
-        </View>
-
-        {/* Feed tabs */}
-        <View style={[styles.feedTabRow, { paddingHorizontal: 20, marginBottom: 14 }]}>
-          <Pressable
-            onPress={() => setFeedTab('friends')}
-            style={[
-              styles.feedTabBtn,
-              { backgroundColor: feedTab === 'friends' ? colors.tint : 'transparent' },
-            ]}
-          >
-            <ThemedText
-              style={[styles.feedTabLabel, { color: feedTab === 'friends' ? '#fff' : colors.textMuted }]}
-            >
-              Friends
-            </ThemedText>
-          </Pressable>
-          <Pressable
-            onPress={() => setFeedTab('public')}
-            style={[
-              styles.feedTabBtn,
-              { backgroundColor: feedTab === 'public' ? colors.tint : 'transparent' },
-            ]}
-          >
-            <ThemedText
-              style={[styles.feedTabLabel, { color: feedTab === 'public' ? '#fff' : colors.textMuted }]}
-            >
-              Public
-            </ThemedText>
-          </Pressable>
         </View>
 
         {/* Today's workout */}
@@ -879,68 +873,6 @@ export default function HomeScreen() {
           </View>
         )}
 
-        {/* Flashbacks — nostalgia cards */}
-        {flashbacks.length > 0 && (
-          <View style={styles.section}>
-            <ThemedText type="subtitle" style={[styles.sectionTitle, { color: colors.text }]}>
-              Flashbacks ✨
-            </ThemedText>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.flashbackScroll}
-            >
-              {flashbacks.map((fb) => (
-                <View
-                  key={fb.period}
-                  style={[styles.flashbackCard, { backgroundColor: colors.card }]}
-                >
-                  <View style={[styles.flashbackBadge, { backgroundColor: colors.tint + '18' }]}>
-                    <ThemedText style={styles.flashbackEmoji}>{fb.emoji}</ThemedText>
-                    <ThemedText style={[styles.flashbackLabel, { color: colors.tint }]}>
-                      {fb.label}
-                  </ThemedText>
-                </View>
-                  <ZoomableFeedImage
-                    imageUrl={fb.workout.image_url}
-                    secondaryImageUrl={fb.workout.secondary_image_url}
-                    style={styles.flashbackImage}
-                  />
-                  {(fb.workout.caption || fb.workout.workout_type) ? (
-                    <View style={styles.flashbackCaptionWrap}>
-                      {fb.workout.workout_type ? (
-                        <ThemedText style={styles.flashbackTypeEmoji}>{getWorkoutTypeEmoji(fb.workout.workout_type)}</ThemedText>
-                      ) : null}
-                      {fb.workout.caption ? (
-                        <ThemedText
-                          style={[styles.flashbackCaption, { color: colors.text }]}
-                          numberOfLines={2}
-                        >
-                          {fb.workout.caption}
-                        </ThemedText>
-              ) : null}
-            </View>
-                  ) : null}
-                  <View style={styles.flashbackDateWrap}>
-                    <Ionicons name="calendar-outline" size={13} color={colors.textMuted} />
-                    <ThemedText style={[styles.flashbackDate, { color: colors.textMuted }]}>
-                      {new Date(
-                        Number(fb.workout.workout_date.slice(0, 4)),
-                        Number(fb.workout.workout_date.slice(5, 7)) - 1,
-                        Number(fb.workout.workout_date.slice(8, 10))
-                      ).toLocaleDateString(undefined, {
-                        month: 'short',
-                        day: 'numeric',
-                        year: 'numeric',
-                      })}
-                    </ThemedText>
-                  </View>
-                </View>
-              ))}
-            </ScrollView>
-          </View>
-        )}
-
         {/* Feed */}
         <View style={styles.feedSection}>
           {(feedTab === 'friends' ? feedItems : globalFeedItems).length === 0 ? (
@@ -955,7 +887,7 @@ export default function HomeScreen() {
                 <ThemedText style={[styles.emptyText, { color: colors.textMuted }]}>
                   {feedTab === 'friends'
                     ? 'Add friends to see their workout posts here'
-                    : 'No public posts yet — be the first to post publicly!'}
+                    : 'No global posts yet — be the first to share with everyone!'}
                 </ThemedText>
                 {feedTab === 'friends' && (
                   <Pressable
@@ -1600,20 +1532,29 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 8,
+    marginBottom: 10,
     paddingHorizontal: 20,
+    gap: 12,
   },
-  greeting: { fontSize: 24, fontWeight: '800', letterSpacing: 4 },
+  greeting: { fontSize: 24, fontWeight: '800', letterSpacing: 4, flexShrink: 0 },
   headerActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 8,
+    flexShrink: 0,
   },
-  headerLogBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: '#fff',
+  feedScopeSegmented: {
+    flexDirection: 'row',
+    padding: 2,
+    borderRadius: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    gap: 2,
+  },
+  feedScopeSeg: {
+    paddingVertical: 7,
+    paddingHorizontal: 11,
+    borderRadius: 8,
+    minWidth: 40,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1687,23 +1628,6 @@ const styles = StyleSheet.create({
   },
   emptyCtaText: { color: '#fff', fontSize: 14, fontWeight: '700' },
 
-  // Feed tabs
-  feedTabRow: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  feedTabBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 10,
-    borderRadius: 10,
-  },
-  feedTabLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-  },
   // Feed — fullscreen style
   feedSection: { marginBottom: 20 },
   feedList: { gap: 16, paddingHorizontal: 12 },
@@ -2157,49 +2081,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   reactCancelText: { fontSize: 15 },
-
-  // Flashback cards
-  flashbackScroll: { gap: 14, paddingRight: 4, paddingLeft: 4 },
-  flashbackCard: {
-    width: 200,
-    borderRadius: 18,
-    overflow: 'hidden',
-    },
-  flashbackBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  flashbackEmoji: { fontSize: 18 },
-  flashbackLabel: { fontSize: 12, fontWeight: '800', letterSpacing: 0.3 },
-  flashbackImage: {
-    width: 200,
-    aspectRatio: 2 / 3,
-  },
-  flashbackCaptionWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingTop: 8,
-  },
-  flashbackTypeEmoji: { fontSize: 16 },
-  flashbackCaption: {
-    flex: 1,
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  flashbackDateWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 12,
-    paddingTop: 6,
-    paddingBottom: 12,
-  },
-  flashbackDate: { fontSize: 11 },
 });
 
 // ─── Share Card Styles (story-optimized) ─────────────────

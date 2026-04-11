@@ -22,6 +22,8 @@ const MAPPING = {
   'person.fill': 'person',
   'person.3.fill': 'groups',
   'map.fill': 'map',
+  /** Tab “Post” — same line weight as other tab icons */
+  plus: 'add',
 } as IconMapping;
 
 /**
