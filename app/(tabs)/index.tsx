@@ -5,7 +5,7 @@ import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import * as Sharing from 'expo-sharing';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -151,6 +151,66 @@ function formatFeedDate(workoutDate: string): string {
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
+/** Short relative time for comment timestamps (e.g. "2m", "3h", "Apr 4"). */
+function formatCommentTimeAgo(iso: string): string {
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return '';
+  const now = Date.now();
+  const diffSec = Math.floor((now - t) / 1000);
+  if (diffSec < 45) return 'Just now';
+  const min = Math.floor(diffSec / 60);
+  if (min < 60) return `${min}m`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h`;
+  const day = Math.floor(hr / 24);
+  if (day < 7) return `${day}d`;
+  const d = new Date(iso);
+  const yNow = new Date().getFullYear();
+  return d.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    ...(d.getFullYear() !== yNow ? { year: 'numeric' as const } : {}),
+  });
+}
+
+const COMMENT_REPLY_PREVIEW = 2;
+
+type CommentTreeNode = WorkoutCommentWithProfile & { children: CommentTreeNode[] };
+
+function buildCommentTree(flat: WorkoutCommentWithProfile[]): CommentTreeNode[] {
+  const normalized = flat.map((c) => ({
+    ...c,
+    parent_id: c.parent_id ?? null,
+  }));
+  const map = new Map<string, CommentTreeNode>();
+  for (const c of normalized) {
+    map.set(c.id, { ...c, children: [] });
+  }
+  const roots: CommentTreeNode[] = [];
+  for (const c of normalized) {
+    const node = map.get(c.id)!;
+    if (!c.parent_id) {
+      roots.push(node);
+    } else {
+      const parent = map.get(c.parent_id);
+      if (parent) {
+        parent.children.push(node);
+      } else {
+        roots.push(node);
+      }
+    }
+  }
+  const sortByTime = (a: CommentTreeNode, b: CommentTreeNode) =>
+    new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+  roots.sort(sortByTime);
+  const sortDeep = (n: CommentTreeNode) => {
+    n.children.sort(sortByTime);
+    n.children.forEach(sortDeep);
+  };
+  roots.forEach(sortDeep);
+  return roots;
+}
+
 function getInitials(displayName: string | null): string {
   if (displayName?.trim()) {
     const parts = displayName.trim().split(/\s+/);
@@ -158,6 +218,143 @@ function getInitials(displayName: string | null): string {
     if (parts[0]?.[0]) return parts[0][0].toUpperCase();
   }
   return '?';
+}
+
+type CommentBranchProps = {
+  node: CommentTreeNode;
+  depth: number;
+  session: { user: { id: string } } | null;
+  colors: (typeof Colors)['light'] | (typeof Colors)['dark'];
+  expanded: Record<string, boolean>;
+  setExpanded: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
+  onReply: (c: WorkoutCommentWithProfile) => void;
+  onOpenProfile: (userId: string) => void;
+  onCloseModal: () => void;
+};
+
+function CommentBranch({
+  node,
+  depth,
+  session,
+  colors,
+  expanded,
+  setExpanded,
+  onReply,
+  onOpenProfile,
+  onCloseModal,
+}: CommentBranchProps) {
+  const isNested = depth > 0;
+  const children = node.children;
+  const isThreadOpen = expanded[node.id] ?? false;
+  const preview = COMMENT_REPLY_PREVIEW;
+  const shownChildren = isThreadOpen ? children : children.slice(0, preview);
+  const hiddenReplyCount = isThreadOpen ? 0 : Math.max(0, children.length - preview);
+  const threadBorder = colors.textMuted + (isNested ? '38' : '42');
+
+  return (
+    <View>
+      <View style={styles.commentSheetRow}>
+        <Pressable
+          style={[
+            isNested ? styles.commentAvatarSm : styles.commentAvatar,
+            { backgroundColor: colors.tint + '22' },
+          ]}
+          onPress={() => {
+            if (session && node.user_id !== session.user.id) {
+              onCloseModal();
+              onOpenProfile(node.user_id);
+            }
+          }}
+        >
+          {node.avatar_url ? (
+            <Image
+              source={{ uri: node.avatar_url }}
+              style={isNested ? styles.commentAvatarSmImg : styles.commentAvatarImage}
+            />
+          ) : (
+            <ThemedText
+              style={[isNested ? styles.commentAvatarSmInit : styles.commentAvatarInitials, { color: colors.tint }]}
+            >
+              {getInitials(node.display_name)}
+            </ThemedText>
+          )}
+        </Pressable>
+        <View style={styles.commentBody}>
+          <View style={styles.commentMetaRow}>
+            <ThemedText type="defaultSemiBold" numberOfLines={1} style={[styles.commentAuthor, { color: colors.text }]}>
+              {node.display_name || 'Anonymous'}
+            </ThemedText>
+            <ThemedText style={[styles.commentTime, { color: colors.textMuted }]}>
+              {formatCommentTimeAgo(node.created_at)}
+            </ThemedText>
+          </View>
+          {node.message ? (
+            <ThemedText style={[styles.commentText, { color: colors.text }]}>{node.message}</ThemedText>
+          ) : null}
+          {session && (
+            <Pressable
+              style={styles.commentReplyBtn}
+              onPress={() => onReply(node)}
+              hitSlop={6}
+            >
+              <ThemedText style={[styles.commentReplyText, { color: colors.textMuted }]}>Reply</ThemedText>
+            </Pressable>
+          )}
+        </View>
+      </View>
+
+      {children.length > 0 && (
+        <View
+          style={[
+            styles.commentRepliesGroup,
+            {
+              marginLeft: depth === 0 ? 36 : 6,
+              borderLeftColor: threadBorder,
+            },
+          ]}
+        >
+          {shownChildren.map((child) => (
+            <CommentBranch
+              key={child.id}
+              node={child}
+              depth={depth + 1}
+              session={session}
+              colors={colors}
+              expanded={expanded}
+              setExpanded={setExpanded}
+              onReply={onReply}
+              onOpenProfile={onOpenProfile}
+              onCloseModal={onCloseModal}
+            />
+          ))}
+
+          {hiddenReplyCount > 0 && (
+            <Pressable
+              style={styles.commentViewMoreRow}
+              onPress={() => setExpanded((p) => ({ ...p, [node.id]: true }))}
+              hitSlop={8}
+            >
+              <Ionicons name="chevron-down" size={13} color={colors.textMuted} />
+              <ThemedText style={[styles.commentViewMoreText, { color: colors.textMuted }]}>
+                View {hiddenReplyCount} more {hiddenReplyCount === 1 ? 'reply' : 'replies'}
+              </ThemedText>
+            </Pressable>
+          )}
+
+          {isThreadOpen && children.length > preview && (
+            <Pressable
+              style={styles.commentViewMoreRow}
+              onPress={() => setExpanded((p) => ({ ...p, [node.id]: false }))}
+              hitSlop={8}
+            >
+              <Ionicons name="chevron-up" size={13} color={colors.textMuted} />
+              <ThemedText style={[styles.commentViewMoreText, { color: colors.textMuted }]}>Hide replies</ThemedText>
+            </Pressable>
+          )}
+        </View>
+      )}
+    </View>
+  );
 }
 
 function getTodayLocalDate(): string {
@@ -209,8 +406,20 @@ export default function HomeScreen() {
   // Inline comments (Instagram-style: all comments visible + add comment / reply on same card)
   const [commentModalWorkoutId, setCommentModalWorkoutId] = useState<string | null>(null);
   const [commentModalMessage, setCommentModalMessage] = useState('');
+  const [commentReplyParentId, setCommentReplyParentId] = useState<string | null>(null);
+  const [commentReplyToName, setCommentReplyToName] = useState<string | null>(null);
+  const [commentThreadExpanded, setCommentThreadExpanded] = useState<Record<string, boolean>>({});
   const [commentSubmittingWorkoutId, setCommentSubmittingWorkoutId] = useState<string | null>(null);
   const commentInputRef = useRef<TextInput>(null);
+
+  useEffect(() => {
+    if (commentModalWorkoutId) {
+      setCommentReplyParentId(null);
+      setCommentReplyToName(null);
+      setCommentModalMessage('');
+      setCommentThreadExpanded({});
+    }
+  }, [commentModalWorkoutId]);
 
   // Highlight workout when navigating from notification
   const [highlightedWorkoutId, setHighlightedWorkoutId] = useState<string | null>(null);
@@ -420,23 +629,39 @@ export default function HomeScreen() {
       return;
     }
     setCommentSubmittingWorkoutId(workoutId);
-    const result = await addComment(workoutId, session.user.id, { message: trimmed });
+    const parentId = commentReplyParentId;
+    const result = await addComment(workoutId, session.user.id, {
+      message: trimmed,
+      parentId: parentId ?? undefined,
+    });
     setCommentSubmittingWorkoutId(null);
     if ('error' in result) {
       Alert.alert('Comment failed', result.error.message);
       return;
     }
+    if (parentId) {
+      setCommentThreadExpanded((p) => ({ ...p, [parentId]: true }));
+    }
     const newComment: WorkoutCommentWithProfile = {
       id: result.id,
       workout_id: workoutId,
       user_id: session.user.id,
+      parent_id: parentId ?? null,
       message: trimmed,
       gif_url: null,
       created_at: new Date().toISOString(),
       display_name: profile?.display_name ?? null,
       avatar_url: profile?.avatar_url ?? null,
     };
+    setCommentReplyParentId(null);
+    setCommentReplyToName(null);
     setFeedItems((prev) =>
+      prev.map((i) => {
+        if (i.workout.id !== workoutId) return i;
+        return { ...i, comments: [...(i.comments ?? []), newComment] };
+      })
+    );
+    setGlobalFeedItems((prev) =>
       prev.map((i) => {
         if (i.workout.id !== workoutId) return i;
         return { ...i, comments: [...(i.comments ?? []), newComment] };
@@ -808,7 +1033,7 @@ export default function HomeScreen() {
 
         {/* Today's workout */}
         {todayWorkout && (
-          <View style={styles.feedCard}>
+          <View style={[styles.feedCard, styles.feedTodayCard]}>
             <View style={styles.feedImageContainer}>
               <ZoomableFeedImage
                 imageUrl={todayWorkout.image_url}
@@ -864,27 +1089,32 @@ export default function HomeScreen() {
                 </Pressable>
               </View>
             </View>
-            {/* Friends' reactions on your post */}
-              <View style={[styles.reactionRow, { borderTopColor: colors.tint + '10' }]}>
+            <View style={styles.postCardFooter}>
+              <View style={styles.postEngagementReactionsRow}>
                 <ScrollView
                   horizontal
                   showsHorizontalScrollIndicator={false}
                   contentContainerStyle={styles.reactionBubbles}
+                  style={styles.reactionScrollFlex}
                 >
                   {todayWorkoutReactions.map((r) => (
-                    <Pressable key={r.id} onPress={() => setViewReaction(r)} style={({ pressed }) => [styles.reactionBubbleWrap, pressed && { opacity: 0.7 }]}>
+                    <Pressable
+                      key={r.id}
+                      onPress={() => setViewReaction(r)}
+                      style={({ pressed }) => [styles.reactionBubbleWrap, pressed && { opacity: 0.75 }]}
+                    >
                       <View style={styles.reactionBubble}>
                         <View style={styles.reactionBubblePhotoWrap}>
                           {r.reaction_image_url ? (
                             <Image source={{ uri: r.reaction_image_url }} style={styles.reactionBubbleImage} />
                           ) : (
-                            <View style={[styles.reactionBubblePlaceholder, { backgroundColor: colors.tint + '25' }]}>
+                            <View style={[styles.reactionBubblePlaceholder, { backgroundColor: colors.tint + '22' }]}>
                               {r.avatar_url ? (
                                 <Image source={{ uri: r.avatar_url }} style={styles.reactionBubbleImage} />
                               ) : (
                                 <ThemedText style={[styles.reactionBubbleInitials, { color: colors.tint }]}>
                                   {getInitials(r.display_name)}
-            </ThemedText>
+                                </ThemedText>
                               )}
                             </View>
                           )}
@@ -893,24 +1123,11 @@ export default function HomeScreen() {
                           <ThemedText style={styles.reactionEmojiText}>{r.emoji}</ThemedText>
                         </View>
                       </View>
-          </Pressable>
+                    </Pressable>
                   ))}
                 </ScrollView>
-        </View>
-              {/* Comments tap-to-open */}
-              {todayWorkoutComments.length > 0 && (
-                <Pressable
-                  style={styles.viewCommentsBtn}
-                  onPress={() => {
-                    setCommentModalWorkoutId(todayWorkout.id);
-                    setCommentModalMessage('');
-                  }}
-                >
-                  <ThemedText style={[styles.viewCommentsText, { color: colors.textMuted }]}>
-                    View {todayWorkoutComments.length === 1 ? '1 comment' : `all ${todayWorkoutComments.length} comments`}
-                  </ThemedText>
-                </Pressable>
-              )}
+              </View>
+            </View>
           </View>
         )}
 
@@ -1051,93 +1268,103 @@ export default function HomeScreen() {
                       )}
                   </View>
                   </View>
-                  {/* Tagged friends */}
-                  {(item.tags ?? []).length > 0 && (
-                    <View style={styles.taggedRow}>
-                      <Ionicons name="people-outline" size={14} color={colors.textMuted} />
-                      <ThemedText style={[styles.taggedLabel, { color: colors.textMuted }]}>with </ThemedText>
-                      {(item.tags ?? []).map((tag, tIdx) => (
-                        <Pressable key={tag.id} onPress={() => router.push(`/friend-profile?id=${tag.tagged_user_id}`)}>
-                          <ThemedText style={[styles.taggedName, { color: colors.tint }]}>
-                            {tag.display_name || 'Friend'}{tIdx < (item.tags?.length ?? 0) - 1 ? ', ' : ''}
-                    </ThemedText>
-                        </Pressable>
-                      ))}
-                </View>
-                  )}
-                  {/* Reaction row — reactions-svgrepo style add control */}
-                  <View style={[styles.reactionRow, { borderTopColor: colors.tint + '10' }]}>
-                    {session && (
-                      <Pressable
-                        onPress={() => {
-                          const myReaction = item.reactions?.find((r) => r.user_id === session.user.id);
-                          if (myReaction) {
-                            handleRemoveReaction(item);
-                          } else {
-                            openReactModal(item);
-                          }
-                        }}
-                        style={({ pressed }) => [
-                          styles.addReactionBtn,
-                          { borderColor: colors.tint + '50' },
-                          pressed && { opacity: 0.7, transform: [{ scale: 0.92 }] },
-                        ]}
-                        accessibilityLabel={
-                          item.reactions?.find((r) => r.user_id === session.user.id)
-                            ? 'Remove your reaction'
-                            : 'Add reaction'
-                        }
-                      >
-                        <ReactionsIcon size={22} color={colors.tint} />
-                      </Pressable>
-                    )}
-                    <ScrollView
-                      horizontal
-                      showsHorizontalScrollIndicator={false}
-                      contentContainerStyle={styles.reactionBubbles}
-                    >
-                      {(item.reactions ?? []).map((r) => (
-                        <Pressable key={r.id} onPress={() => setViewReaction(r)} style={({ pressed }) => [styles.reactionBubbleWrap, pressed && { opacity: 0.7 }]}>
-                          <View style={styles.reactionBubble}>
-                            <View style={styles.reactionBubblePhotoWrap}>
-                              {r.reaction_image_url ? (
-                                <Image source={{ uri: r.reaction_image_url }} style={styles.reactionBubbleImage} />
-                              ) : (
-                                <View style={[styles.reactionBubblePlaceholder, { backgroundColor: colors.tint + '25' }]}>
-                                  {r.avatar_url ? (
-                                    <Image source={{ uri: r.avatar_url }} style={styles.reactionBubbleImage} />
-                                  ) : (
-                                    <ThemedText style={[styles.reactionBubbleInitials, { color: colors.tint }]}>
-                                      {getInitials(r.display_name)}
-                                    </ThemedText>
-                                  )}
-                                </View>
-                              )}
-                            </View>
-                            <View style={styles.reactionEmojiBadge}>
-                              <ThemedText style={styles.reactionEmojiText}>{r.emoji}</ThemedText>
-                            </View>
+                  <View style={styles.postCardFooter}>
+                    {(item.tags ?? []).length > 0 && (
+                      <View style={styles.taggedRowFooter}>
+                        <View
+                          style={[
+                            styles.taggedPill,
+                            {
+                              backgroundColor: colors.tint + '18',
+                              borderColor: colors.tint + '32',
+                            },
+                          ]}
+                        >
+                          <View style={[styles.taggedPillIconBubble, { backgroundColor: colors.tint + '22' }]}>
+                            <Ionicons name="people" size={14} color={colors.tint} />
                           </View>
+                          <View style={styles.taggedPillTextRow}>
+                            <ThemedText style={styles.taggedPillKicker}>With</ThemedText>
+                            {(item.tags ?? []).map((tag, tIdx) => (
+                              <View key={tag.id} style={styles.taggedNameChip}>
+                                {tIdx > 0 ? (
+                                  <ThemedText style={styles.taggedNameDot}>·</ThemedText>
+                                ) : null}
+                                <Pressable
+                                  onPress={() => router.push(`/friend-profile?id=${tag.tagged_user_id}`)}
+                                  style={({ pressed }) => [{ opacity: pressed ? 0.78 : 1 }]}
+                                >
+                                  <ThemedText style={styles.taggedNameFooter} numberOfLines={1}>
+                                    {tag.display_name || 'Friend'}
+                                  </ThemedText>
+                                </Pressable>
+                              </View>
+                            ))}
+                          </View>
+                        </View>
+                      </View>
+                    )}
+                    <View style={styles.postEngagementReactionsRow}>
+                      {session && (
+                        <Pressable
+                          onPress={() => {
+                            const myReaction = item.reactions?.find((r) => r.user_id === session.user.id);
+                            if (myReaction) {
+                              handleRemoveReaction(item);
+                            } else {
+                              openReactModal(item);
+                            }
+                          }}
+                          style={({ pressed }) => [
+                            styles.postReactCompact,
+                            pressed && { opacity: 0.82 },
+                          ]}
+                          accessibilityLabel={
+                            item.reactions?.find((r) => r.user_id === session.user.id)
+                              ? 'Remove your reaction'
+                              : 'Add reaction'
+                          }
+                        >
+                          <ReactionsIcon size={20} color={colors.tint} />
                         </Pressable>
-                      ))}
-                    </ScrollView>
+                      )}
+                      <ScrollView
+                        horizontal
+                        showsHorizontalScrollIndicator={false}
+                        contentContainerStyle={styles.reactionBubbles}
+                        style={styles.reactionScrollFlex}
+                      >
+                        {(item.reactions ?? []).map((r) => (
+                          <Pressable
+                            key={r.id}
+                            onPress={() => setViewReaction(r)}
+                            style={({ pressed }) => [styles.reactionBubbleWrap, pressed && { opacity: 0.75 }]}
+                          >
+                            <View style={styles.reactionBubble}>
+                              <View style={styles.reactionBubblePhotoWrap}>
+                                {r.reaction_image_url ? (
+                                  <Image source={{ uri: r.reaction_image_url }} style={styles.reactionBubbleImage} />
+                                ) : (
+                                  <View style={[styles.reactionBubblePlaceholder, { backgroundColor: colors.tint + '22' }]}>
+                                    {r.avatar_url ? (
+                                      <Image source={{ uri: r.avatar_url }} style={styles.reactionBubbleImage} />
+                                    ) : (
+                                      <ThemedText style={[styles.reactionBubbleInitials, { color: colors.tint }]}>
+                                        {getInitials(r.display_name)}
+                                      </ThemedText>
+                                    )}
+                                  </View>
+                                )}
+                              </View>
+                              <View style={styles.reactionEmojiBadge}>
+                                <ThemedText style={styles.reactionEmojiText}>{r.emoji}</ThemedText>
+                              </View>
+                            </View>
+                          </Pressable>
+                        ))}
+                      </ScrollView>
+                    </View>
                   </View>
-                  {/* Comments — tap to open modal */}
-                  {(item.comments ?? []).length > 0 && (
-                    <Pressable
-                      style={styles.viewCommentsBtn}
-                      onPress={() => {
-                        setCommentModalWorkoutId(item.workout.id);
-                        setCommentModalMessage('');
-                      }}
-                    >
-                      <ThemedText style={[styles.viewCommentsText, { color: colors.textMuted }]}>
-                        {(item.comments ?? []).length === 1
-                          ? 'View 1 comment'
-                          : `View all ${(item.comments ?? []).length} comments`}
-                      </ThemedText>
-                    </Pressable>
-                  )}
                 </View>
                 )
               })}
@@ -1471,146 +1698,159 @@ export default function HomeScreen() {
             style={styles.commentModalKeyboard}
           >
             <Pressable
-              style={[styles.commentModalSheet, { backgroundColor: colors.card }]}
+              style={[
+                styles.commentModalSheet,
+                {
+                  backgroundColor: isDark ? '#0F0D14' : colors.card,
+                  borderTopColor: isDark ? 'rgba(104,88,168,0.35)' : colors.tabBarBorder,
+                },
+              ]}
               onPress={(e) => e.stopPropagation()}
             >
-              {/* Drag handle */}
               <View style={styles.commentModalHandle}>
-                <View style={[styles.commentModalHandleBar, { backgroundColor: colors.textMuted + '40' }]} />
+                <View style={[styles.commentModalHandleBar, { backgroundColor: colors.textMuted + '45' }]} />
               </View>
 
-              {/* Title */}
               <ThemedText type="defaultSemiBold" style={[styles.commentModalTitle, { color: colors.text }]}>
                 Comments
               </ThemedText>
 
-              {/* Comment list */}
               <ScrollView
                 style={styles.commentModalScroll}
                 contentContainerStyle={styles.commentModalScrollContent}
                 keyboardShouldPersistTaps="handled"
               >
                 {(() => {
-                  // Gather comments for the active workout
                   let comments: WorkoutCommentWithProfile[] = [];
-                  let isOwnPost = false;
                   if (commentModalWorkoutId && todayWorkout?.id === commentModalWorkoutId) {
                     comments = todayWorkoutComments;
-                    isOwnPost = true;
                   } else if (commentModalWorkoutId) {
-                    const feedItem = feedItems.find((fi) => fi.workout.id === commentModalWorkoutId);
+                    const feedItem =
+                      feedItems.find((fi) => fi.workout.id === commentModalWorkoutId) ??
+                      globalFeedItems.find((fi) => fi.workout.id === commentModalWorkoutId);
                     comments = feedItem?.comments ?? [];
-                    isOwnPost = feedItem?.workout.user_id === session?.user?.id;
                   }
 
                   if (comments.length === 0) {
                     return (
                       <View style={styles.commentModalEmpty}>
+                        <Ionicons name="chatbubbles-outline" size={40} color={colors.textMuted} style={{ marginBottom: 12, opacity: 0.5 }} />
+                        <ThemedText style={[styles.commentModalEmptyTitle, { color: colors.text }]}>
+                          No comments yet
+                        </ThemedText>
                         <ThemedText style={[styles.commentModalEmptyText, { color: colors.textMuted }]}>
-                          No comments yet. Be the first!
+                          Say something nice below.
                         </ThemedText>
                       </View>
                     );
                   }
 
-                  return comments.map((c) => (
-                    <View key={c.id} style={styles.commentRow}>
-                      <Pressable
-                        style={[styles.commentAvatar, { backgroundColor: colors.tint + '20' }]}
-                        onPress={() => {
-                          if (c.user_id !== session?.user?.id) {
-                            setCommentModalWorkoutId(null);
-                            router.push(`/friend-profile?id=${c.user_id}`);
-                          }
-                        }}
-                      >
-                        {c.avatar_url ? (
-                          <Image source={{ uri: c.avatar_url }} style={styles.commentAvatarImage} />
-                        ) : (
-                          <ThemedText style={[styles.commentAvatarInitials, { color: colors.tint }]}>
-                            {getInitials(c.display_name)}
-                          </ThemedText>
-                        )}
-                      </Pressable>
-                      <View style={styles.commentBody}>
-                        <ThemedText type="defaultSemiBold" style={[styles.commentAuthor, { color: colors.text }]}>
-                          {c.display_name || 'Anonymous'}
-                        </ThemedText>
-                        {c.message ? (
-                          <ThemedText style={[styles.commentText, { color: colors.text }]}>{c.message}</ThemedText>
-                        ) : null}
-                        {/* Reply — on own posts or to other people's comments */}
-                        {(isOwnPost || c.user_id !== session?.user?.id) && c.user_id !== session?.user?.id && (
-                          <Pressable
-                            style={styles.commentReplyBtn}
-                            onPress={() => {
-                              const firstName =
-                                (c.display_name || '').trim().split(/\s+/)[0] || 'friend';
-                              setCommentModalMessage(`@${firstName} `);
-                              commentInputRef.current?.focus();
-                            }}
-                          >
-                            <ThemedText style={[styles.commentReplyText, { color: colors.textMuted }]}>
-                              Reply
-                            </ThemedText>
-                          </Pressable>
-                        )}
-                      </View>
-                    </View>
+                  const tree = buildCommentTree(comments);
+                  return tree.map((n) => (
+                    <CommentBranch
+                      key={n.id}
+                      node={n}
+                      depth={0}
+                      session={session}
+                      colors={colors}
+                      expanded={commentThreadExpanded}
+                      setExpanded={setCommentThreadExpanded}
+                      onReply={(c) => {
+                        setCommentReplyParentId(c.id);
+                        setCommentReplyToName(c.display_name || 'Member');
+                        const firstName = (c.display_name || '').trim().split(/\s+/)[0] || 'friend';
+                        setCommentModalMessage(`@${firstName} `);
+                        commentInputRef.current?.focus();
+                      }}
+                      onOpenProfile={(userId) => router.push(`/friend-profile?id=${userId}`)}
+                      onCloseModal={() => setCommentModalWorkoutId(null)}
+                    />
                   ));
                 })()}
               </ScrollView>
 
-              {/* Input row */}
               {session && commentModalWorkoutId && (
-                <View style={[styles.commentModalInputRow, { borderTopColor: colors.textMuted + '20' }]}>
-                  <TextInput
-                    ref={commentInputRef}
-                    style={[
-                      styles.commentModalInput,
-                      {
-                        backgroundColor: colors.cardElevated,
-                        color: colors.text,
-                        borderColor: colors.tabBarBorder,
-                      },
-                    ]}
-                    placeholder="Add a comment..."
-                    placeholderTextColor={colors.textMuted}
-                    value={commentModalMessage}
-                    onChangeText={setCommentModalMessage}
-                    multiline
-                    maxLength={500}
-                  />
-                  <Pressable
-                    onPress={() => {
-                      if (commentModalWorkoutId) {
-                        handlePostComment(commentModalWorkoutId, commentModalMessage);
+                <View
+                  style={[
+                    styles.commentModalInputRow,
+                    {
+                      borderTopColor: isDark ? 'rgba(255,255,255,0.08)' : colors.textMuted + '18',
+                      backgroundColor: isDark ? '#0A0810' : 'transparent',
+                    },
+                  ]}
+                >
+                  {commentReplyParentId && commentReplyToName ? (
+                    <View style={styles.commentReplyingBanner}>
+                      <ThemedText
+                        style={[styles.commentReplyingBannerText, { color: colors.textMuted }]}
+                        numberOfLines={1}
+                      >
+                        Replying to{' '}
+                        <ThemedText type="defaultSemiBold" style={{ color: colors.text }}>
+                          {commentReplyToName}
+                        </ThemedText>
+                      </ThemedText>
+                      <Pressable
+                        onPress={() => {
+                          setCommentReplyParentId(null);
+                          setCommentReplyToName(null);
+                          setCommentModalMessage('');
+                        }}
+                        hitSlop={8}
+                      >
+                        <Ionicons name="close-circle" size={20} color={colors.textMuted} />
+                      </Pressable>
+                    </View>
+                  ) : null}
+                  <View style={styles.commentModalInputInner}>
+                    <TextInput
+                      ref={commentInputRef}
+                      style={[
+                        styles.commentModalInput,
+                        {
+                          backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : colors.cardElevated,
+                          color: colors.text,
+                          borderColor: isDark ? 'rgba(255,255,255,0.1)' : colors.tabBarBorder,
+                        },
+                      ]}
+                      placeholder={commentReplyParentId ? 'Write a reply…' : 'Add a comment…'}
+                      placeholderTextColor={colors.textMuted}
+                      value={commentModalMessage}
+                      onChangeText={setCommentModalMessage}
+                      multiline
+                      maxLength={500}
+                    />
+                    <Pressable
+                      onPress={() => {
+                        if (commentModalWorkoutId) {
+                          handlePostComment(commentModalWorkoutId, commentModalMessage);
+                        }
+                      }}
+                      disabled={
+                        !commentModalWorkoutId ||
+                        commentSubmittingWorkoutId === commentModalWorkoutId ||
+                        !commentModalMessage.trim()
                       }
-                    }}
-                    disabled={
-                      !commentModalWorkoutId ||
-                      commentSubmittingWorkoutId === commentModalWorkoutId ||
-                      !commentModalMessage.trim()
-                    }
-                    style={({ pressed }) => [
-                      styles.commentModalPostBtn,
-                      {
-                        opacity: commentModalMessage.trim()
-                          ? pressed ? 0.7 : 1
-                          : 0.4,
-                      },
-                    ]}
-                  >
-                    {commentSubmittingWorkoutId === commentModalWorkoutId ? (
-                      <ActivityIndicator color={colors.tint} size="small" />
-                    ) : (
-                      <Ionicons
-                        name="send"
-                        size={20}
-                        color={commentModalMessage.trim() ? colors.tint : colors.textMuted}
-                      />
-                    )}
-                  </Pressable>
+                      style={({ pressed }) => [
+                        styles.commentModalPostBtn,
+                        {
+                          opacity: commentModalMessage.trim()
+                            ? pressed ? 0.7 : 1
+                            : 0.4,
+                        },
+                      ]}
+                    >
+                      {commentSubmittingWorkoutId === commentModalWorkoutId ? (
+                        <ActivityIndicator color={colors.tint} size="small" />
+                      ) : (
+                        <Ionicons
+                          name="send"
+                          size={18}
+                          color={commentModalMessage.trim() ? colors.tint : colors.textMuted}
+                        />
+                      )}
+                    </Pressable>
+                  </View>
                 </View>
               )}
             </Pressable>
@@ -1771,8 +2011,8 @@ const styles = StyleSheet.create({
     aspectRatio: 2 / 3,
     borderRadius: 16,
     overflow: 'hidden',
-    borderWidth: 2.5,
-    borderColor: 'rgba(255,255,255,0.9)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.92)',
     zIndex: 5,
   },
   dualPhotoCornerImage: { width: '100%', height: '100%' },
@@ -1810,6 +2050,10 @@ const styles = StyleSheet.create({
   // Feed — fullscreen style
   feedSection: { marginBottom: 20 },
   feedList: { gap: 16, paddingHorizontal: 12 },
+  /** Extra air below “Your workout” before friends/global posts */
+  feedTodayCard: {
+    marginBottom: 24,
+  },
   feedCard: {
     overflow: 'hidden',
     marginBottom: 0,
@@ -1819,7 +2063,12 @@ const styles = StyleSheet.create({
   feedImageContainer: {
     position: 'relative',
   },
-  feedImage: { width: '100%', aspectRatio: 10 / 16, borderRadius: 20 },
+  feedImage: {
+    width: '100%',
+    aspectRatio: 10 / 16,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+  },
   feedGradient: {
     position: 'absolute',
     bottom: 0,
@@ -1829,8 +2078,6 @@ const styles = StyleSheet.create({
     paddingBottom: 16,
     paddingHorizontal: 16,
     justifyContent: 'flex-end',
-    borderBottomLeftRadius: 20,
-    borderBottomRightRadius: 20,
   },
   feedOverlayInfo: {
     flexDirection: 'row',
@@ -1919,73 +2166,137 @@ const styles = StyleSheet.create({
     textShadowRadius: 3,
   },
 
-  // Tagged friends
-  taggedRow: {
+  // Post card footer — same surface as card (no separate “band”)
+  postCardFooter: {
+    backgroundColor: '#13101A',
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
+    overflow: 'hidden',
+  },
+  taggedRowFooter: {
+    paddingHorizontal: 14,
+    paddingTop: 10,
+    paddingBottom: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(255,255,255,0.04)',
+  },
+  taggedPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingTop: 10,
-    paddingBottom: 6,
-    gap: 4,
-    flexWrap: 'wrap',
+    alignSelf: 'flex-start',
+    maxWidth: '100%',
+    paddingVertical: 8,
+    paddingRight: 12,
+    paddingLeft: 8,
+    borderRadius: 22,
+    borderWidth: StyleSheet.hairlineWidth,
+    gap: 8,
   },
-  taggedLabel: { fontSize: 13, fontWeight: '500' },
-  taggedName: { fontSize: 13, fontWeight: '700' },
+  taggedPillIconBubble: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  taggedPillTextRow: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    columnGap: 6,
+    rowGap: 4,
+  },
+  taggedPillKicker: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1.4,
+    color: 'rgba(255,255,255,0.38)',
+    textTransform: 'uppercase',
+    marginRight: 2,
+  },
+  taggedNameChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  taggedNameDot: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: 'rgba(255,255,255,0.28)',
+    marginHorizontal: 5,
+  },
+  taggedNameFooter: {
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: 0.15,
+    color: 'rgba(245,242,255,0.96)',
+  },
 
-  // Reactions (BeReal-style)
-  reactionRow: {
+  postEngagementReactionsRow: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 14,
     paddingVertical: 10,
-    borderTopWidth: 0,
-    gap: 10,
+    gap: 8,
   },
-  addReactionBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    borderWidth: 1.5,
+  postReactCompact: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    marginRight: 6,
+    flexShrink: 0,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.05)',
+    backgroundColor: 'rgba(255,255,255,0.02)',
   },
-  reactionBubbles: { flexDirection: 'row', alignItems: 'center', gap: 8, flexGrow: 0 },
+  reactionScrollFlex: {
+    flex: 1,
+    minWidth: 56,
+    maxHeight: 44,
+  },
+  reactionBubbles: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    flexGrow: 0,
+    paddingRight: 4,
+  },
   reactionBubbleWrap: {
-    width: 48,
-    height: 48,
+    width: 40,
+    height: 40,
   },
   reactionBubble: {
-    width: 48,
-    height: 48,
+    width: 40,
+    height: 40,
   },
   reactionBubblePhotoWrap: {
     position: 'absolute',
     top: 0,
     left: 0,
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     overflow: 'hidden',
   },
   reactionBubblePlaceholder: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
   },
-  reactionBubbleImage: { width: 38, height: 38 },
-  reactionBubbleInitials: { fontSize: 12, fontWeight: '600' },
+  reactionBubbleImage: { width: 32, height: 32 },
+  reactionBubbleInitials: { fontSize: 11, fontWeight: '600' },
   reactionEmojiBadge: {
     position: 'absolute',
     bottom: -1,
-    right: -1,
+    right: -2,
     overflow: 'visible',
   },
-  reactionEmojiText: { fontSize: 15, lineHeight: 20 },
+  reactionEmojiText: { fontSize: 12, lineHeight: 16 },
 
   // Reaction detail view modal — Instagram-style
   reactionViewOverlay: {
@@ -2039,17 +2350,6 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.45)',
   },
 
-  reactButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 999,
-    borderWidth: 1,
-  },
-  reactButtonText: { fontSize: 12, fontWeight: '700', letterSpacing: 0.3 },
-
   // Comments
   commentsSection: {
     borderTopWidth: 1,
@@ -2060,24 +2360,66 @@ const styles = StyleSheet.create({
   commentRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    marginBottom: 12,
+    paddingVertical: 14,
+  },
+  commentSheetRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    paddingVertical: 5,
+  },
+  /** Indented thread: vertical line + padding (Instagram-style) */
+  commentRepliesGroup: {
+    marginTop: 0,
+    paddingLeft: 10,
+    borderLeftWidth: 2,
+  },
+  commentViewMoreRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingVertical: 5,
+    paddingLeft: 2,
   },
   commentAvatar: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
     marginRight: 10,
   },
-  commentAvatarImage: { width: 30, height: 30 },
+  commentAvatarImage: { width: 32, height: 32 },
   commentAvatarInitials: { fontSize: 11, fontWeight: '700' },
+  commentAvatarSm: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+    marginRight: 8,
+  },
+  commentAvatarSmImg: { width: 28, height: 28 },
+  commentAvatarSmInit: { fontSize: 9, fontWeight: '700' },
+  commentViewMoreText: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.12,
+  },
   commentBody: { flex: 1, minWidth: 0 },
-  commentAuthor: { fontSize: 13, fontWeight: '800', marginBottom: 2, letterSpacing: 0.1 },
-  commentText: { fontSize: 13, lineHeight: 19, letterSpacing: 0.15 },
-  commentReplyBtn: { marginTop: 4 },
-  commentReplyText: { fontSize: 12, fontWeight: '600' },
+  commentMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    marginBottom: 2,
+  },
+  commentAuthor: { fontSize: 13, fontWeight: '800', letterSpacing: 0.05, flex: 1 },
+  commentTime: { fontSize: 10, fontWeight: '600', letterSpacing: 0.15, flexShrink: 0 },
+  commentText: { fontSize: 13, lineHeight: 18, letterSpacing: 0.08 },
+  commentReplyBtn: { marginTop: 3, paddingVertical: 2 },
+  commentReplyText: { fontSize: 11, fontWeight: '700' },
   commentGif: { width: 120, height: 90, borderRadius: 10, marginTop: 6 },
   commentInlineRow: {
     flexDirection: 'row',
@@ -2098,17 +2440,6 @@ const styles = StyleSheet.create({
   commentInlinePostBtn: { paddingVertical: 10, paddingHorizontal: 6, justifyContent: 'center' },
   commentInlinePostText: { fontSize: 13, fontWeight: '800', letterSpacing: 0.3 },
 
-  // "View comments" link on cards
-  viewCommentsBtn: {
-    paddingHorizontal: 14,
-    paddingTop: 4,
-    paddingBottom: 12,
-  },
-  viewCommentsText: {
-    fontSize: 13,
-    fontWeight: '500',
-  },
-
   // Comment modal — Instagram-style bottom sheet
   commentModalOverlay: {
     flex: 1,
@@ -2116,73 +2447,105 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   commentModalKeyboard: {
+    flex: 1,
+    width: '100%',
     justifyContent: 'flex-end',
   },
   commentModalSheet: {
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    maxHeight: '70%',
-    minHeight: 300,
-    },
+    width: '100%',
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    /** ~half screen — comfortable sheet without covering the feed. */
+    height: '50%',
+    maxHeight: '62%',
+    minHeight: 220,
+    overflow: 'hidden',
+    flexDirection: 'column',
+  },
   commentModalHandle: {
     alignItems: 'center',
-    paddingTop: 10,
-    paddingBottom: 6,
+    paddingTop: 8,
+    paddingBottom: 2,
   },
   commentModalHandleBar: {
-    width: 40,
+    width: 36,
     height: 4,
     borderRadius: 2,
   },
   commentModalTitle: {
     textAlign: 'center',
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: '800',
-    letterSpacing: 0.1,
-    paddingBottom: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: 'rgba(255,255,255,0.08)',
+    letterSpacing: -0.2,
+    paddingBottom: 8,
+    paddingHorizontal: 16,
   },
   commentModalScroll: {
     flex: 1,
   },
   commentModalScrollContent: {
-    paddingHorizontal: 16,
-    paddingTop: 14,
+    paddingHorizontal: 14,
+    paddingTop: 2,
     paddingBottom: 10,
   },
   commentModalEmpty: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 40,
+    paddingVertical: 36,
+    paddingHorizontal: 20,
+  },
+  commentModalEmptyTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    letterSpacing: -0.2,
+    marginBottom: 6,
   },
   commentModalEmptyText: {
     fontSize: 14,
     fontWeight: '500',
+    textAlign: 'center',
+    lineHeight: 20,
   },
   commentModalInputRow: {
+    flexDirection: 'column',
+    alignItems: 'stretch',
+    paddingHorizontal: 14,
+    paddingTop: 8,
+    paddingBottom: Platform.OS === 'ios' ? 22 : 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  commentModalInputInner: {
     flexDirection: 'row',
     alignItems: 'flex-end',
     gap: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    paddingBottom: Platform.OS === 'ios' ? 30 : 10,
-    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  commentReplyingBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 6,
+    marginBottom: 6,
+  },
+  commentReplyingBannerText: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '500',
   },
   commentModalInput: {
     flex: 1,
     borderWidth: 1,
-    borderRadius: 22,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
     fontSize: 14,
     minHeight: 40,
     maxHeight: 80,
   },
   commentModalPostBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
   },

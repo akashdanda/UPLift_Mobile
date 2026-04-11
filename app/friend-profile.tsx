@@ -64,7 +64,6 @@ export default function FriendProfileScreen() {
   const [nudgeLoading, setNudgeLoading] = useState(false)
   const isFriend = friendStatus === 'friends'
 
-  // Calendar calculations
   const today = useMemo(() => new Date(), [])
   const todayDateString = useMemo(() => {
     const y = today.getFullYear()
@@ -72,29 +71,56 @@ export default function FriendProfileScreen() {
     const d = String(today.getDate()).padStart(2, '0')
     return `${y}-${m}-${d}`
   }, [today])
-  const year = today.getFullYear()
-  const month = today.getMonth()
-  const daysInMonth = new Date(year, month + 1, 0).getDate()
-  const firstDayOfWeek = new Date(year, month, 1).getDay()
+
+  const [calendarDate, setCalendarDate] = useState(() => {
+    const d = new Date()
+    return new Date(d.getFullYear(), d.getMonth(), 1)
+  })
+
+  const calendarYear = calendarDate.getFullYear()
+  const calendarMonth = calendarDate.getMonth()
+  const daysInMonth = new Date(calendarYear, calendarMonth + 1, 0).getDate()
+  const firstDayOfWeek = new Date(calendarYear, calendarMonth, 1).getDay()
   const monthLabel = useMemo(
     () =>
       new Intl.DateTimeFormat('en-US', {
         month: 'long',
         year: 'numeric',
-      }).format(today),
-    [today]
+      }).format(calendarDate),
+    [calendarDate]
   )
+
+  const handleChangeMonth = (delta: number) => {
+    setCalendarDate((prev) => {
+      const next = new Date(prev)
+      next.setMonth(next.getMonth() + delta)
+      next.setDate(1)
+      return next
+    })
+  }
+
+  const canGoForwardMonth = useMemo(() => {
+    const n = new Date()
+    return calendarYear < n.getFullYear() || (calendarYear === n.getFullYear() && calendarMonth < n.getMonth())
+  }, [calendarYear, calendarMonth])
 
   const signupDateString = useMemo(() => {
     if (!profile?.created_at) return null
     return profile.created_at.slice(0, 10)
   }, [profile?.created_at])
 
-  // Fetch friend's workouts for the calendar
+  const canGoBackMonth = useMemo(() => {
+    if (!signupDateString) return true
+    const signY = Number(signupDateString.slice(0, 4))
+    const signM = Number(signupDateString.slice(5, 7)) - 1
+    return calendarYear > signY || (calendarYear === signY && calendarMonth > signM)
+  }, [signupDateString, calendarYear, calendarMonth])
+
+  // Fetch friend's workouts for the calendar month being viewed
   const fetchMonthWorkouts = useCallback(async () => {
     if (!id) return
-    const y = year
-    const m = String(month + 1).padStart(2, '0')
+    const y = calendarYear
+    const m = String(calendarMonth + 1).padStart(2, '0')
     const start = `${y}-${m}-01`
     const end = `${y}-${m}-${String(daysInMonth).padStart(2, '0')}`
 
@@ -119,7 +145,7 @@ export default function FriendProfileScreen() {
     }
     setMonthWorkoutDates(dates)
     setMonthRestDates(restDates)
-  }, [id, year, month, daysInMonth])
+  }, [id, calendarYear, calendarMonth, daysInMonth])
 
   // Fetch profile
   useEffect(() => {
@@ -392,9 +418,25 @@ export default function FriendProfileScreen() {
             Activity
           </ThemedText>
           <View style={[styles.calendarCard, { backgroundColor: colors.card, borderColor: (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)') }]}>
-            <ThemedText style={[styles.calendarMonthLabel, { color: colors.text }]}>
-              {monthLabel}
-            </ThemedText>
+            <View style={styles.calendarHeaderRow}>
+              <Pressable
+                onPress={() => canGoBackMonth && handleChangeMonth(-1)}
+                hitSlop={10}
+                disabled={!canGoBackMonth}
+                style={({ pressed }) => [{ opacity: !canGoBackMonth ? 0.25 : pressed ? 0.6 : 1 }]}
+              >
+                <Ionicons name="chevron-back" size={18} color={colors.textMuted} />
+              </Pressable>
+              <ThemedText style={[styles.calendarMonthLabel, { color: colors.text }]}>{monthLabel}</ThemedText>
+              <Pressable
+                onPress={() => canGoForwardMonth && handleChangeMonth(1)}
+                hitSlop={10}
+                disabled={!canGoForwardMonth}
+                style={({ pressed }) => [{ opacity: !canGoForwardMonth ? 0.25 : pressed ? 0.6 : 1 }]}
+              >
+                <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+              </Pressable>
+            </View>
             <View style={styles.calendarWeekRow}>
               {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, idx) => (
                 <ThemedText key={`weekday-${idx}`} style={[styles.calendarWeekday, { color: colors.textMuted }]}>
@@ -408,17 +450,17 @@ export default function FriendProfileScreen() {
               ))}
               {Array.from({ length: daysInMonth }).map((_, idx) => {
                 const day = idx + 1
-                const iso = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-                const isToday = iso === todayDateString
+                const iso = `${calendarYear}-${String(calendarMonth + 1).padStart(2, '0')}-${String(day).padStart(
+                  2,
+                  '0'
+                )}`
                 const isPast = iso < todayDateString
                 const hasWorkout = monthWorkoutDates.has(iso)
                 const isOnOrAfterSignup = !signupDateString || iso >= signupDateString
 
-                // Check if there are any workouts before this day (indicating a streak was started)
                 const hasAnyPreviousWorkout = Array.from(monthWorkoutDates).some((date) => date < iso)
 
                 let statusStyle = styles.calendarDayNeutral
-                let isColored = false
 
                 if (hasWorkout) {
                   if (monthRestDates.has(iso)) {
@@ -426,21 +468,14 @@ export default function FriendProfileScreen() {
                   } else {
                     statusStyle = styles.calendarDayCompleted
                   }
-                  isColored = true
                 } else if (isOnOrAfterSignup && isPast && hasAnyPreviousWorkout) {
                   statusStyle = styles.calendarDayMissed
-                  isColored = true
                 }
 
                 return (
                   <View key={iso} style={styles.calendarDayCell}>
                     <View style={[styles.calendarDayCircle, statusStyle]}>
-                      <ThemedText
-                        style={[
-                          styles.calendarDayText,
-                          isColored ? { color: '#fff' } : { color: colors.text },
-                        ]}
-                      >
+                      <ThemedText style={[styles.calendarDayText, { color: isDark ? '#fff' : colors.text }]}>
                         {day}
                       </ThemedText>
                     </View>
@@ -713,12 +748,18 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     padding: 16,
   },
+  calendarHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
   calendarMonthLabel: {
     fontSize: 14,
     fontWeight: '800',
-    marginBottom: 12,
     textAlign: 'center',
     letterSpacing: 0.3,
+    flex: 1,
   },
   calendarWeekRow: {
     flexDirection: 'row',

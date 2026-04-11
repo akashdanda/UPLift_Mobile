@@ -208,10 +208,10 @@ export default function ProfileScreen() {
   const initials = getInitials(displayName, session)
 
   const stats = [
-    { value: profile?.workouts_count ?? 0, label: 'Workouts', color: colors.tint },
-    { value: profile?.longest_streak ?? 0, label: 'Best streak', color: colors.warm },
-    { value: profile?.streak ?? 0, label: 'Streak', color: colors.warm },
-    { value: profile?.friends_count ?? 0, label: 'Friends', color: colors.tint },
+    { value: profile?.workouts_count ?? 0, label: 'Workouts' },
+    { value: profile?.longest_streak ?? 0, label: 'Best streak' },
+    { value: profile?.streak ?? 0, label: 'Streak' },
+    { value: profile?.friends_count ?? 0, label: 'Friends' },
   ]
 
   // Zoom modal state (avatar pinch-to-zoom)
@@ -446,7 +446,6 @@ export default function ProfileScreen() {
                 const hasAnyPreviousWorkout = Array.from(monthWorkoutDates).some((date) => date < iso)
 
                 let statusStyle = styles.calendarDayNeutral
-                let isColored = false
 
                 if (hasWorkout) {
                   if (monthRestDates.has(iso)) {
@@ -454,23 +453,15 @@ export default function ProfileScreen() {
                   } else {
                     statusStyle = styles.calendarDayCompleted
                   }
-                  isColored = true
                 } else if (isOnOrAfterSignup && isPast && hasAnyPreviousWorkout) {
                   // Red: missed a previous day (had a streak going but didn't post)
                   statusStyle = styles.calendarDayMissed
-                  isColored = true
                 }
-                // White: haven't posted yet (no streak, no post) - default neutral style
 
                 return (
                   <View key={iso} style={styles.calendarDayCell}>
                     <View style={[styles.calendarDayCircle, statusStyle]}>
-                      <ThemedText
-                        style={[
-                          styles.calendarDayText,
-                          isColored ? { color: '#fff' } : { color: colors.text },
-                        ]}
-                      >
+                      <ThemedText style={[styles.calendarDayText, { color: isDark ? '#fff' : colors.text }]}>
                         {day}
                       </ThemedText>
                     </View>
@@ -504,7 +495,9 @@ export default function ProfileScreen() {
         <View style={styles.statsRow}>
           {stats.map((s) => (
             <View key={s.label} style={[styles.statBox, { backgroundColor: colors.card }]}>
-              <ThemedText style={[styles.statValue, { color: s.color }]}>{s.value}</ThemedText>
+              <ThemedText style={[styles.statValue, { color: isDark ? '#fff' : colors.text }]}>
+                {s.value}
+              </ThemedText>
               <ThemedText
                 style={[styles.statLabel, { color: colors.textMuted }]}
                 numberOfLines={1}

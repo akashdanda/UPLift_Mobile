@@ -19,8 +19,6 @@ import { BrandViolet, Colors, Fonts } from '@/constants/theme'
 import { useAuthContext } from '@/hooks/use-auth-context'
 import { useColorScheme } from '@/hooks/use-color-scheme'
 import { getBuddySuggestions, type BuddySuggestion } from '@/lib/buddy-matching'
-import { getUserDuels } from '@/lib/duels'
-import type { DuelWithProfiles } from '@/types/duel'
 import {
   getNormalizedContactPhoneNumbers,
   matchProfilesByPhoneNumbers,
@@ -73,8 +71,6 @@ export function FriendsPanel({ onFriendsChanged }: FriendsPanelProps) {
   const [actingId, setActingId] = useState<string | null>(null)
   const [buddySuggestions, setBuddySuggestions] = useState<BuddySuggestion[]>([])
   const [mutualSuggestions, setMutualSuggestions] = useState<MutualFriendSuggestion[]>([])
-  const [activeDuels, setActiveDuels] = useState<DuelWithProfiles[]>([])
-  const [activeTab, setActiveTab] = useState<'friends' | 'challenges'>('friends')
   const [contactMatches, setContactMatches] = useState<ProfilePublic[]>([])
   const [contactSyncing, setContactSyncing] = useState(false)
   const [showSearch, setShowSearch] = useState(false)
@@ -125,7 +121,6 @@ export function FriendsPanel({ onFriendsChanged }: FriendsPanelProps) {
         }
       })
       .catch(() => {})
-    getUserDuels(userId, ['active', 'pending']).then(setActiveDuels).catch(() => {})
   }, [userId, onFriendsChanged])
 
   useFocusEffect(
@@ -364,37 +359,10 @@ export function FriendsPanel({ onFriendsChanged }: FriendsPanelProps) {
             ))}
           </View>
         )}
-
-        <View style={[styles.tabs, { backgroundColor: isDark ? colors.cardElevated : colors.card, borderColor: colors.tabBarBorder }]}>
-          {(['friends', 'challenges'] as const).map((tab) => (
-            <Pressable
-              key={tab}
-              style={[
-                styles.tab,
-                activeTab === tab && { backgroundColor: colors.tint },
-              ]}
-              onPress={() => setActiveTab(tab)}
-            >
-              <ThemedText
-                type="defaultSemiBold"
-                style={[styles.tabLabel, { color: activeTab === tab ? '#fff' : colors.textMuted }]}
-              >
-                {tab === 'friends' ? 'Friends' : 'Challenges'}
-              </ThemedText>
-              {tab === 'friends' && pending.length > 0 && (
-                <View style={[styles.badge, { backgroundColor: activeTab === tab ? '#fff' : '#EF4444' }]}>
-                  <ThemedText style={[styles.badgeText, activeTab === tab && { color: colors.tint }]}>{pending.length}</ThemedText>
-                </View>
-              )}
-            </Pressable>
-          ))}
-        </View>
       </View>
 
       <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-        {activeTab === 'friends' ? (
-          <>
-            {/* ── Pending Requests Banner ── */}
+        {/* ── Pending Requests Banner ── */}
             {pending.length > 0 && (
               <View style={[styles.pendingSection, { backgroundColor: colors.card }]}>
                 <View style={styles.pendingSectionHeader}>
@@ -565,68 +533,6 @@ export function FriendsPanel({ onFriendsChanged }: FriendsPanelProps) {
                 ))}
               </View>
             )}
-          </>
-        ) : (
-          <>
-            {/* ── Challenges Tab ── */}
-            <Pressable
-              style={({ pressed }) => [styles.challengeBtn, { backgroundColor: colors.tint, opacity: pressed ? 0.85 : 1 }]}
-              onPress={() => router.push('/create-duel')}
-            >
-              <Ionicons name="flash" size={18} color="#fff" />
-              <ThemedText style={styles.challengeBtnText}>Start a 1v1 Challenge</ThemedText>
-            </Pressable>
-
-            {activeDuels.length > 0 ? (
-              <View style={[styles.friendsList, { backgroundColor: colors.card }]}>
-                {activeDuels.map((duel, i) => {
-                  const iAmChallenger = duel.challenger_id === userId
-                  const opName = iAmChallenger ? duel.opponent_display_name : duel.challenger_display_name
-                  const opAvatar = iAmChallenger ? duel.opponent_avatar_url : duel.challenger_avatar_url
-                  const myScore = iAmChallenger ? duel.challenger_score : duel.opponent_score
-                  const theirScore = iAmChallenger ? duel.opponent_score : duel.challenger_score
-                  return (
-                    <Pressable
-                      key={duel.id}
-                      style={[
-                        styles.friendRow,
-                        i < activeDuels.length - 1 && { borderBottomColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)', borderBottomWidth: 1 },
-                      ]}
-                      onPress={() => router.push(`/duel-detail?id=${duel.id}`)}
-                    >
-                      <View style={[styles.avatarSm, { backgroundColor: colors.tint + '25' }]}>
-                        {opAvatar ? (
-                          <Image source={{ uri: opAvatar }} style={styles.avatarSmImg} />
-                        ) : (
-                          <ThemedText style={[styles.avatarInit, { color: colors.tint }]}>{getInitials(opName)}</ThemedText>
-                        )}
-                      </View>
-                      <View style={styles.rowInfo}>
-                        <ThemedText style={[styles.rowName, { color: colors.text }]} numberOfLines={1}>vs {opName || 'Opponent'}</ThemedText>
-                        <ThemedText style={[styles.rowMeta, { color: colors.textMuted }]}>
-                          {duel.status === 'pending'
-                            ? duel.opponent_id === userId ? 'Waiting for your response' : 'Waiting for response…'
-                            : `${myScore} - ${theirScore} • ${duel.type === 'workout_count' ? 'Workouts' : 'Streak'}`}
-                        </ThemedText>
-                      </View>
-                      <View style={[styles.duelChip, { backgroundColor: (duel.status === 'pending' ? '#EAB308' : colors.tint) + '20' }]}>
-                        <ThemedText style={[styles.duelChipText, { color: duel.status === 'pending' ? '#EAB308' : colors.tint }]}>
-                          {duel.status === 'pending' ? 'Pending' : 'Active'}
-                        </ThemedText>
-                      </View>
-                    </Pressable>
-                  )
-                })}
-              </View>
-            ) : (
-              <View style={[styles.emptyState, { backgroundColor: colors.card }]}>
-                <Ionicons name="flash-outline" size={40} color={colors.textMuted} style={{ marginBottom: 12 }} />
-                <ThemedText style={[styles.emptyTitle, { color: colors.text }]}>No active challenges</ThemedText>
-                <ThemedText style={[styles.emptySubtitle, { color: colors.textMuted }]}>Start one above!</ThemedText>
-              </View>
-            )}
-          </>
-        )}
       </ScrollView>
     </View>
   )
@@ -677,33 +583,6 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
-
-  tabs: {
-    flexDirection: 'row',
-    padding: 3,
-    borderRadius: 14,
-    borderWidth: 1,
-    marginBottom: 4,
-  },
-  tab: {
-    flex: 1,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: 11,
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 6,
-  },
-  tabLabel: { fontSize: 12, fontWeight: '700', letterSpacing: 0.3, fontFamily: Fonts?.rounded },
-  badge: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  badgeText: { color: '#fff', fontSize: 10, fontWeight: '800' },
 
   scroll: { flex: 1 },
   scrollContent: { padding: 20, paddingBottom: 40 },
@@ -833,22 +712,4 @@ const styles = StyleSheet.create({
   },
   emptyTitle: { fontSize: 16, fontWeight: '700', marginBottom: 4, fontFamily: Fonts?.rounded },
   emptySubtitle: { fontSize: 13, textAlign: 'center', lineHeight: 20 },
-
-  challengeBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 14,
-    borderRadius: 14,
-    marginBottom: 16,
-    shadowColor: BrandViolet.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 8,
-  },
-  challengeBtnText: { color: '#fff', fontSize: 14, fontWeight: '800', letterSpacing: 0.5, fontFamily: Fonts?.rounded },
-  duelChip: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
-  duelChipText: { fontSize: 12, fontWeight: '600' },
 })
