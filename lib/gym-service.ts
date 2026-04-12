@@ -14,6 +14,19 @@ export type Gym = {
 
 const RADIUS_METERS = 50_000
 
+/** Old client-only synthetic gym; must never appear in the map or check-in list. */
+const WITHDRAWN_GYM_OSM_IDS = new Set(['UPLIFT_DEV_TEST'])
+
+function excludeWithdrawnGyms(gyms: Gym[]): Gym[] {
+  return gyms.filter((g) => !g.osm_id || !WITHDRAWN_GYM_OSM_IDS.has(g.osm_id))
+}
+
+/** Map snapshot / pin flows: hide legacy synthetic gyms. */
+export function isWithdrawnOsmGymId(osmId: string | null | undefined): boolean {
+  if (!osmId) return false
+  return WITHDRAWN_GYM_OSM_IDS.has(String(osmId).trim())
+}
+
 /**
  * Manual check-in from map pin: max distance from gym centroid (OSM / Supabase).
  * ~250 ft balances big-box & campus gyms (you can move around the floor) with indoor GPS drift,
@@ -207,6 +220,7 @@ export function resolveGymIdFromList(gyms: Gym[], osmType: string, osmId: string
 /** Resolve Supabase gym UUID from OSM feature (markers use Overpass type + id). */
 export async function findGymIdByOsm(osmType: string, osmId: string): Promise<string | null> {
   const idOnly = String(osmId).trim()
+  if (WITHDRAWN_GYM_OSM_IDS.has(idOnly)) return null
   const composite = `${String(osmType || 'node').toLowerCase()}-${idOnly}`
   const { data: byComposite } = await supabase.from('gyms').select('id').eq('osm_id', composite).maybeSingle()
   if (byComposite?.id) return byComposite.id as string
@@ -226,6 +240,7 @@ export async function ensureGymFromOsmInSupabase(params: {
 }): Promise<Gym | null> {
   const idOnly = String(params.osmId).trim()
   if (!idOnly) return null
+  if (WITHDRAWN_GYM_OSM_IDS.has(idOnly)) return null
   const tags = params.tags ?? undefined
   const row = {
     name: displayNameFromOsmTags(tags),
@@ -271,15 +286,15 @@ export async function fetchGymById(id: string): Promise<Gym | null> {
 }
 
 export async function getNearbyGyms(lat: number, lng: number): Promise<Gym[]> {
-  let cached = await fetchFromSupabase(lat, lng)
+  let cached = excludeWithdrawnGyms(await fetchFromSupabase(lat, lng))
 
   if (cached.length < 80) {
     try {
       const fresh = await fetchGymsFromOverpass(lat, lng, RADIUS_METERS)
       await upsertGymsToCache(fresh)
-      const refreshed = await fetchFromSupabase(lat, lng)
+      const refreshed = excludeWithdrawnGyms(await fetchFromSupabase(lat, lng))
       if (refreshed.length > 0) return refreshed
-      return fresh
+      return excludeWithdrawnGyms(fresh)
     } catch {
       return cached
     }

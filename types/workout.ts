@@ -14,6 +14,8 @@ export type Workout = {
   user_id: string
   /** Gym where the user was checked in when posting (optional on older rows). */
   gym_id?: string | null
+  /** Name of the gym at post time (fallback when gyms row is missing or join fails). */
+  gym_display_name?: string | null
   workout_date: string // YYYY-MM-DD
   image_url: string
   /** Optional second photo (BeReal-style dual camera); tap to swap which is big. */
