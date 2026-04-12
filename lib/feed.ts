@@ -80,33 +80,59 @@ async function enrichWorkouts(workouts: Workout[]): Promise<FeedItem[]> {
   }))
 }
 
-/** Fetch friends' workouts (most recent first) */
-export async function getFriendsWorkouts(userId: string, limit = 30): Promise<FeedItem[]> {
+/** YYYY-MM-DD for `workout_date` filters, using the device local calendar. */
+function minWorkoutDateForLastNDays(days: number): string {
+  const d = new Date()
+  d.setHours(12, 0, 0, 0)
+  d.setDate(d.getDate() - days)
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+/**
+ * Friends feed + your own posts for the last `daysBack` calendar days, newest first
+ * (`workout_date` then `created_at`).
+ */
+export async function getFriendsWorkouts(
+  userId: string,
+  daysBack = 30,
+  maxRows = 500,
+): Promise<FeedItem[]> {
   const friends = await getFriends(userId)
   const friendIds = friends.map((f) => f.id)
-  if (friendIds.length === 0) return []
+  const authorIds = [...new Set([...friendIds, userId])]
+  const since = minWorkoutDateForLastNDays(daysBack)
 
   const { data: workouts } = await supabase
     .from('workouts')
     .select('*')
-    .in('user_id', friendIds)
+    .in('user_id', authorIds)
+    .gte('workout_date', since)
     .order('workout_date', { ascending: false })
     .order('created_at', { ascending: false })
-    .limit(limit)
+    .limit(maxRows)
 
   return enrichWorkouts((workouts ?? []) as Workout[])
 }
 
-/** Fetch public workouts from all users (global feed) */
-export async function getGlobalWorkouts(currentUserId: string, limit = 30): Promise<FeedItem[]> {
+/** Public workouts from all users (including you) for the last `daysBack` days, newest first. */
+export async function getGlobalWorkouts(
+  _currentUserId: string,
+  daysBack = 30,
+  maxRows = 500,
+): Promise<FeedItem[]> {
+  const since = minWorkoutDateForLastNDays(daysBack)
+
   const { data: workouts } = await supabase
     .from('workouts')
     .select('*')
     .eq('visibility', 'public')
-    .neq('user_id', currentUserId)
+    .gte('workout_date', since)
     .order('workout_date', { ascending: false })
     .order('created_at', { ascending: false })
-    .limit(limit)
+    .limit(maxRows)
 
   return enrichWorkouts((workouts ?? []) as Workout[])
 }

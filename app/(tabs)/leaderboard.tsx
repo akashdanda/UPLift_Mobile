@@ -127,10 +127,16 @@ export default function LeaderboardScreen() {
   const myPoints = myRow?.points ?? 0
 
   const showPointsInfo = useCallback(() => {
+    const p = LEADERBOARD_POINTS
     Alert.alert(
       'How Points Work',
-      `All Points are based on this month's activity only.\n\n💪 Each workout: +${LEADERBOARD_POINTS.perWorkout} Points\n🏆 Competition win: +${LEADERBOARD_POINTS.perCompetitionWin} Points\n👥 Friend added: +${LEADERBOARD_POINTS.perFriend} Points`,
-      [{ text: 'OK' }]
+      [
+        'Scores use this calendar month only (UTC) and reset when the month changes.',
+        '',
+        `💪 Each workout logged: +${p.perWorkout} pts`,
+        `👥 Each new friend (accepted this month): +${p.perFriend} pts`,
+      ].join('\n'),
+      [{ text: 'OK' }],
     )
   }, [])
 

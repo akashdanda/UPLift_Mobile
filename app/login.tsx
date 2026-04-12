@@ -82,7 +82,6 @@ export default function LoginScreen() {
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.brand}>
-            <ThemedText style={[styles.brandName, { color: colors.text }]}>UPLIFT</ThemedText>
             <ThemedText style={[styles.logo, { color: colors.text }]}>Sign in</ThemedText>
           </View>
 
@@ -176,12 +175,6 @@ const styles = StyleSheet.create({
   brand: {
     marginBottom: 28,
     paddingTop: 4,
-  },
-  brandName: {
-    fontSize: 20,
-    fontWeight: '800',
-    letterSpacing: 4,
-    marginBottom: 8,
   },
   logo: {
     fontSize: 32,

@@ -56,6 +56,8 @@ type Props = {
   pin: MapGymSheetPin | null
   presence: PresenceRow[]
   loading: boolean
+  /** Only true when the user is checked in at this same gym (others’ presence is hidden otherwise). */
+  canViewPresenceHere?: boolean
   /** Straight-line distance from user GPS to pin (m); shown as a hint above Check in. */
   distanceToUserM?: number | null
   /** Must match map manual check-in gate (m); default ~250 ft. */
@@ -74,6 +76,7 @@ export function MapGymBottomSheet({
   pin,
   presence,
   loading,
+  canViewPresenceHere = false,
   distanceToUserM,
   manualCheckInMaxM = MANUAL_MAP_CHECKIN_RADIUS_M,
   onClose,
@@ -133,6 +136,7 @@ export function MapGymBottomSheet({
     distanceToUserM <= manualCheckInMaxM
   const showDistance =
     distanceToUserM != null && Number.isFinite(distanceToUserM) && distanceToUserM >= 0
+  const checkInDisabled = loading || (showDistance && !distOk)
 
   return (
     <Modal visible={visible} transparent animationType="none" onRequestClose={onClose} statusBarTranslucent>
@@ -223,7 +227,21 @@ export function MapGymBottomSheet({
 
                 <View style={styles.cardDivider} />
 
-                {hereCount > 0 ? (
+                {loading ? (
+                  <View style={styles.presenceBlock}>
+                    <Text style={styles.presenceKicker}>Here now</Text>
+                    <Text style={styles.quietHint} numberOfLines={2}>
+                      Loading…
+                    </Text>
+                  </View>
+                ) : !canViewPresenceHere ? (
+                  <View style={styles.presenceBlock}>
+                    <Text style={styles.presenceKicker}>Here now</Text>
+                    <Text style={styles.quietHint} numberOfLines={3} ellipsizeMode="tail">
+                      Check in at this gym to see who else is checked in.
+                    </Text>
+                  </View>
+                ) : hereCount > 0 ? (
                   <View style={styles.presenceBlock}>
                     <Text style={styles.presenceKicker}>Here now</Text>
                     <View style={styles.presenceRow}>
@@ -266,9 +284,16 @@ export function MapGymBottomSheet({
               </View>
 
               <Pressable
-                style={[styles.cta, loading && { opacity: 0.6 }]}
-                disabled={loading}
+                style={[styles.cta, checkInDisabled && styles.ctaDisabled]}
+                disabled={checkInDisabled}
+                accessibilityState={{ disabled: checkInDisabled }}
+                accessibilityHint={
+                  showDistance && !distOk
+                    ? `Move within about ${MANUAL_MAP_CHECKIN_RADIUS_FT} feet to enable check-in`
+                    : undefined
+                }
                 onPress={() => {
+                  if (checkInDisabled) return
                   void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium)
                   onCheckIn()
                 }}
@@ -466,6 +491,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.14)',
+  },
+  ctaDisabled: {
+    opacity: 0.38,
   },
   ctaText: { color: '#fff', fontSize: 16, fontWeight: '800', letterSpacing: 0.15 },
 })

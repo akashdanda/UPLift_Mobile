@@ -2,11 +2,14 @@ import { supabase } from '@/lib/supabase'
 
 export type LeaderboardScope = 'global' | 'friends'
 
-/** Point system (monthly): each workout +5, competition win +20, friend added this month +2 */
+/**
+ * Monthly leaderboard only (calendar month UTC, resets each month).
+ * Must stay in sync with `get_monthly_leaderboard` in Supabase migrations.
+ * Only workouts and new friends this month earn points (no groups or competitions).
+ */
 const POINTS = {
-  perFriend: 2,
-  perWorkout: 5,
-  perCompetitionWin: 20,
+  perWorkout: 20,
+  perFriend: 5,
 } as const
 
 export type LeaderboardRow = {
@@ -15,8 +18,10 @@ export type LeaderboardRow = {
   avatar_url: string | null
   workouts_count: number
   streak: number
+  /** Always 0 from RPC; kept for API compatibility. */
   competition_wins: number
   friends_count: number
+  /** Always 0 from RPC; kept for API compatibility. */
   groups_count: number
   points: number
   rank: number

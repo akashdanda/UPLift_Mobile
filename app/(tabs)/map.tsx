@@ -5,13 +5,12 @@ import * as Location from 'expo-location'
 import { useFocusEffect, useIsFocused } from '@react-navigation/native'
 import { router } from 'expo-router'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Linking, Modal, Platform, Pressable, StyleSheet, Text, View } from 'react-native'
+import { Alert, Linking, Modal, Platform, Pressable, StyleSheet, Text, View } from 'react-native'
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated'
 import { WebView } from 'react-native-webview'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import { MapGymBottomSheet, type MapGymSheetPin } from '@/components/map-gym-bottom-sheet'
-import { MapGymNoticeOverlay, type MapGymNoticeVariant } from '@/components/map-gym-notice-overlay'
 import { ThemedText } from '@/components/themed-text'
 import { BrandViolet, Colors } from '@/constants/theme'
 import { useAuthContext } from '@/hooks/use-auth-context'
@@ -28,7 +27,7 @@ import {
   resolveGymIdFromList,
   type Gym,
 } from '@/lib/gym-service'
-import { getGhostPresenceNearUser, getPresenceCountsForGymIds } from '@/lib/presence-map-helpers'
+import { getPresenceCountsForGymIds } from '@/lib/presence-map-helpers'
 import { buildUpliftMapLeafletHTML } from '@/lib/uplift-map-leaflet-html'
 import {
   checkIn,
@@ -40,7 +39,6 @@ import {
 
 /** Base radius (m). GPS + building centroid error often exceeds 15m; we add accuracy slack in the poll. */
 const ACTIVE_RADIUS_M = 72
-const GHOST_RADIUS_M = 2000
 const PROXIMITY_ARENA_DELAY_MS = 1200
 
 /** Stable boot center embedded in WebView HTML so `source` never changes when GPS updates (no full reload). */
@@ -126,12 +124,9 @@ export default function MapScreen() {
   const [gymSheetPin, setGymSheetPin] = useState<MapGymSheetPin | null>(null)
   const [gymSheetPresence, setGymSheetPresence] = useState<PresenceRow[]>([])
   const [gymSheetLoading, setGymSheetLoading] = useState(false)
+  /** Supabase gym id for the open sheet pin (after merge); used to gate “who’s here”. */
+  const [gymSheetMergedGymId, setGymSheetMergedGymId] = useState<string | null>(null)
   const [gymSheetDistanceM, setGymSheetDistanceM] = useState<number | null>(null)
-  const [gymSheetNotice, setGymSheetNotice] = useState<{
-    title: string
-    message: string
-    variant?: MapGymNoticeVariant
-  } | null>(null)
 
   const [proximityToast, setProximityToast] = useState<string | null>(null)
   const toastOpacity = useSharedValue(0)
@@ -584,6 +579,7 @@ export default function MapScreen() {
   useEffect(() => {
     if (!gymSheetVisible || !gymSheetPin) {
       setGymSheetPresence([])
+      setGymSheetMergedGymId(null)
       setGymSheetLoading(false)
       return
     }
@@ -598,15 +594,23 @@ export default function MapScreen() {
         tagsJson: gymSheetPin.tagsJson,
       })
       if (!alive) return
-      if (gym) {
-        try {
-          const rows = await getActivePresence(gym.id)
-          if (!alive) return
-          setGymSheetPresence(rows)
-        } catch {
-          setGymSheetPresence([])
-        }
-      } else {
+      if (!gym) {
+        setGymSheetMergedGymId(null)
+        setGymSheetPresence([])
+        setGymSheetLoading(false)
+        return
+      }
+      setGymSheetMergedGymId(gym.id)
+      if (mapPresenceGymId !== gym.id) {
+        setGymSheetPresence([])
+        setGymSheetLoading(false)
+        return
+      }
+      try {
+        const rows = await getActivePresence(gym.id)
+        if (!alive) return
+        setGymSheetPresence(rows)
+      } catch {
         setGymSheetPresence([])
       }
       setGymSheetLoading(false)
@@ -614,7 +618,7 @@ export default function MapScreen() {
     return () => {
       alive = false
     }
-  }, [gymSheetVisible, gymSheetPin, mergeGymFromPinIfNeeded])
+  }, [gymSheetVisible, gymSheetPin, mergeGymFromPinIfNeeded, mapPresenceGymId])
 
   useEffect(() => {
     if (!gymSheetVisible || !gymSheetPin) {
@@ -631,11 +635,23 @@ export default function MapScreen() {
 
   const completeSheetCheckIn = useCallback(async () => {
     if (!session || !profile || !gymSheetPin) {
-      setGymSheetNotice({
-        title: 'Sign in required',
-        message: 'Log in to check in at a gym.',
-        variant: 'default',
-      })
+      Alert.alert('Sign in required', 'Log in to check in at a gym.')
+      return
+    }
+    const c = coordsRef.current
+    if (!c) {
+      Alert.alert(
+        'Location needed',
+        'We could not read your position. Enable location and try again.',
+      )
+      return
+    }
+    const dPin = distanceMeters(c.lat, c.lng, gymSheetPin.lat, gymSheetPin.lng)
+    if (dPin > MANUAL_MAP_CHECKIN_RADIUS_M) {
+      Alert.alert(
+        'Too far away',
+        `Move within about ${MANUAL_MAP_CHECKIN_RADIUS_FT} feet of this gym to check in. You are about ${Math.round(dPin * 3.28084)} feet away.`,
+      )
       return
     }
     const gym = await mergeGymFromPinIfNeeded({
@@ -646,29 +662,18 @@ export default function MapScreen() {
       tagsJson: gymSheetPin.tagsJson,
     })
     if (!gym) {
-      setGymSheetNotice({
-        title: 'Could not check in',
-        message: 'We could not save this gym to your account. Check your connection and try again.',
-        variant: 'error',
-      })
-      return
-    }
-    const c = coordsRef.current
-    if (!c) {
-      setGymSheetNotice({
-        title: 'Location needed',
-        message: 'We could not read your position. Enable location and try again.',
-        variant: 'warning',
-      })
+      Alert.alert(
+        'Could not check in',
+        'We could not save this gym to your account. Check your connection and try again.',
+      )
       return
     }
     const d = distanceMeters(c.lat, c.lng, gym.lat, gym.lng)
     if (d > MANUAL_MAP_CHECKIN_RADIUS_M) {
-      setGymSheetNotice({
-        title: 'Too far away',
-        message: `Move within about ${MANUAL_MAP_CHECKIN_RADIUS_FT} feet of this gym to check in. You are about ${Math.round(d * 3.28084)} feet away.`,
-        variant: 'warning',
-      })
+      Alert.alert(
+        'Too far away',
+        `Move within about ${MANUAL_MAP_CHECKIN_RADIUS_FT} feet of this gym to check in. You are about ${Math.round(d * 3.28084)} feet away.`,
+      )
       return
     }
     setGymSheetVisible(false)
@@ -681,18 +686,21 @@ export default function MapScreen() {
     )
   }, [session, profile, gymSheetPin, mergeGymFromPinIfNeeded, openGymArena])
 
+  /** Presence heat / cluster counts only for the gym you are checked into (privacy). */
   useEffect(() => {
     if (!gyms.length) return
     let cancelled = false
     ;(async () => {
       try {
-        const counts = await getPresenceCountsForGymIds(gyms.map((g) => g.id))
-        if (cancelled) return
         const mapCounts: Record<string, number> = {}
-        for (const g of gyms) {
-          const n = counts[g.id] ?? 0
-          const k = webOsmKeyFromGym(g)
-          if (k) mapCounts[k] = Math.max(mapCounts[k] ?? 0, n)
+        if (mapPresenceGymId) {
+          const counts = await getPresenceCountsForGymIds([mapPresenceGymId])
+          if (cancelled) return
+          const g = gyms.find((x) => x.id === mapPresenceGymId)
+          if (g) {
+            const k = webOsmKeyFromGym(g)
+            if (k) mapCounts[k] = counts[mapPresenceGymId] ?? 0
+          }
         }
         const enc = encodeURIComponent(JSON.stringify(mapCounts))
         webRef.current?.injectJavaScript(
@@ -705,49 +713,15 @@ export default function MapScreen() {
     return () => {
       cancelled = true
     }
-  }, [gyms])
+  }, [gyms, mapPresenceGymId])
 
-  const ghostSeqRef = useRef(0)
+  /** Never show other people’s avatars on the map until you are checked in (peers use a separate layer). */
   useEffect(() => {
-    if (!perm || activeGym || !session?.user?.id || gyms.length === 0) {
-      const emptyEnc = encodeURIComponent(JSON.stringify([]))
-      webRef.current?.injectJavaScript(
-        `try{window.__setGhostPresence(${JSON.stringify(emptyEnc)});}catch(e){};true;`,
-      )
-      return
-    }
-    const c = coordsRef.current
-    if (!c) return
-    const seq = ++ghostSeqRef.current
-    const t = setTimeout(() => {
-      void (async () => {
-        try {
-          const ghosts = await getGhostPresenceNearUser(
-            c.lat,
-            c.lng,
-            gyms,
-            GHOST_RADIUS_M,
-            session.user.id,
-          )
-          if (seq !== ghostSeqRef.current) return
-          const payload = ghosts.map((g) => ({
-            lat: g.lat,
-            lng: g.lng,
-            avatars: g.avatarUrls,
-          }))
-          const enc = encodeURIComponent(JSON.stringify(payload))
-          webRef.current?.injectJavaScript(
-            `try{window.__setGhostPresence(${JSON.stringify(enc)});}catch(e){};true;`,
-          )
-        } catch {
-          /* ignore */
-        }
-      })()
-    }, 500)
-    return () => {
-      clearTimeout(t)
-    }
-  }, [perm, activeGym, session?.user?.id, gyms])
+    const emptyEnc = encodeURIComponent(JSON.stringify([]))
+    webRef.current?.injectJavaScript(
+      `try{window.__setGhostPresence(${JSON.stringify(emptyEnc)});}catch(e){};true;`,
+    )
+  }, [perm, session?.user?.id])
 
   useEffect(() => {
     toastOpacity.value = withTiming(proximityToast ? 1 : 0, {
@@ -990,23 +964,21 @@ export default function MapScreen() {
         pin={gymSheetPin}
         presence={gymSheetPresence}
         loading={gymSheetLoading}
+        canViewPresenceHere={
+          !!gymSheetMergedGymId &&
+          !!mapPresenceGymId &&
+          gymSheetMergedGymId === mapPresenceGymId
+        }
         distanceToUserM={gymSheetDistanceM}
         manualCheckInMaxM={MANUAL_MAP_CHECKIN_RADIUS_M}
         onClose={() => {
           setGymSheetVisible(false)
           setGymSheetPin(null)
+          setGymSheetMergedGymId(null)
         }}
         onCheckIn={() => {
           void completeSheetCheckIn()
         }}
-      />
-
-      <MapGymNoticeOverlay
-        visible={gymSheetNotice != null}
-        title={gymSheetNotice?.title ?? ''}
-        message={gymSheetNotice?.message ?? ''}
-        variant={gymSheetNotice?.variant ?? 'default'}
-        onDismiss={() => setGymSheetNotice(null)}
       />
 
       {/* Who's here — zoomed gym map + people (checked in) */}

@@ -4,6 +4,7 @@ import { useRef, useState } from 'react'
 import {
   Dimensions,
   FlatList,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -17,6 +18,11 @@ import { BrandViolet } from '@/constants/theme'
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window')
 const PHONE_W = SCREEN_W * 0.62
 const PHONE_H = PHONE_W * 2.16
+/** Bezel padding inside the outer mockup; inner screen is a fixed pixel box so layout never rounds unevenly. */
+const MOCK_BEZEL = 4
+const INNER_W = PHONE_W - MOCK_BEZEL * 2
+const INNER_H = PHONE_H - MOCK_BEZEL * 2
+const INNER_RADIUS = 40
 
 // Actual app screenshots (order: feed → leaderboard → map → profile)
 const screenshotFeed = require('../assets/images/onboarding-feed.png')
@@ -59,7 +65,8 @@ export default function OnboardingScreen() {
             <Image
               source={item.screenshot}
               style={styles.screenshot}
-              contentFit="contain"
+              contentFit="cover"
+              contentPosition="center"
             />
           </View>
         </View>
@@ -161,17 +168,25 @@ const styles = StyleSheet.create({
     height: PHONE_H,
     borderRadius: 44,
     backgroundColor: '#1a1a1a',
-    padding: 4,
-  },
-  phoneInner: {
-    flex: 1,
-    borderRadius: 40,
-    backgroundColor: '#000',
+    padding: MOCK_BEZEL,
     overflow: 'hidden',
   },
+  phoneInner: {
+    width: INNER_W,
+    height: INNER_H,
+    borderRadius: INNER_RADIUS,
+    backgroundColor: '#000',
+    overflow: 'hidden',
+    position: 'relative',
+    ...(Platform.OS === 'ios' && { borderCurve: 'continuous' as const }),
+  },
   screenshot: {
-    flex: 1,
-    width: '100%',
+    ...StyleSheet.absoluteFillObject,
+    // Slight overscan removes occasional 1px gaps between bitmap, antialiasing, and the rounded clip.
+    top: -1,
+    left: -1,
+    right: -1,
+    bottom: -1,
   },
   bottomSection: {
     position: 'absolute',
