@@ -1,6 +1,6 @@
 import Ionicons from '@expo/vector-icons/Ionicons'
 import { Image } from 'expo-image'
-import { type Href, useLocalSearchParams, useRouter } from 'expo-router'
+import { useLocalSearchParams, useRouter } from 'expo-router'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   ActivityIndicator,
@@ -351,16 +351,6 @@ export default function FriendProfileScreen() {
                   }}
                 >
                   <ThemedText style={styles.challengeButtonText}>Accept Request</ThemedText>
-                </Pressable>
-              )}
-              {isFriend && (
-                <Pressable
-                  style={[styles.challengeButton, { backgroundColor: colors.tint }]}
-                  onPress={() => router.push(`/create-duel?friendId=${id}` as Href)}
-                >
-                  <ThemedText style={styles.challengeButtonText} numberOfLines={1}>
-                    Challenge
-                  </ThemedText>
                 </Pressable>
               )}
               {isFriend && (

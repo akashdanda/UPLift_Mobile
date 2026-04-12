@@ -43,6 +43,7 @@ import {
   type DailyReminderInfo
 } from '@/lib/daily-reminder';
 import { formatGymLabel, getFriendsWorkouts, getGlobalWorkouts, type FeedItem } from '@/lib/feed';
+import { getRememberedGymLabel, rememberGymLabel } from '@/lib/gym-label-cache';
 import { getFriends } from '@/lib/friends';
 import { computeXP, getLevelFromXP } from '@/lib/levels';
 import { getUnreadNotificationCount, markNotificationsAsRead } from '@/lib/notifications';
@@ -461,36 +462,41 @@ export default function HomeScreen() {
   todayWorkoutIdRef.current = todayWorkout?.id ?? null;
 
   useEffect(() => {
-    const snap = todayWorkout?.gym_display_name?.trim();
     const gymId = todayWorkout?.gym_id;
-    if (!gymId && !snap) {
+    if (!gymId) {
       setTodayWorkoutGymLabel(null);
       return;
     }
-    if (!gymId && snap) {
-      setTodayWorkoutGymLabel(snap);
-      return;
+    const cached = getRememberedGymLabel(gymId);
+    if (cached) {
+      setTodayWorkoutGymLabel(cached);
+    } else {
+      setTodayWorkoutGymLabel(null);
     }
     let cancelled = false;
     supabase
       .from('gyms')
       .select('name,address')
-      .eq('id', gymId!)
+      .eq('id', gymId)
       .maybeSingle()
       .then(({ data, error }) => {
         if (cancelled) return;
         if (data && !error) {
-          setTodayWorkoutGymLabel(formatGymLabel(data.name, data.address));
-        } else if (snap) {
-          setTodayWorkoutGymLabel(snap);
+          const line = formatGymLabel(data.name, data.address);
+          if (line) {
+            rememberGymLabel(gymId, line);
+            setTodayWorkoutGymLabel(line);
+          } else {
+            setTodayWorkoutGymLabel(cached ?? null);
+          }
         } else {
-          setTodayWorkoutGymLabel(null);
+          setTodayWorkoutGymLabel(cached ?? null);
         }
       });
     return () => {
       cancelled = true;
     };
-  }, [todayWorkout?.gym_id, todayWorkout?.gym_display_name]);
+  }, [todayWorkout?.gym_id]);
 
   // Fetch reactions and comments for the user's own "Today's workout" post
   useEffect(() => {
@@ -712,6 +718,7 @@ export default function HomeScreen() {
     displayName?: string | null;
     /** Top-right pill: resolved from label and/or gym id at tap time */
     gymLabel?: string | null;
+    workoutType?: string | null;
   };
   const [shareData, setShareData] = useState<ShareData | null>(null);
   const shareViewRef = useRef<ViewShot>(null);
@@ -724,12 +731,17 @@ export default function HomeScreen() {
     displayName?: string | null,
     gymLabel?: string | null,
     gymId?: string | null,
+    workoutType?: string | null,
   ) => {
     let resolvedGymLabel = gymLabel?.trim() || null;
+    if (!resolvedGymLabel && gymId) {
+      resolvedGymLabel = getRememberedGymLabel(gymId);
+    }
     if (!resolvedGymLabel && gymId) {
       const { data, error } = await supabase.from('gyms').select('name, address').eq('id', gymId).maybeSingle();
       if (!error && data) {
         resolvedGymLabel = formatGymLabel(data.name, data.address);
+        if (resolvedGymLabel) rememberGymLabel(gymId, resolvedGymLabel);
       }
     }
     setShareData({
@@ -739,6 +751,7 @@ export default function HomeScreen() {
       caption,
       displayName,
       gymLabel: resolvedGymLabel,
+      workoutType: workoutType ?? null,
     });
   };
 
@@ -1127,6 +1140,7 @@ export default function HomeScreen() {
                       profile?.display_name,
                       todayWorkoutGymLabel,
                       todayWorkout.gym_id ?? null,
+                      todayWorkout.workout_type ?? null,
                     )
                   }
                   style={styles.feedActionBtn}
@@ -1301,6 +1315,7 @@ export default function HomeScreen() {
                               item.display_name,
                               item.gym_label,
                               item.workout.gym_id ?? null,
+                              item.workout.workout_type ?? null,
                             )
                           }
                           style={styles.feedActionBtn}
@@ -1918,6 +1933,7 @@ export default function HomeScreen() {
     <Modal visible={!!shareData} transparent animationType="none" statusBarTranslucent>
       {shareData && (() => {
         const locationLine = shareData.gymLabel?.trim() ?? '';
+        const wt = WORKOUT_TYPES.find((t) => t.value === shareData.workoutType);
         const dateLabel = shareData.workoutDate ? formatFeedDate(shareData.workoutDate) : 'Today';
         const screenW = Dimensions.get('window').width;
         const cardW = screenW;
@@ -1946,7 +1962,7 @@ export default function HomeScreen() {
                 }}
               />
 
-              {/* Top bar — left: UPLIFT; right: gym location (never workout type) */}
+              {/* Top bar — left: UPLIFT; right: gym name, or workout type as fallback */}
               <View style={shareStyles.topBar}>
                 <View style={shareStyles.brandPill}>
                   <ThemedText style={shareStyles.brandText}>UPLIFT</ThemedText>
@@ -1961,6 +1977,11 @@ export default function HomeScreen() {
                     >
                       {locationLine}
                     </ThemedText>
+                  </View>
+                ) : wt ? (
+                  <View style={shareStyles.typePill}>
+                    <ThemedText style={shareStyles.typePillEmoji}>{wt.emoji}</ThemedText>
+                    <ThemedText style={shareStyles.typePillLabel}>{wt.label}</ThemedText>
                   </View>
                 ) : null}
               </View>

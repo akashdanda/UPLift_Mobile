@@ -1,11 +1,11 @@
 import Constants from 'expo-constants'
-import { useEffect, useMemo, useState } from 'react'
-import { Linking, Modal, Pressable, Platform, StyleSheet, View } from 'react-native'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { AppState, Linking, Modal, Platform, Pressable, StyleSheet, View, type AppStateStatus } from 'react-native'
 
 import { ThemedText } from '@/components/themed-text'
 import { Colors } from '@/constants/theme'
 import { useColorScheme } from '@/hooks/use-color-scheme'
-import AsyncStorage from '@react-native-async-storage/async-storage'
+import { fetchMinimumNativeVersion } from '@/lib/app-version-policy'
 
 type ItunesLookupResult = {
   version?: string
@@ -20,7 +20,7 @@ function normalizeVersionParts(v: string): number[] {
     .filter((n) => !Number.isNaN(n))
 }
 
-// Returns -1 if a<b, 0 if a==b, 1 if a>b
+/** Returns -1 if a<b, 0 if a==b, 1 if a>b */
 function compareVersions(aRaw: string, bRaw: string): number {
   const a = normalizeVersionParts(aRaw)
   const b = normalizeVersionParts(bRaw)
@@ -35,11 +35,17 @@ function compareVersions(aRaw: string, bRaw: string): number {
   return 0
 }
 
+function maxVersionString(a: string | null, b: string | null): string | null {
+  if (!a) return b
+  if (!b) return a
+  return compareVersions(a, b) >= 0 ? a : b
+}
+
 async function lookupLatestItunesVersion(bundleId: string): Promise<{ latestVersion: string; trackViewUrl: string } | null> {
   const url = `https://itunes.apple.com/lookup?bundleId=${encodeURIComponent(bundleId)}&country=us`
 
   const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), 6000)
+  const timeout = setTimeout(() => controller.abort(), 8000)
 
   try {
     const res = await fetch(url, { signal: controller.signal })
@@ -57,74 +63,93 @@ async function lookupLatestItunesVersion(bundleId: string): Promise<{ latestVers
   }
 }
 
-const LAST_FORCED_VERSION_KEY = 'last_forced_update_version'
-
+/** iOS only: blocks the app when the installed build is below App Store / policy minimum. */
 export function RequiredUpdateGate() {
   const colorScheme = useColorScheme()
   const colors = Colors[colorScheme ?? 'light']
 
   const bundleId = useMemo(() => {
     return (
-      (Constants.expoConfig as any)?.ios?.bundleIdentifier ||
-      (Constants.expoConfig as any)?.bundleIdentifier ||
+      (Constants.expoConfig as { ios?: { bundleIdentifier?: string } })?.ios?.bundleIdentifier ||
+      (Constants.expoConfig as { bundleIdentifier?: string })?.bundleIdentifier ||
       'com.akashdanda.uplift'
     )
   }, [])
 
-  // `Constants.manifest` is typed as `EmbeddedManifest` (no `version` field),
-  // so we cast for a safe fallback in environments where `expoConfig` is missing.
-  const currentVersion = (Constants.expoConfig as any)?.version ?? (Constants.manifest as any)?.version
+  const currentVersion = useMemo(() => {
+    return (
+      (Constants.expoConfig as { version?: string })?.version ??
+      (Constants.manifest as { version?: string } | null)?.version ??
+      null
+    )
+  }, [])
+
+  const embeddedMinimumVersion = useMemo(() => {
+    const v = (Constants.expoConfig as { extra?: { minimumNativeVersion?: string } })?.extra?.minimumNativeVersion
+    return typeof v === 'string' && v.trim().length > 0 ? v.trim() : null
+  }, [])
 
   const [visible, setVisible] = useState(false)
-  const [checked, setChecked] = useState(false)
+  const [storeUrl, setStoreUrl] = useState<string | null>(null)
+
+  const evaluate = useCallback(async () => {
+    if (Platform.OS !== 'ios') {
+      setVisible(false)
+      return
+    }
+
+    if (!currentVersion) {
+      setVisible(false)
+      return
+    }
+
+    const minFromServer = await fetchMinimumNativeVersion().catch(() => null)
+    const policyMin = maxVersionString(minFromServer, embeddedMinimumVersion)
+
+    const lookup = await lookupLatestItunesVersion(bundleId)
+    const itunesLatest = lookup?.latestVersion ?? null
+    const iosStoreUrl = lookup?.trackViewUrl ?? null
+
+    const effectiveMin = maxVersionString(policyMin, itunesLatest)
+    const mustUpdate = effectiveMin != null && compareVersions(currentVersion, effectiveMin) < 0
+
+    setStoreUrl(iosStoreUrl)
+    setVisible(mustUpdate && iosStoreUrl != null)
+  }, [bundleId, currentVersion, embeddedMinimumVersion])
 
   useEffect(() => {
     if (Platform.OS !== 'ios') return
-    if (!currentVersion) return
+    void evaluate()
+  }, [evaluate])
 
-    let cancelled = false
-    ;(async () => {
-      // Prevent showing the same modal repeatedly if user already forced-updated to this version.
-      const lastForced = await AsyncStorage.getItem(LAST_FORCED_VERSION_KEY)
-
-      const lookup = await lookupLatestItunesVersion(bundleId)
-      if (!lookup) {
-        if (!cancelled) setChecked(true)
-        return
-      }
-
-      const { latestVersion } = lookup
-      const shouldForce = compareVersions(currentVersion, latestVersion) < 0 && latestVersion !== lastForced
-
-      if (!cancelled) {
-        setVisible(shouldForce)
-        setChecked(true)
-      }
-    })()
-
-    return () => {
-      cancelled = true
-    }
-  }, [bundleId, currentVersion])
-
-  const onUpdatePress = async () => {
+  useEffect(() => {
     if (Platform.OS !== 'ios') return
+    const sub = AppState.addEventListener('change', (next: AppStateStatus) => {
+      if (next === 'active') {
+        void evaluate()
+      }
+    })
+    return () => sub.remove()
+  }, [evaluate])
 
-    const lookup = await lookupLatestItunesVersion(bundleId)
-    const latestVersion = lookup?.latestVersion
-    const trackViewUrl = lookup?.trackViewUrl
-    if (!latestVersion || !trackViewUrl) return
-
-    await AsyncStorage.setItem(LAST_FORCED_VERSION_KEY, latestVersion)
-    setVisible(false)
-    Linking.openURL(trackViewUrl).catch(() => {})
+  const onUpdatePress = () => {
+    if (storeUrl) {
+      Linking.openURL(storeUrl).catch(() => {})
+    }
   }
 
+  if (Platform.OS !== 'ios') return null
   if (!visible) return null
-  if (!checked) return null
 
   return (
-    <Modal visible transparent animationType="fade" statusBarTranslucent>
+    <Modal
+      visible
+      transparent
+      animationType="fade"
+      statusBarTranslucent
+      presentationStyle="fullScreen"
+      onRequestClose={() => {}}
+    >
       <View style={[styles.overlay, { backgroundColor: colors.background }]}>
         <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.tabBarBorder }]}>
           <ThemedText type="subtitle" style={[styles.title, { color: colors.text }]}>
@@ -132,13 +157,10 @@ export function RequiredUpdateGate() {
           </ThemedText>
 
           <ThemedText style={[styles.body, { color: colors.textMuted }]}>
-            A newer version of Uplift is available. Please update to continue.
+            This version of Uplift is no longer supported. Install the latest update to continue.
           </ThemedText>
 
-          <Pressable
-            style={[styles.button, { backgroundColor: colors.tint }]}
-            onPress={onUpdatePress}
-          >
+          <Pressable style={[styles.button, { backgroundColor: colors.tint }]} onPress={onUpdatePress}>
             <ThemedText style={styles.buttonText}>Update on the App Store</ThemedText>
           </Pressable>
         </View>
@@ -181,4 +203,3 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
 })
-

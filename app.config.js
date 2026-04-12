@@ -39,6 +39,8 @@ module.exports = {
     plugins,
     extra: {
       ...appJson.expo.extra,
+      /** Fallback minimum install version when remote config is unavailable; keep in sync with releases. */
+      minimumNativeVersion: '1.5.0',
       supabaseUrl: process.env.EXPO_PUBLIC_SUPABASE_URL,
       supabaseAnonKey: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY,
       eas: {

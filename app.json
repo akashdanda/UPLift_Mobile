@@ -2,7 +2,7 @@
   "expo": {
     "name": "Uplift",
     "slug": "UPLift",
-    "version": "1.4.0",
+    "version": "1.5.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "uplift",
@@ -11,14 +11,14 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.akashdanda.uplift",
-      "buildNumber": "20",
+      "buildNumber": "21",
       "usesAppleSignIn": true
     },
     "android": {
+      "package": "com.akashdanda.uplift",
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#000000",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "edgeToEdgeEnabled": true,
@@ -59,7 +59,7 @@
         "expo-notifications",
         {
           "icon": "./assets/images/icon.png",
-          "color": "#3B82F6"
+          "color": "#8A88E3"
         }
       ],
       [

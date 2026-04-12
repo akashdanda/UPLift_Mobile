@@ -26,6 +26,8 @@ import { ThemedText } from '@/components/themed-text'
 import { Colors, Fonts } from '@/constants/theme'
 import { useAuthContext } from '@/hooks/use-auth-context'
 import { useColorScheme } from '@/hooks/use-color-scheme'
+import { formatGymLabel } from '@/lib/feed'
+import { getRememberedGymLabel, rememberGymLabel } from '@/lib/gym-label-cache'
 import { getFriends, type FriendWithProfile } from '@/lib/friends'
 import { computeXP, getLevelFromXP } from '@/lib/levels'
 import { pushFirstFriendWorkout } from '@/lib/push-notifications'
@@ -330,7 +332,51 @@ export default function LogWorkoutScreen() {
     [friends, taggedFriends],
   )
 
+  const activeGymId = gymId ?? todayWorkout?.gym_id ?? null
+  const [resolvedGymLine, setResolvedGymLine] = useState<string | null>(null)
+
   const today = getTodayLocalDate()
+
+  useEffect(() => {
+    if (!activeGymId) {
+      setResolvedGymLine(null)
+      return
+    }
+    const mem = getRememberedGymLabel(activeGymId)
+    if (mem) {
+      setResolvedGymLine(mem)
+      return
+    }
+    if (gymName?.trim() && gymId && gymId === activeGymId) {
+      const line = gymName.trim()
+      rememberGymLabel(activeGymId, line)
+      setResolvedGymLine(line)
+      return
+    }
+    let cancelled = false
+    void supabase
+      .from('gyms')
+      .select('name,address')
+      .eq('id', activeGymId)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (cancelled) return
+        if (!error && data) {
+          const line = formatGymLabel(data.name, data.address)
+          if (line) {
+            rememberGymLabel(activeGymId, line)
+            setResolvedGymLine(line)
+          } else {
+            setResolvedGymLine(null)
+          }
+        } else {
+          setResolvedGymLine(null)
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [activeGymId, gymId, gymName, todayWorkout?.gym_id])
 
   useEffect(() => {
     if (!session) return
@@ -426,11 +472,9 @@ export default function LogWorkoutScreen() {
       if (!('error' in sec)) secondaryUrl = sec.url
     }
 
-    const gymDisplayName = gymName?.trim() ? gymName.trim() : null
     const rowWithGym = {
       user_id: session.user.id,
       gym_id: gymId,
-      gym_display_name: gymDisplayName,
       workout_date: today,
       image_url: uploadResult.url,
       secondary_image_url: secondaryUrl,
@@ -440,7 +484,6 @@ export default function LogWorkoutScreen() {
     }
     const rowLegacy = {
       user_id: session.user.id,
-      gym_display_name: gymDisplayName,
       workout_date: today,
       image_url: uploadResult.url,
       secondary_image_url: secondaryUrl,
@@ -473,6 +516,15 @@ export default function LogWorkoutScreen() {
       return
     }
 
+    if (gymId) {
+      let lbl = gymName?.trim() || null
+      if (!lbl) {
+        const { data: g } = await supabase.from('gyms').select('name,address').eq('id', gymId).maybeSingle()
+        if (g) lbl = formatGymLabel(g.name, g.address)
+      }
+      if (lbl) rememberGymLabel(gymId, lbl)
+    }
+
     if (taggedFriends.size > 0 && workoutRow) {
       await addWorkoutTags(workoutRow.id, [...taggedFriends]).catch(() => {})
     }
@@ -498,7 +550,6 @@ export default function LogWorkoutScreen() {
         id: '',
         user_id: session.user.id,
         gym_id: gymId,
-        gym_display_name: gymDisplayName,
         workout_date: today,
         image_url: uploadResult.url,
         secondary_image_url: secondaryUrl ?? null,
@@ -657,7 +708,7 @@ export default function LogWorkoutScreen() {
               displayName={profile?.display_name || 'You'}
               avatarUrl={profile?.avatar_url ?? null}
               caption={todayWorkout.caption}
-              gymLabel={gymName ?? null}
+              gymLabel={resolvedGymLine}
               dateLabel={
                 formatFeedPostTimestamp(todayWorkout.created_at) ||
                 formatFeedDate(todayWorkout.workout_date)
@@ -726,7 +777,7 @@ export default function LogWorkoutScreen() {
               displayName={profile?.display_name || 'You'}
               avatarUrl={profile?.avatar_url ?? null}
               caption={caption.trim() || null}
-              gymLabel={gymName ?? null}
+              gymLabel={resolvedGymLine}
               dateLabel="Today"
               taggedNames={taggedPreviewNames.length > 0 ? taggedPreviewNames : undefined}
             />

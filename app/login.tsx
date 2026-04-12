@@ -19,32 +19,41 @@ import { ThemedText } from '@/components/themed-text'
 import { BrandViolet, Colors } from '@/constants/theme'
 import { useAuthContext } from '@/hooks/use-auth-context'
 import { useColorScheme } from '@/hooks/use-color-scheme'
-import { normalizeToE164 } from '@/lib/phone-auth'
 
 export default function LoginScreen() {
-  const { sendPhoneOtp } = useAuthContext()
+  const { signInWithEmail, resetPassword } = useAuthContext()
   const colorScheme = useColorScheme()
   const colors = Colors[colorScheme ?? 'light']
   const insets = useSafeAreaInsets()
   const isDark = colorScheme === 'dark'
 
-  const [phone, setPhone] = useState('')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
 
-  const handleSendCode = async () => {
-    const e164 = normalizeToE164(phone)
-    if (!e164) {
-      Alert.alert('Invalid number', 'Enter a valid US phone number (10 digits) or include country code with +.')
+  const handleSignIn = async () => {
+    setLoading(true)
+    const { error } = await signInWithEmail(email, password)
+    setLoading(false)
+    if (error) {
+      Alert.alert('Could not sign in', error.message)
+    }
+  }
+
+  const handleForgotPassword = async () => {
+    const trimmed = email.trim().toLowerCase()
+    if (!trimmed) {
+      Alert.alert('Email required', 'Enter your email above, then tap Forgot password again.')
       return
     }
     setLoading(true)
-    const { error } = await sendPhoneOtp(e164, { isSignUp: false })
+    const { error } = await resetPassword(trimmed)
     setLoading(false)
     if (error) {
-      Alert.alert('Could not send code', error.message)
+      Alert.alert('Could not send reset email', error.message)
       return
     }
-    router.push({ pathname: '/verify-otp', params: { phone: e164 } })
+    Alert.alert('Check your email', 'If an account exists for that address, we sent a reset link.')
   }
 
   const inputSurface = {
@@ -75,35 +84,43 @@ export default function LoginScreen() {
           <View style={styles.brand}>
             <ThemedText style={[styles.brandName, { color: colors.text }]}>UPLIFT</ThemedText>
             <ThemedText style={[styles.logo, { color: colors.text }]}>Sign in</ThemedText>
-            <ThemedText style={[styles.tagline, { color: colors.textMuted }]}>
-              Use Google, Apple, or your phone number
-            </ThemedText>
-          </View>
-
-          <View style={styles.socialBtns}>
-            <AppleSignInButton />
-            <GoogleSignInButton />
-          </View>
-
-          <View style={styles.divider}>
-            <View style={[styles.dividerLine, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)' }]} />
-            <ThemedText style={[styles.dividerText, { color: colors.textMuted }]}>or</ThemedText>
-            <View style={[styles.dividerLine, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)' }]} />
           </View>
 
           <View style={styles.form}>
-            <ThemedText style={[styles.fieldLabel, { color: colors.textMuted }]}>Phone number</ThemedText>
+            <ThemedText style={[styles.fieldLabel, { color: colors.textMuted }]}>Email</ThemedText>
             <TextInput
               style={[styles.input, inputSurface, { color: colors.text }]}
-              placeholder="(555) 123-4567"
+              placeholder="you@example.com"
               placeholderTextColor={colors.textMuted}
-              value={phone}
-              onChangeText={setPhone}
-              keyboardType="phone-pad"
-              textContentType="telephoneNumber"
-              autoComplete="tel"
+              value={email}
+              onChangeText={setEmail}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoCorrect={false}
+              textContentType="emailAddress"
+              autoComplete="email"
               editable={!loading}
             />
+            <ThemedText style={[styles.fieldLabel, { color: colors.textMuted, marginTop: 14 }]}>Password</ThemedText>
+            <TextInput
+              style={[styles.input, inputSurface, { color: colors.text }]}
+              placeholder="••••••••"
+              placeholderTextColor={colors.textMuted}
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry
+              textContentType="password"
+              autoComplete="password"
+              editable={!loading}
+            />
+            <Pressable
+              onPress={handleForgotPassword}
+              disabled={loading}
+              style={styles.forgotWrap}
+              hitSlop={8}
+            >
+              <ThemedText style={[styles.forgotText, { color: colors.tint }]}>Forgot password?</ThemedText>
+            </Pressable>
           </View>
 
           <Pressable
@@ -111,15 +128,26 @@ export default function LoginScreen() {
               styles.primaryBtn,
               { backgroundColor: BrandViolet.primary, opacity: pressed ? 0.88 : loading ? 0.7 : 1 },
             ]}
-            onPress={handleSendCode}
+            onPress={handleSignIn}
             disabled={loading}
           >
             {loading ? (
               <ActivityIndicator color="#FFFFFF" />
             ) : (
-              <ThemedText style={styles.primaryBtnText}>Send code</ThemedText>
+              <ThemedText style={styles.primaryBtnText}>Sign in</ThemedText>
             )}
           </Pressable>
+
+          <View style={styles.divider}>
+            <View style={[styles.dividerLine, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)' }]} />
+            <ThemedText style={[styles.dividerText, { color: colors.textMuted }]}>or</ThemedText>
+            <View style={[styles.dividerLine, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)' }]} />
+          </View>
+
+          <View style={styles.socialBtns}>
+            <AppleSignInButton />
+            <GoogleSignInButton />
+          </View>
 
           <View style={styles.footer}>
             <ThemedText style={[styles.footerText, { color: colors.textMuted }]}>
@@ -160,20 +188,18 @@ const styles = StyleSheet.create({
     lineHeight: 40,
     fontWeight: '700',
     letterSpacing: -0.5,
-    marginBottom: 8,
   },
-  tagline: { fontSize: 14, lineHeight: 20 },
   socialBtns: { gap: 10, marginBottom: 8 },
   divider: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 16,
-    marginVertical: 24,
+    marginTop: 24,
+    marginBottom: 20,
   },
   dividerLine: { flex: 1, height: StyleSheet.hairlineWidth },
   dividerText: { fontSize: 13, fontWeight: '400' },
   form: {
-    gap: 8,
     marginBottom: 16,
   },
   fieldLabel: {
@@ -181,6 +207,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 0.6,
     textTransform: 'uppercase',
+    marginBottom: 8,
   },
   input: {
     borderRadius: 16,
@@ -188,6 +215,14 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     fontSize: 16,
     fontWeight: '400',
+  },
+  forgotWrap: {
+    alignSelf: 'flex-end',
+    marginTop: 10,
+  },
+  forgotText: {
+    fontSize: 14,
+    fontWeight: '600',
   },
   primaryBtn: {
     borderRadius: 16,

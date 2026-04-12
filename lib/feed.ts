@@ -1,4 +1,5 @@
 import { getCommentsForWorkouts } from '@/lib/comments'
+import { getRememberedGymLabel } from '@/lib/gym-label-cache'
 import { getFriends } from '@/lib/friends'
 import { getReactionsForWorkouts } from '@/lib/reactions'
 import { supabase } from '@/lib/supabase'
@@ -56,12 +57,12 @@ async function enrichWorkouts(workouts: Workout[]): Promise<FeedItem[]> {
     const p = profileMap.get(workout.user_id)
     const g = workout.gym_id ? gymMap.get(workout.gym_id) : undefined
     const joined = g ? formatGymLabel(g.name, g.address) : null
-    const snap = workout.gym_display_name?.trim() || null
+    const cached = workout.gym_id ? getRememberedGymLabel(workout.gym_id) : null
     return {
       workout,
       display_name: p?.display_name ?? null,
       avatar_url: p?.avatar_url ?? null,
-      gym_label: joined || snap,
+      gym_label: joined ?? cached,
     }
   })
 

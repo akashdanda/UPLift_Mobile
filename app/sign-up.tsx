@@ -19,38 +19,33 @@ import { ThemedText } from '@/components/themed-text'
 import { BrandViolet, Colors } from '@/constants/theme'
 import { useAuthContext } from '@/hooks/use-auth-context'
 import { useColorScheme } from '@/hooks/use-color-scheme'
-import { normalizeToE164 } from '@/lib/phone-auth'
 
 export default function SignUpScreen() {
-  const { sendPhoneOtp } = useAuthContext()
+  const { signUpWithEmail } = useAuthContext()
   const colorScheme = useColorScheme()
   const colors = Colors[colorScheme ?? 'light']
   const insets = useSafeAreaInsets()
   const isDark = colorScheme === 'dark'
 
-  const [fullName, setFullName] = useState('')
-  const [phone, setPhone] = useState('')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
 
-  const handleContinue = async () => {
-    const name = fullName.trim()
-    if (!name) {
-      Alert.alert('Error', 'Please enter your name.')
-      return
-    }
-    const e164 = normalizeToE164(phone)
-    if (!e164) {
-      Alert.alert('Invalid number', 'Enter a valid US phone number (10 digits) or include country code with +.')
-      return
-    }
+  const handleCreateAccount = async () => {
     setLoading(true)
-    const { error } = await sendPhoneOtp(e164, { isSignUp: true, fullName: name })
+    const { error, needsEmailConfirmation } = await signUpWithEmail(email, password)
     setLoading(false)
     if (error) {
-      Alert.alert('Could not send code', error.message)
+      Alert.alert('Could not create account', error.message)
       return
     }
-    router.push({ pathname: '/verify-otp', params: { phone: e164, displayName: name } })
+    if (needsEmailConfirmation) {
+      Alert.alert(
+        'Confirm your email',
+        'We sent a confirmation link. Open it, then sign in here.',
+        [{ text: 'OK', onPress: () => router.replace('/login') }]
+      )
+    }
   }
 
   const inputSurface = {
@@ -81,45 +76,33 @@ export default function SignUpScreen() {
           <View style={styles.brand}>
             <ThemedText style={[styles.brandName, { color: colors.text }]}>UPLIFT</ThemedText>
             <ThemedText style={[styles.logo, { color: colors.text }]}>Create account</ThemedText>
-            <ThemedText style={[styles.tagline, { color: colors.textMuted }]}>
-              Name + phone, or continue with Google or Apple
-            </ThemedText>
-          </View>
-
-          <View style={styles.socialBtns}>
-            <AppleSignInButton />
-            <GoogleSignInButton />
-          </View>
-
-          <View style={styles.divider}>
-            <View style={[styles.dividerLine, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)' }]} />
-            <ThemedText style={[styles.dividerText, { color: colors.textMuted }]}>or</ThemedText>
-            <View style={[styles.dividerLine, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)' }]} />
           </View>
 
           <View style={styles.form}>
-            <ThemedText style={[styles.fieldLabel, { color: colors.textMuted }]}>Name</ThemedText>
+            <ThemedText style={[styles.fieldLabel, { color: colors.textMuted }]}>Email</ThemedText>
             <TextInput
               style={[styles.input, inputSurface, { color: colors.text }]}
-              placeholder="Your name"
+              placeholder="you@example.com"
               placeholderTextColor={colors.textMuted}
-              value={fullName}
-              onChangeText={setFullName}
-              autoCapitalize="words"
-              autoCorrect
-              textContentType="name"
+              value={email}
+              onChangeText={setEmail}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoCorrect={false}
+              textContentType="emailAddress"
+              autoComplete="email"
               editable={!loading}
             />
-            <ThemedText style={[styles.fieldLabel, { color: colors.textMuted, marginTop: 12 }]}>Phone number</ThemedText>
+            <ThemedText style={[styles.fieldLabel, { color: colors.textMuted, marginTop: 14 }]}>Password</ThemedText>
             <TextInput
               style={[styles.input, inputSurface, { color: colors.text }]}
-              placeholder="(555) 123-4567"
+              placeholder="At least 6 characters"
               placeholderTextColor={colors.textMuted}
-              value={phone}
-              onChangeText={setPhone}
-              keyboardType="phone-pad"
-              textContentType="telephoneNumber"
-              autoComplete="tel"
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry
+              textContentType="newPassword"
+              autoComplete="password-new"
               editable={!loading}
             />
           </View>
@@ -129,15 +112,26 @@ export default function SignUpScreen() {
               styles.primaryBtn,
               { backgroundColor: BrandViolet.primary, opacity: pressed ? 0.88 : loading ? 0.7 : 1 },
             ]}
-            onPress={handleContinue}
+            onPress={handleCreateAccount}
             disabled={loading}
           >
             {loading ? (
               <ActivityIndicator color="#FFFFFF" />
             ) : (
-              <ThemedText style={styles.primaryBtnText}>Send code</ThemedText>
+              <ThemedText style={styles.primaryBtnText}>Create account</ThemedText>
             )}
           </Pressable>
+
+          <View style={styles.divider}>
+            <View style={[styles.dividerLine, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)' }]} />
+            <ThemedText style={[styles.dividerText, { color: colors.textMuted }]}>or</ThemedText>
+            <View style={[styles.dividerLine, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)' }]} />
+          </View>
+
+          <View style={styles.socialBtns}>
+            <AppleSignInButton />
+            <GoogleSignInButton />
+          </View>
 
           <View style={styles.footer}>
             <ThemedText style={[styles.footerText, { color: colors.textMuted }]}>
@@ -178,15 +172,14 @@ const styles = StyleSheet.create({
     lineHeight: 40,
     fontWeight: '700',
     letterSpacing: -0.5,
-    marginBottom: 8,
   },
-  tagline: { fontSize: 14, lineHeight: 20 },
   socialBtns: { gap: 10, marginBottom: 8 },
   divider: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 16,
-    marginVertical: 24,
+    marginTop: 24,
+    marginBottom: 20,
   },
   dividerLine: { flex: 1, height: StyleSheet.hairlineWidth },
   dividerText: { fontSize: 13, fontWeight: '400' },

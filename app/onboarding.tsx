@@ -18,19 +18,21 @@ const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window')
 const PHONE_W = SCREEN_W * 0.62
 const PHONE_H = PHONE_W * 2.16
 
-// Actual app screenshots
+// Actual app screenshots (order: feed → leaderboard → map → profile)
 const screenshotFeed = require('../assets/images/onboarding-feed.png')
 const screenshotLeaderboard = require('../assets/images/onboarding-leaderboard.png')
+const screenshotMap = require('../assets/images/onboarding-map.png')
 const screenshotProfile = require('../assets/images/onboarding-profile.png')
 type Slide = {
   id: string
-  screenshot: any
+  screenshot: number
 }
 
 const SLIDES: Slide[] = [
   { id: '1', screenshot: screenshotFeed },
   { id: '2', screenshot: screenshotLeaderboard },
-  { id: '3', screenshot: screenshotProfile },
+  { id: '3', screenshot: screenshotMap },
+  { id: '4', screenshot: screenshotProfile },
 ]
 
 export default function OnboardingScreen() {

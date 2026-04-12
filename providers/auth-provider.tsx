@@ -15,31 +15,42 @@ export default function AuthProvider({ children }: PropsWithChildren) {
   const [isLoading, setIsLoading] = useState<boolean>(true)
   const fetchProfileRef = useRef<() => Promise<void>>(async () => {})
 
-  const sendPhoneOtp = useCallback(
-    async (phoneE164: string, options?: { isSignUp?: boolean; fullName?: string }) => {
-      const isSignUp = options?.isSignUp === true
-      const { error } = await supabase.auth.signInWithOtp({
-        phone: phoneE164,
-        options: {
-          channel: 'sms',
-          shouldCreateUser: isSignUp,
-          ...(options?.fullName?.trim()
-            ? { data: { full_name: options.fullName.trim() } }
-            : {}),
-        },
-      })
-      return { error: error ?? null }
-    },
-    []
-  )
-
-  const verifyPhoneOtp = useCallback(async (phoneE164: string, token: string) => {
-    const { error } = await supabase.auth.verifyOtp({
-      phone: phoneE164,
-      token: token.replace(/\D/g, ''),
-      type: 'sms',
+  const signInWithEmail = useCallback(async (email: string, password: string) => {
+    const trimmed = email.trim().toLowerCase()
+    if (!trimmed || !password) {
+      return { error: new Error('Enter your email and password.') }
+    }
+    const { error } = await supabase.auth.signInWithPassword({
+      email: trimmed,
+      password,
     })
-    return { error: error ?? null }
+    return { error: error ? (error as Error) : null }
+  }, [])
+
+  const signUpWithEmail = useCallback(async (email: string, password: string) => {
+    const trimmed = email.trim().toLowerCase()
+    if (!trimmed || !password) {
+      return { error: new Error('Enter your email and password.'), needsEmailConfirmation: false }
+    }
+    if (password.length < 6) {
+      return { error: new Error('Password must be at least 6 characters.'), needsEmailConfirmation: false }
+    }
+    const local = trimmed.split('@')[0]?.trim()
+    const label = local && local.length > 0 ? local : 'Athlete'
+    const { data, error } = await supabase.auth.signUp({
+      email: trimmed,
+      password,
+      options: {
+        data: {
+          full_name: label,
+          display_name: label,
+        },
+      },
+    })
+    if (error) {
+      return { error: error as Error, needsEmailConfirmation: false }
+    }
+    return { error: null, needsEmailConfirmation: !data.session }
   }, [])
 
   const signInWithGoogle = useCallback(async () => {
@@ -252,8 +263,8 @@ export default function AuthProvider({ children }: PropsWithChildren) {
         isLoading,
         profile,
         isLoggedIn: !!session,
-        sendPhoneOtp,
-        verifyPhoneOtp,
+        signInWithEmail,
+        signUpWithEmail,
         signInWithGoogle,
         signInWithApple,
         signOut,

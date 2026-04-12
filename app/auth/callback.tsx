@@ -45,7 +45,7 @@ export default function AuthCallbackScreen() {
 
     setStatus('no_session_hint')
     setMessage(
-      'If you just finished signing in from a link, open the app again or sign in with Google, Apple, or your phone number.'
+      'If you just finished signing in from a link, open the app again or sign in with email, Google, or Apple.'
     )
   }, [])
 
@@ -74,7 +74,7 @@ export default function AuthCallbackScreen() {
   useEffect(() => {
     if (status !== 'no_session_hint' || message != null) return
     setMessage(
-      'Open the sign-in link on this device, or go back and sign in with Google, Apple, or your phone number.'
+      'Open the sign-in link on this device, or go back and sign in with email, Google, or Apple.'
     )
   }, [status, message])
 
