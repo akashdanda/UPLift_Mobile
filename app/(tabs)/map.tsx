@@ -2,7 +2,7 @@ import Ionicons from '@expo/vector-icons/Ionicons'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import * as Haptics from 'expo-haptics'
 import * as Location from 'expo-location'
-import { useFocusEffect } from '@react-navigation/native'
+import { useFocusEffect, useIsFocused } from '@react-navigation/native'
 import { router } from 'expo-router'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Linking, Modal, Platform, Pressable, StyleSheet, Text, View } from 'react-native'
@@ -24,6 +24,7 @@ import {
   getNearbyGyms,
   MANUAL_MAP_CHECKIN_RADIUS_FT,
   MANUAL_MAP_CHECKIN_RADIUS_M,
+  isWithdrawnOsmGymId,
   resolveGymIdFromList,
   type Gym,
 } from '@/lib/gym-service'
@@ -42,13 +43,6 @@ const ACTIVE_RADIUS_M = 72
 const GHOST_RADIUS_M = 2000
 const PROXIMITY_ARENA_DELAY_MS = 1200
 
-/**
- * Dev-only: synthetic gym at your GPS for map / check-in / proximity QA.
- * Set to `false` (or remove) before shipping; `__pinTestGym` stays in WebView unused.
- */
-const TEMP_QA_GYM_AT_GPS = __DEV__
-const QA_TEST_GYM_OSM_ID = 'UPLIFT_DEV_TEST'
-
 /** Stable boot center embedded in WebView HTML so `source` never changes when GPS updates (no full reload). */
 const MAP_BOOT_CENTER = { lat: 40.1028, lng: -88.2272 }
 const MAP_LAST_CAMERA_KEY = 'uplift_map_last_camera_v1'
@@ -63,6 +57,9 @@ type GymSnapItem = {
   lng: number
   tagsJson: string
 }
+
+/** Consecutive proximity polls outside the gym before auto check-out (reduces GPS flicker). */
+const LEAVE_GYM_OUTSIDE_POLLS = 3
 
 /** Spread peer markers in a small ring so stacked check-ins stay tappable. */
 function peerOffsetsAroundGym(lat: number, lng: number, count: number, ringMeters = 14) {
@@ -96,6 +93,7 @@ export default function MapScreen() {
   const colors = Colors[colorScheme ?? 'light']
   const isDark = colorScheme === 'dark'
   const insets = useSafeAreaInsets()
+  const isMapRouteFocused = useIsFocused()
   const { session, profile, updateProfile } = useAuthContext()
 
   const webRef = useRef<WebView>(null)
@@ -109,6 +107,9 @@ export default function MapScreen() {
   const lastHapticGymRef = useRef<string | null>(null)
   const checkedInGymRef = useRef<string | null>(null)
   const notifiedGymRef = useRef<string | null>(null)
+  /** When false (modals, other tabs), do not auto check-in/out — avoids check-out during log-workout / arena. */
+  const mapGeofenceAutomationRef = useRef(true)
+  const outsidePollStreakRef = useRef(0)
 
   const [perm, setPerm] = useState<boolean | null>(null)
   const coordsRef = useRef<{ lat: number; lng: number } | null>(null)
@@ -148,6 +149,11 @@ export default function MapScreen() {
   }, [session])
 
   useEffect(() => {
+    mapGeofenceAutomationRef.current = isMapRouteFocused
+    if (isMapRouteFocused) outsidePollStreakRef.current = 0
+  }, [isMapRouteFocused])
+
+  useEffect(() => {
     let alive = true
     ;(async () => {
       try {
@@ -177,14 +183,6 @@ export default function MapScreen() {
     }
     return `window.__UPLIFT_MAP_CFG=${JSON.stringify(cfg)};true;`
   }, [isDark])
-
-  const injectQaTestGymPin = useCallback((lat: number, lng: number) => {
-    if (!TEMP_QA_GYM_AT_GPS || !webRef.current) return
-    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return
-    webRef.current.injectJavaScript(
-      `try{if(window.__pinTestGym)window.__pinTestGym(${lat},${lng});}catch(e){};true;`,
-    )
-  }, [])
 
   /** Move map + user dot; optionally refetch Overpass (full reload) or soft kick only. */
   const syncMapCamera = useCallback(
@@ -227,15 +225,18 @@ export default function MapScreen() {
           Date.now() - snap.t <= SNAPSHOT_MAX_AGE_MS &&
           distanceMeters(c.lat, c.lng, snap.centerLat, snap.centerLng) <= SNAPSHOT_MAX_DISTANCE_M
         ) {
-          const pts = snap.items.map((it) => [it.lat, it.lng] as [number, number])
-          const skelEnc = encodeURIComponent(JSON.stringify(pts))
-          webRef.current?.injectJavaScript(
-            `try{window.__addSkeletonLatLngs(${JSON.stringify(skelEnc)});}catch(e){};true;`,
-          )
-          const enc = encodeURIComponent(JSON.stringify(snap.items))
-          webRef.current?.injectJavaScript(
-            `try{window.__hydrateSnapshot(${JSON.stringify(enc)});}catch(e){};true;`,
-          )
+          const items = snap.items.filter((it) => !isWithdrawnOsmGymId(it.gymOsmId))
+          if (items.length > 0) {
+            const pts = items.map((it) => [it.lat, it.lng] as [number, number])
+            const skelEnc = encodeURIComponent(JSON.stringify(pts))
+            webRef.current?.injectJavaScript(
+              `try{window.__addSkeletonLatLngs(${JSON.stringify(skelEnc)});}catch(e){};true;`,
+            )
+            const enc = encodeURIComponent(JSON.stringify(items))
+            webRef.current?.injectJavaScript(
+              `try{window.__hydrateSnapshot(${JSON.stringify(enc)});}catch(e){};true;`,
+            )
+          }
         }
       }
     } catch {
@@ -245,8 +246,7 @@ export default function MapScreen() {
     webRef.current?.injectJavaScript(
       `setTimeout(function(){try{window.__kickGymLoad&&window.__kickGymLoad();}catch(e){}},90);true;`,
     )
-    if (TEMP_QA_GYM_AT_GPS) injectQaTestGymPin(c.lat, c.lng)
-  }, [syncMapCamera, injectQaTestGymPin])
+  }, [syncMapCamera])
 
   const pushMapChromeToWebView = useCallback(() => {
     const t = isDark ? 'dark' : 'light'
@@ -359,24 +359,25 @@ export default function MapScreen() {
             }
 
         if (msg.type === 'gymPinSnapshot' && Array.isArray(msg.items) && msg.items.length > 0) {
-          void AsyncStorage.setItem(
-            MAP_GYM_SNAPSHOT_KEY,
-            JSON.stringify({
-              t: Date.now(),
-              centerLat: msg.centerLat,
-              centerLng: msg.centerLng,
-              items: msg.items.slice(0, 400),
-            }),
-          )
+          const items = msg.items
+            .filter((it) => it && typeof it === 'object' && !isWithdrawnOsmGymId((it as GymSnapItem).gymOsmId))
+            .slice(0, 400) as GymSnapItem[]
+          if (items.length > 0) {
+            void AsyncStorage.setItem(
+              MAP_GYM_SNAPSHOT_KEY,
+              JSON.stringify({
+                t: Date.now(),
+                centerLat: msg.centerLat,
+                centerLng: msg.centerLng,
+                items,
+              }),
+            )
+          }
           return
         }
 
         if (msg.type === 'gymLoadSuccess') {
           webRef.current?.injectJavaScript(`try{window.__clearSkeletonLayer();}catch(e){};true;`)
-          if (TEMP_QA_GYM_AT_GPS) {
-            const c = coordsRef.current
-            if (c) injectQaTestGymPin(c.lat, c.lng)
-          }
           return
         }
 
@@ -386,6 +387,7 @@ export default function MapScreen() {
         }
 
         if (msg.type === 'gymPinTap') {
+          if (isWithdrawnOsmGymId(msg.gymOsmId)) return
           if (msg.lat == null || msg.lng == null) return
           setGymSheetPin({
             gymOsmType: msg.gymOsmType,
@@ -402,7 +404,7 @@ export default function MapScreen() {
         /* ignore non-JSON posts */
       }
     },
-    [injectQaTestGymPin],
+    [],
   )
 
   // ---- Permission ----
@@ -413,11 +415,13 @@ export default function MapScreen() {
     })()
   }, [])
 
-  // After blur (other tab / gym-arena), repaint pins from snapshot + soft kick — do not clear layers (bounds can be invalid briefly).
+  // After blur (other tab / gym-arena / log-workout), repaint pins + fix WebView size — keep layers so the map feels instant.
   useFocusEffect(
     useCallback(() => {
-      const c = coordsRef.current ?? MAP_BOOT_CENTER
       const reload = mapTabWasBlurredRef.current
+      mapTabWasBlurredRef.current = false
+      outsidePollStreakRef.current = 0
+      const c = coordsRef.current ?? MAP_BOOT_CENTER
       const id = setTimeout(() => {
         if (!webRef.current) return
         if (reload) {
@@ -427,10 +431,18 @@ export default function MapScreen() {
             `if(window.userDot)window.userDot.setLatLng([${c.lat},${c.lng}]);true;`,
           )
         }
-      }, reload ? 80 : 0)
+        webRef.current.injectJavaScript(
+          `try{window.__invalidateLeafletSize&&window.__invalidateLeafletSize();}catch(e){};true;`,
+        )
+      }, reload ? 16 : 0)
       return () => {
         clearTimeout(id)
         mapTabWasBlurredRef.current = true
+        if (proximityArenaDelayRef.current) {
+          clearTimeout(proximityArenaDelayRef.current)
+          proximityArenaDelayRef.current = null
+        }
+        setProximityToast(null)
       }
     }, [runMapPinRestore]),
   )
@@ -441,21 +453,10 @@ export default function MapScreen() {
     let cancelled = false
 
     const refreshGyms = (lat: number, lng: number) => {
-      if (TEMP_QA_GYM_AT_GPS) injectQaTestGymPin(lat, lng)
       getNearbyGyms(lat, lng)
-        .then(async (nearby) => {
+        .then((nearby) => {
           if (cancelled) return
-          let list = nearby
-          if (TEMP_QA_GYM_AT_GPS) {
-            const g = await ensureGymFromOsmInSupabase({
-              osmId: QA_TEST_GYM_OSM_ID,
-              lat,
-              lng,
-              tags: { name: 'Test gym (QA)', leisure: 'fitness_centre' },
-            })
-            if (g && !nearby.some((x) => x.id === g.id)) list = [...nearby, g]
-          }
-          if (!cancelled) setGyms(list)
+          setGyms(nearby)
         })
         .catch(() => {})
     }
@@ -521,7 +522,7 @@ export default function MapScreen() {
     return () => {
       cancelled = true
     }
-  }, [perm, syncMapCamera, injectQaTestGymPin])
+  }, [perm, syncMapCamera])
 
   // ---- Privacy prompt (one-time) ----
   useEffect(() => {
@@ -807,56 +808,65 @@ export default function MapScreen() {
           `if(window.userDot)window.userDot.setLatLng([${c.lat},${c.lng}]);true;`,
         )
 
-        let closest: Gym | null = null
-        let closestDist = Infinity
-        for (const gym of gymsRef.current) {
-          const d = distanceMeters(c.lat, c.lng, gym.lat, gym.lng)
-          if (d < closestDist) {
-            closestDist = d
-            closest = gym
-          }
-        }
-
-        const acc = loc.coords.accuracy ?? 45
-        const thresholdM = Math.min(ACTIVE_RADIUS_M + Math.min(acc, 72), 150)
-
-        if (closest && closestDist <= thresholdM) {
-          if (lastHapticGymRef.current !== closest.id) {
-            lastHapticGymRef.current = closest.id
-            void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium)
-          }
-          if (activeGymRef.current?.id !== closest.id) {
-            const g = closest
-            setActiveGym(g)
-            await enterGymRef.current(g)
-            if (notifiedGymRef.current !== g.id) {
-              notifiedGymRef.current = g.id
-              const osmKey = webOsmKeyFromGym(g)
-              if (osmKey) {
-                webRef.current?.injectJavaScript(
-                  `try{window.__highlightGymForArena(${JSON.stringify(osmKey)});}catch(e){};true;`,
-                )
-              }
-              setProximityToast(`You're at ${g.name}`)
-              if (proximityArenaDelayRef.current) clearTimeout(proximityArenaDelayRef.current)
-              proximityArenaDelayRef.current = setTimeout(() => {
-                setProximityToast(null)
-                openGymArena(g)
-                proximityArenaDelayRef.current = null
-              }, PROXIMITY_ARENA_DELAY_MS)
+        if (mapGeofenceAutomationRef.current) {
+          let closest: Gym | null = null
+          let closestDist = Infinity
+          for (const gym of gymsRef.current) {
+            const d = distanceMeters(c.lat, c.lng, gym.lat, gym.lng)
+            if (d < closestDist) {
+              closestDist = d
+              closest = gym
             }
           }
-        } else {
-          lastHapticGymRef.current = null
-          if (proximityArenaDelayRef.current) {
-            clearTimeout(proximityArenaDelayRef.current)
-            proximityArenaDelayRef.current = null
+
+          const acc = loc.coords.accuracy ?? 45
+          const thresholdM = Math.min(ACTIVE_RADIUS_M + Math.min(acc, 72), 150)
+
+          if (closest && closestDist <= thresholdM) {
+            outsidePollStreakRef.current = 0
+            if (lastHapticGymRef.current !== closest.id) {
+              lastHapticGymRef.current = closest.id
+              void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium)
+            }
+            if (activeGymRef.current?.id !== closest.id) {
+              const g = closest
+              setActiveGym(g)
+              await enterGymRef.current(g)
+              if (notifiedGymRef.current !== g.id) {
+                notifiedGymRef.current = g.id
+                const osmKey = webOsmKeyFromGym(g)
+                if (osmKey) {
+                  webRef.current?.injectJavaScript(
+                    `try{window.__highlightGymForArena(${JSON.stringify(osmKey)});}catch(e){};true;`,
+                  )
+                }
+                setProximityToast(`You're at ${g.name}`)
+                if (proximityArenaDelayRef.current) clearTimeout(proximityArenaDelayRef.current)
+                proximityArenaDelayRef.current = setTimeout(() => {
+                  setProximityToast(null)
+                  openGymArena(g)
+                  proximityArenaDelayRef.current = null
+                }, PROXIMITY_ARENA_DELAY_MS)
+              }
+            }
+          } else {
+            lastHapticGymRef.current = null
+            if (proximityArenaDelayRef.current) {
+              clearTimeout(proximityArenaDelayRef.current)
+              proximityArenaDelayRef.current = null
+            }
+            setProximityToast(null)
+            if (activeGymRef.current) {
+              outsidePollStreakRef.current += 1
+              if (outsidePollStreakRef.current >= LEAVE_GYM_OUTSIDE_POLLS) {
+                outsidePollStreakRef.current = 0
+                void leaveGymRef.current()
+              }
+            } else {
+              outsidePollStreakRef.current = 0
+            }
+            notifiedGymRef.current = null
           }
-          setProximityToast(null)
-          if (activeGymRef.current) {
-            void leaveGymRef.current()
-          }
-          notifiedGymRef.current = null
         }
       } catch {
         /* retry */
@@ -960,6 +970,9 @@ export default function MapScreen() {
             c = c ?? MAP_BOOT_CENTER
             await runMapPinRestore(c)
             pushMapChromeToWebView()
+            webRef.current?.injectJavaScript(
+              `try{window.__invalidateLeafletSize&&window.__invalidateLeafletSize();}catch(e){};true;`,
+            )
           })()
         }}
         injectedJavaScriptBeforeContentLoaded={mapInjectedBeforeLoad}
@@ -1003,7 +1016,7 @@ export default function MapScreen() {
           style={[
             styles.fab,
             {
-              top: insets.top + 12,
+              top: insets.top + 22,
               left: 16,
               right: undefined,
               backgroundColor: BrandViolet.primary,
@@ -1105,7 +1118,7 @@ const styles = StyleSheet.create({
   },
 
   // Hint
-  hintWrap: { position: 'absolute', bottom: 110, left: 0, right: 0, alignItems: 'center' },
+  hintWrap: { position: 'absolute', bottom: 88, left: 0, right: 0, alignItems: 'center' },
   hintPill: {
     flexDirection: 'row',
     alignItems: 'center',

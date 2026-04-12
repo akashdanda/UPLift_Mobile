@@ -389,30 +389,6 @@ function addOneGymMarker(lt,ln,tagsObj,gymOsmType,gymOsmId,tagsJsonStr,presenceC
   mk.addTo(pins);
 }
 
-// QA synthetic gym (osm id UPLIFT_DEV_TEST); RN injects via window.__pinTestGym.
-var QA_TEST_GYM_OSM_ID='UPLIFT_DEV_TEST';
-function reapplyQaTestGymMarker(){
-  try{
-    var lt=window.__qaTestGymLat,ln=window.__qaTestGymLng;
-    if(lt==null||ln==null)return;
-    lt=+lt;ln=+ln;
-    if(!isFinite(lt)||!isFinite(ln))return;
-    eachGymMarker(function(m){
-      if(String(m.options.gymOsmId)===QA_TEST_GYM_OSM_ID)pins.removeLayer(m);
-    });
-    delete seenOsm['node-'+QA_TEST_GYM_OSM_ID];
-    var tags={name:'Test gym (QA)',leisure:'fitness_centre'};
-    addOneGymMarker(lt,ln,tags,'node',QA_TEST_GYM_OSM_ID,JSON.stringify(tags),0);
-  }catch(e){}
-}
-window.__pinTestGym=function(lat,lng){
-  try{
-    window.__qaTestGymLat=lat;
-    window.__qaTestGymLng=lng;
-    reapplyQaTestGymMarker();
-  }catch(e){}
-};
-
 window.__hydrateSnapshot=function(enc){
   try{
     var items=JSON.parse(decodeURIComponent(enc));
@@ -463,7 +439,6 @@ function load(retry){
         addOneGymMarker(lt,ln,tags,el.type||'node',String(el.id),tagsJson,0);
         c++;
       });
-      reapplyQaTestGymMarker();
       postRN({type:'gymLoadSuccess'});
       try{
         var snap=[];
@@ -488,7 +463,6 @@ function load(retry){
       }catch(eSnap){}
     })
     .catch(function(){
-      reapplyQaTestGymMarker();
       postRN({type:'gymLoadSuccess'});
       scheduleSilentOverpassRetry();
     });
@@ -496,6 +470,9 @@ function load(retry){
 
 window.__kickGymLoad=function(){
   try{map.invalidateSize();load();}catch(e){}
+};
+window.__invalidateLeafletSize=function(){
+  try{map.invalidateSize();}catch(e){}
 };
 
 window.reloadGymsFromOverpass=function(){

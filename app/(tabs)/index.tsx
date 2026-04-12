@@ -151,6 +151,27 @@ function formatFeedDate(workoutDate: string): string {
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
+/** When the workout row was created — shown on feed cards instead of workout-type emoji. */
+function formatFeedPostTimestamp(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const posted = new Date(iso);
+  if (Number.isNaN(posted.getTime())) return '';
+  const now = new Date();
+  const sameDay = (a: Date, b: Date) =>
+    a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+  const timeStr = posted.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  if (sameDay(posted, now)) return `Today · ${timeStr}`;
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (sameDay(posted, yesterday)) return `Yesterday · ${timeStr}`;
+  const yNow = now.getFullYear();
+  const datePart =
+    posted.getFullYear() === yNow
+      ? posted.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+      : posted.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+  return `${datePart} · ${timeStr}`;
+}
+
 /** Short relative time for comment timestamps (e.g. "2m", "3h", "Apr 4"). */
 function formatCommentTimeAgo(iso: string): string {
   const t = new Date(iso).getTime();
@@ -362,10 +383,6 @@ function getTodayLocalDate(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-function getWorkoutTypeEmoji(type: string | null | undefined): string {
-  return WORKOUT_TYPES.find((t) => t.value === type)?.emoji ?? '💪';
-}
-
 export default function HomeScreen() {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
@@ -444,25 +461,36 @@ export default function HomeScreen() {
   todayWorkoutIdRef.current = todayWorkout?.id ?? null;
 
   useEffect(() => {
+    const snap = todayWorkout?.gym_display_name?.trim();
     const gymId = todayWorkout?.gym_id;
-    if (!gymId) {
+    if (!gymId && !snap) {
       setTodayWorkoutGymLabel(null);
+      return;
+    }
+    if (!gymId && snap) {
+      setTodayWorkoutGymLabel(snap);
       return;
     }
     let cancelled = false;
     supabase
       .from('gyms')
       .select('name,address')
-      .eq('id', gymId)
+      .eq('id', gymId!)
       .maybeSingle()
       .then(({ data, error }) => {
-        if (cancelled || error || !data) return;
-        setTodayWorkoutGymLabel(formatGymLabel(data.name, data.address));
+        if (cancelled) return;
+        if (data && !error) {
+          setTodayWorkoutGymLabel(formatGymLabel(data.name, data.address));
+        } else if (snap) {
+          setTodayWorkoutGymLabel(snap);
+        } else {
+          setTodayWorkoutGymLabel(null);
+        }
       });
     return () => {
       cancelled = true;
     };
-  }, [todayWorkout?.gym_id]);
+  }, [todayWorkout?.gym_id, todayWorkout?.gym_display_name]);
 
   // Fetch reactions and comments for the user's own "Today's workout" post
   useEffect(() => {
@@ -1060,8 +1088,8 @@ export default function HomeScreen() {
                       </View>
                     ) : null}
                     <ThemedText style={styles.feedOverlayMeta}>
-                      {getWorkoutTypeEmoji(todayWorkout.workout_type)} Today
-            </ThemedText>
+                      {formatFeedPostTimestamp(todayWorkout.created_at) || 'Today'}
+                    </ThemedText>
           </View>
         </View>
               </LinearGradient>
@@ -1222,9 +1250,9 @@ export default function HomeScreen() {
                             </View>
                           ) : null}
                           <ThemedText style={styles.feedOverlayMeta}>
-                            {getWorkoutTypeEmoji(item.workout.workout_type)}{' '}
-                        {formatFeedDate(item.workout.workout_date)}
-                      </ThemedText>
+                            {formatFeedPostTimestamp(item.workout.created_at) ||
+                              formatFeedDate(item.workout.workout_date)}
+                          </ThemedText>
                     </View>
                       </Pressable>
                     </LinearGradient>

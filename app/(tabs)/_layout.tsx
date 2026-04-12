@@ -1,10 +1,9 @@
 import { Tabs } from 'expo-router';
 import React from 'react';
-import { Platform } from 'react-native';
 
-import { HapticTab } from '@/components/haptic-tab';
+import { MainTabBar } from '@/components/main-tab-bar';
 import { IconSymbol } from '@/components/ui/icon-symbol';
-import { BrandViolet, Colors } from '@/constants/theme';
+import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
 const TAB_ICON_SIZE = 24;
@@ -15,34 +14,11 @@ export default function TabLayout() {
 
   return (
     <Tabs
+      tabBar={(props) => <MainTabBar {...props} />}
       screenOptions={{
         headerShown: false,
-        tabBarButton: HapticTab,
         tabBarActiveTintColor: colors.tabIconSelected,
         tabBarInactiveTintColor: colors.tabIconDefault,
-        tabBarStyle: {
-          height: Platform.OS === 'ios' ? 88 : 68,
-          paddingTop: 8,
-          paddingBottom: Platform.OS === 'ios' ? 28 : 12,
-          backgroundColor: colors.tabBarBackground,
-          borderTopWidth: 0,
-          borderTopLeftRadius: 24,
-          borderTopRightRadius: 24,
-          shadowColor: colorScheme === 'dark' ? BrandViolet.primaryOnDark : '#000',
-          shadowOffset: { width: 0, height: -4 },
-          shadowOpacity: colorScheme === 'dark' ? 0.15 : 0.06,
-          shadowRadius: 16,
-          elevation: 12,
-        },
-        tabBarLabelStyle: {
-          fontSize: 8,
-          fontWeight: '700',
-          letterSpacing: 0.2,
-        },
-        tabBarItemStyle: {
-          flex: 1,
-          paddingTop: 4,
-        },
       }}>
       <Tabs.Screen
         name="index"

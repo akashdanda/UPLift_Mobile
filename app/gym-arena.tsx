@@ -2,6 +2,7 @@ import Ionicons from '@expo/vector-icons/Ionicons'
 import * as Haptics from 'expo-haptics'
 import * as Location from 'expo-location'
 import { LinearGradient } from 'expo-linear-gradient'
+import { useFocusEffect } from '@react-navigation/native'
 import { router, useLocalSearchParams } from 'expo-router'
 import { StatusBar } from 'expo-status-bar'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -243,6 +244,12 @@ export default function GymArenaScreen() {
     }
   }, [gymId])
 
+  const gymLat = gym?.lat ?? Number.parseFloat(params.lat ?? '')
+  const gymLng = gym?.lng ?? Number.parseFloat(params.lng ?? '')
+  const coordsOk = Number.isFinite(gymLat) && Number.isFinite(gymLng)
+  const displayName = gym?.name ?? params.gymName ?? 'Gym'
+  const displayAddress = gym?.address ?? params.gymAddress ?? ''
+
   useEffect(() => {
     if (!gymId || !session) return
     const unsub = subscribeToPresence(gymId, setPresence)
@@ -272,13 +279,6 @@ export default function GymArenaScreen() {
       alive = false
     }
   }, [coordsOk])
-
-  const displayName = gym?.name ?? params.gymName ?? 'Gym'
-  const displayAddress = gym?.address ?? params.gymAddress ?? ''
-
-  const gymLat = gym?.lat ?? Number.parseFloat(params.lat ?? '')
-  const gymLng = gym?.lng ?? Number.parseFloat(params.lng ?? '')
-  const coordsOk = Number.isFinite(gymLat) && Number.isFinite(gymLng)
 
   const pins = useMemo(() => {
     if (!session?.user?.id) return []
@@ -364,6 +364,17 @@ export default function GymArenaScreen() {
   useEffect(() => {
     injectMarkers()
   }, [injectMarkers])
+
+  useFocusEffect(
+    useCallback(() => {
+      const id = setTimeout(() => {
+        webRef.current?.injectJavaScript(
+          `try{window.__invalidateArenaMap&&window.__invalidateArenaMap();}catch(e){};true;`,
+        )
+      }, 48)
+      return () => clearTimeout(id)
+    }, []),
+  )
 
   const handleWebMessage = useCallback((ev: { nativeEvent: { data: string } }) => {
     try {

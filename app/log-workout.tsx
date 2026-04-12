@@ -1,8 +1,9 @@
 import Ionicons from '@expo/vector-icons/Ionicons'
 import { Outfit_600SemiBold, Outfit_700Bold, Outfit_900Black, useFonts } from '@expo-google-fonts/outfit'
 import { Image } from 'expo-image'
+import { LinearGradient } from 'expo-linear-gradient'
 import { router, useLocalSearchParams } from 'expo-router'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   Alert,
@@ -13,6 +14,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   useWindowDimensions,
   View,
 } from 'react-native'
@@ -21,14 +23,16 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { CameraCapture } from '@/components/camera-capture'
 import { CelebrationModal } from '@/components/celebration-modal'
 import { ThemedText } from '@/components/themed-text'
-import { Colors } from '@/constants/theme'
+import { Colors, Fonts } from '@/constants/theme'
 import { useAuthContext } from '@/hooks/use-auth-context'
 import { useColorScheme } from '@/hooks/use-color-scheme'
-import { getFriends } from '@/lib/friends'
+import { getFriends, type FriendWithProfile } from '@/lib/friends'
 import { computeXP, getLevelFromXP } from '@/lib/levels'
 import { pushFirstFriendWorkout } from '@/lib/push-notifications'
 import { isCheckedInAtGym } from '@/lib/presence-service'
 import { supabase } from '@/lib/supabase'
+import { invalidateTodayWorkoutPosted } from '@/lib/today-workout-tab'
+import { addWorkoutTags } from '@/lib/tags'
 import { uploadWorkoutImage } from '@/lib/workout-upload'
 import type { UserLevel } from '@/types/level'
 import type { Workout, WorkoutVisibility } from '@/types/workout'
@@ -36,29 +40,183 @@ import type { Workout, WorkoutVisibility } from '@/types/workout'
 /** Stored for analytics / feed; no longer user-selectable in this screen. */
 const DEFAULT_WORKOUT_TYPE = 'strength' as const
 
-/** Primary CTA — matches map / gym sheet purple. */
-const CTA_PURPLE = '#5239FF'
+function formatFeedDate(workoutDate: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(workoutDate)
+  if (!match) return ''
+  const year = Number(match[1])
+  const monthIndex = Number(match[2]) - 1
+  const day = Number(match[3])
+  const d = new Date(year, monthIndex, day)
+  if (Number.isNaN(d.getTime())) return ''
 
-function DualPhotoPreview({ primaryUri, secondaryUri }: { primaryUri: string; secondaryUri: string }) {
+  const today = new Date()
+  const sameDay = (a: Date, b: Date) =>
+    a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
+
+  if (sameDay(d, today)) return 'Today'
+  const yesterday = new Date(today)
+  yesterday.setDate(yesterday.getDate() - 1)
+  if (sameDay(d, yesterday)) return 'Yesterday'
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+}
+
+function formatFeedPostTimestamp(iso: string | null | undefined): string {
+  if (!iso) return ''
+  const posted = new Date(iso)
+  if (Number.isNaN(posted.getTime())) return ''
+  const now = new Date()
+  const sameDay = (a: Date, b: Date) =>
+    a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
+  const timeStr = posted.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+  if (sameDay(posted, now)) return `Today · ${timeStr}`
+  const yesterday = new Date(now)
+  yesterday.setDate(yesterday.getDate() - 1)
+  if (sameDay(posted, yesterday)) return `Yesterday · ${timeStr}`
+  const yNow = now.getFullYear()
+  const datePart =
+    posted.getFullYear() === yNow
+      ? posted.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+      : posted.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+  return `${datePart} · ${timeStr}`
+}
+
+function FeedStylePostCard({
+  primaryUri,
+  secondaryUri,
+  displayName,
+  avatarUrl,
+  caption,
+  gymLabel,
+  dateLabel,
+  taggedNames,
+}: {
+  primaryUri: string
+  secondaryUri?: string | null
+  displayName: string
+  avatarUrl?: string | null
+  caption?: string | null
+  gymLabel?: string | null
+  dateLabel: string
+  taggedNames?: string[]
+}) {
+  const colorScheme = useColorScheme()
+  const themeColors = Colors[colorScheme ?? 'light']
+  const isDark = colorScheme === 'dark'
   const [frontImage, setFrontImage] = useState<'primary' | 'secondary'>('primary')
-
-  const mainUri = frontImage === 'primary' ? primaryUri : secondaryUri
-  const overlayUri = frontImage === 'primary' ? secondaryUri : primaryUri
+  const hasDual = !!(secondaryUri && secondaryUri.trim().length > 0)
+  const mainUri = hasDual ? (frontImage === 'primary' ? primaryUri : secondaryUri!) : primaryUri
+  const overlayUri = hasDual ? (frontImage === 'primary' ? secondaryUri! : primaryUri) : primaryUri
 
   const toggle = () => {
+    if (!hasDual) return
     setFrontImage((f) => (f === 'primary' ? 'secondary' : 'primary'))
   }
 
   return (
-    <View style={styles.dualPreview}>
-      <Pressable style={{ width: '100%', height: '100%' }} onPressIn={toggle}>
-        <Image source={{ uri: mainUri }} style={styles.dualPreviewMain} />
-      </Pressable>
-      <Pressable style={styles.dualPreviewSecondaryWrap} onPressIn={toggle}>
-        <Image source={{ uri: overlayUri }} style={styles.dualPreviewSecondary} />
-      </Pressable>
+    <View
+      style={[
+        styles.lbPreviewCard,
+        {
+          borderColor: themeColors.tint + '30',
+          backgroundColor: isDark ? themeColors.tint + '12' : themeColors.card,
+        },
+      ]}
+    >
+      <View style={styles.feedStyleImageContainer}>
+        <View style={[styles.feedStyleImageFrame, { backgroundColor: themeColors.background }]}>
+          <View style={styles.feedStyleImagePressable}>
+            <Image source={{ uri: mainUri }} style={styles.feedStyleMainImage} contentFit="cover" />
+          </View>
+          {hasDual ? (
+            <Pressable style={styles.feedStyleCornerInset} onPressIn={toggle}>
+              <Image source={{ uri: overlayUri }} style={styles.feedStyleCornerImage} contentFit="cover" />
+            </Pressable>
+          ) : null}
+        </View>
+        <LinearGradient colors={['transparent', 'rgba(0,0,0,0.65)']} style={styles.feedStyleGradient}>
+          <View style={styles.feedStyleOverlayRow}>
+            <View style={styles.feedStyleAvatar}>
+              {avatarUrl ? (
+                <Image source={{ uri: avatarUrl }} style={styles.feedStyleAvatarImg} />
+              ) : (
+                <Text style={styles.feedStyleAvatarInitials}>{getInitials(displayName)}</Text>
+              )}
+            </View>
+            <View style={styles.feedStyleOverlayTextCol}>
+              <Text style={styles.feedStyleName} numberOfLines={1}>
+                {displayName}
+              </Text>
+              {caption ? (
+                <Text style={styles.feedStyleCaption} numberOfLines={2}>
+                  {caption}
+                </Text>
+              ) : null}
+              {gymLabel ? (
+                <View style={styles.feedStyleLocationRow}>
+                  <Ionicons name="location-outline" size={13} color="rgba(255,255,255,0.78)" />
+                  <Text style={styles.feedStyleLocation} numberOfLines={2}>
+                    {gymLabel}
+                  </Text>
+                </View>
+              ) : null}
+              <Text style={styles.feedStyleMeta}>{dateLabel}</Text>
+            </View>
+          </View>
+        </LinearGradient>
+        <View style={styles.feedStyleActionCol} pointerEvents="none">
+          <Ionicons name="chatbubble" size={24} color="rgba(255,255,255,0.9)" style={{ opacity: 0.4 }} />
+          <Ionicons name="ellipsis-horizontal" size={22} color="rgba(255,255,255,0.6)" style={{ opacity: 0.4 }} />
+        </View>
+      </View>
+      {taggedNames && taggedNames.length > 0 ? (
+        <View style={[styles.feedStyleTaggedFooter, { borderTopColor: themeColors.tint + '28' }]}>
+          <View
+            style={[
+              styles.feedStyleTaggedPill,
+              {
+                borderColor: themeColors.tint + '32',
+                backgroundColor: themeColors.tint + '18',
+              },
+            ]}
+          >
+            <View style={[styles.feedStyleTaggedIconBubble, { backgroundColor: themeColors.tint + '22' }]}>
+              <Ionicons name="people" size={14} color={themeColors.tint} />
+            </View>
+            <View style={styles.feedStyleTaggedTextWrap}>
+              <Text
+                style={[
+                  styles.feedStyleTaggedKicker,
+                  { color: isDark ? 'rgba(255,255,255,0.5)' : themeColors.textMuted },
+                ]}
+              >
+                With
+              </Text>
+              <Text
+                style={[
+                  styles.feedStyleTaggedNames,
+                  { color: isDark ? 'rgba(255,255,255,0.94)' : themeColors.text },
+                ]}
+                numberOfLines={2}
+              >
+                {taggedNames.join(' · ')}
+              </Text>
+            </View>
+          </View>
+        </View>
+      ) : (
+        <View style={styles.feedStyleFooterBar} />
+      )}
     </View>
   )
+}
+
+function getInitials(displayName: string | null): string {
+  if (displayName?.trim()) {
+    const parts = displayName.trim().split(/\s+/)
+    if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+    if (parts[0]?.[0]) return parts[0][0].toUpperCase()
+  }
+  return '?'
 }
 
 function getTodayLocalDate(): string {
@@ -85,21 +243,21 @@ function LogWorkoutBackRow({
   colors,
   isDark,
 }: {
-  colors: { text: string }
+  colors: (typeof Colors)[keyof typeof Colors]
   isDark: boolean
 }) {
   return (
     <View
       style={[
         styles.logBackRow,
-        { borderBottomColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)' },
+        { borderBottomColor: colors.tabBarBorder },
       ]}
     >
       <Pressable
         onPress={() => router.back()}
         style={[
           styles.logBackButton,
-          { backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)' },
+          { backgroundColor: colors.textMuted + '18' },
         ]}
         hitSlop={8}
         accessibilityRole="button"
@@ -121,7 +279,6 @@ export default function LogWorkoutScreen() {
   const isDark = colorScheme === 'dark'
   const insets = useSafeAreaInsets()
   const { height: windowHeight } = useWindowDimensions()
-  const previewPhotoHeight = Math.min(Math.round(windowHeight * 0.72), 640)
   const [fontsLoaded] = useFonts({
     Outfit_900Black,
     Outfit_700Bold,
@@ -132,6 +289,7 @@ export default function LogWorkoutScreen() {
   const [loading, setLoading] = useState(true)
   const [checkInAllowed, setCheckInAllowed] = useState(false)
   const [uploading, setUploading] = useState(false)
+  const [caption, setCaption] = useState('')
   // Dual capture: pendingSecondaryUri = front (selfie), pendingPhotoUri = back (workout).
   const [pendingPhotoUri, setPendingPhotoUri] = useState<string | null>(null)
   const [pendingSecondaryUri, setPendingSecondaryUri] = useState<string | null>(null)
@@ -150,7 +308,27 @@ export default function LogWorkoutScreen() {
   const [levelUpCelebration, setLevelUpCelebration] = useState<UserLevel | null>(null)
   const [showLevelUp, setShowLevelUp] = useState(false)
 
-  const postVisibility: WorkoutVisibility = 'friends'
+  const [visibility, setVisibility] = useState<WorkoutVisibility>('friends')
+
+  const [friends, setFriends] = useState<FriendWithProfile[]>([])
+  const [taggedFriends, setTaggedFriends] = useState<Set<string>>(() => new Set())
+  const [showTagPicker, setShowTagPicker] = useState(false)
+  const [tagSearchQuery, setTagSearchQuery] = useState('')
+
+  useEffect(() => {
+    if (!showTagPicker) setTagSearchQuery('')
+  }, [showTagPicker])
+
+  const filteredFriendsForTag = useMemo(() => {
+    const q = tagSearchQuery.trim().toLowerCase()
+    if (!q) return friends
+    return friends.filter((f) => (f.display_name || '').toLowerCase().includes(q))
+  }, [friends, tagSearchQuery])
+
+  const taggedPreviewNames = useMemo(
+    () => friends.filter((f) => taggedFriends.has(f.id)).map((f) => f.display_name || 'Friend'),
+    [friends, taggedFriends],
+  )
 
   const today = getTodayLocalDate()
 
@@ -182,6 +360,7 @@ export default function LogWorkoutScreen() {
         setLoading(false)
       }
     })()
+    getFriends(session.user.id).then(setFriends).catch(() => {})
     return () => {
       cancelled = true
     }
@@ -247,24 +426,27 @@ export default function LogWorkoutScreen() {
       if (!('error' in sec)) secondaryUrl = sec.url
     }
 
+    const gymDisplayName = gymName?.trim() ? gymName.trim() : null
     const rowWithGym = {
       user_id: session.user.id,
       gym_id: gymId,
+      gym_display_name: gymDisplayName,
       workout_date: today,
       image_url: uploadResult.url,
       secondary_image_url: secondaryUrl,
       workout_type: DEFAULT_WORKOUT_TYPE,
-      caption: null,
-      visibility: postVisibility,
+      caption: caption.trim() || null,
+      visibility,
     }
     const rowLegacy = {
       user_id: session.user.id,
+      gym_display_name: gymDisplayName,
       workout_date: today,
       image_url: uploadResult.url,
       secondary_image_url: secondaryUrl,
       workout_type: DEFAULT_WORKOUT_TYPE,
-      caption: null,
-      visibility: postVisibility,
+      caption: caption.trim() || null,
+      visibility,
     }
 
     const first = await supabase.from('workouts').insert(rowWithGym).select().single()
@@ -291,27 +473,42 @@ export default function LogWorkoutScreen() {
       return
     }
 
+    if (taggedFriends.size > 0 && workoutRow) {
+      await addWorkoutTags(workoutRow.id, [...taggedFriends]).catch(() => {})
+    }
+
     // Compute level BEFORE refreshing profile (to detect level-up)
     const oldXP = profile
       ? computeXP(profile, 0)
       : 0
     const oldLevel = getLevelFromXP(oldXP)
+    let postedWithLevelUp = false
 
     setPendingPhotoUri(null)
     setPendingSecondaryUri(null)
+    setCaption('')
+    setVisibility('friends')
+    setTaggedFriends(new Set())
+    setShowTagPicker(false)
     await refreshProfile()
-    setTodayWorkout({
-      id: '',
-      user_id: session.user.id,
-      gym_id: gymId,
-      workout_date: today,
-      image_url: uploadResult.url,
-      secondary_image_url: secondaryUrl ?? null,
-      workout_type: DEFAULT_WORKOUT_TYPE,
-      caption: null,
-      visibility: postVisibility,
-      created_at: new Date().toISOString(),
-    })
+    if (workoutRow && typeof (workoutRow as Workout).id === 'string' && (workoutRow as Workout).id.length > 0) {
+      setTodayWorkout(workoutRow as Workout)
+    } else {
+      setTodayWorkout({
+        id: '',
+        user_id: session.user.id,
+        gym_id: gymId,
+        gym_display_name: gymDisplayName,
+        workout_date: today,
+        image_url: uploadResult.url,
+        secondary_image_url: secondaryUrl ?? null,
+        workout_type: DEFAULT_WORKOUT_TYPE,
+        caption: caption.trim() || null,
+        visibility,
+        created_at: new Date().toISOString(),
+      })
+    }
+    invalidateTodayWorkoutPosted()
     try {
       const newXP = computeXP(
         {
@@ -324,6 +521,7 @@ export default function LogWorkoutScreen() {
       )
       const newLevel = getLevelFromXP(newXP)
       if (newLevel.level.tier !== oldLevel.level.tier) {
+        postedWithLevelUp = true
         setLevelUpCelebration(newLevel)
         setShowLevelUp(true)
       }
@@ -339,6 +537,10 @@ export default function LogWorkoutScreen() {
       }
     } catch {
       // best-effort
+    }
+
+    if (!postedWithLevelUp) {
+      router.dismissTo('/(tabs)/map')
     }
   }
 
@@ -375,21 +577,15 @@ export default function LogWorkoutScreen() {
             style={[
               styles.gateCard,
               {
-                backgroundColor: colors.card,
-                borderColor: colors.tabBarBorder,
+                backgroundColor: isDark ? colors.tint + '12' : colors.card,
+                borderColor: colors.tint + '30',
               },
             ]}
           >
-            <View style={[styles.gateIconWrap, { backgroundColor: `${CTA_PURPLE}22` }]}>
-              <Ionicons name="location-outline" size={32} color={CTA_PURPLE} />
+            <View style={[styles.gateIconWrap, { backgroundColor: colors.tint + '22' }]}>
+              <Ionicons name="location-outline" size={32} color={colors.tint} />
             </View>
-            <Text
-              style={[
-                styles.gateTitle,
-                { color: colors.text },
-                fontsLoaded && { fontFamily: 'Outfit_900Black' },
-              ]}
-            >
+            <Text style={[styles.gateTitle, { color: colors.text, fontFamily: Fonts?.rounded }]}>
               Check in to post
             </Text>
             <ThemedText style={[styles.gateBody, { color: colors.textMuted }]}>
@@ -404,8 +600,8 @@ export default function LogWorkoutScreen() {
                 styles.primaryButton,
                 styles.gatePrimaryBtn,
                 {
-                  backgroundColor: CTA_PURPLE,
-                  borderColor: isDark ? 'rgba(255,255,255,0.16)' : 'rgba(0,0,0,0.08)',
+                  backgroundColor: colors.tint,
+                  borderColor: isDark ? 'rgba(255,255,255,0.12)' : colors.tint + '35',
                 },
               ]}
               onPress={() => router.replace('/(tabs)/map')}
@@ -415,10 +611,10 @@ export default function LogWorkoutScreen() {
               </Text>
             </Pressable>
             <Pressable
-              style={[styles.gateSecondaryBtn, { borderColor: CTA_PURPLE }]}
+              style={[styles.gateSecondaryBtn, { borderColor: colors.tint + '40' }]}
               onPress={() => router.back()}
             >
-              <Text style={[styles.backButtonText, { color: CTA_PURPLE }, fontsLoaded && { fontFamily: 'Outfit_700Bold' }]}>
+              <Text style={[styles.backButtonText, { color: colors.tint }, fontsLoaded && { fontFamily: 'Outfit_700Bold' }]}>
                 Go back
               </Text>
             </Pressable>
@@ -449,48 +645,32 @@ export default function LogWorkoutScreen() {
         >
         {todayWorkout ? (
           <View style={styles.doneSection}>
-            <Text
-              style={[
-                styles.doneTitle,
-                { color: colors.text },
-                fontsLoaded && { fontFamily: 'Outfit_900Black' },
-              ]}
-            >
+            <Text style={[styles.doneTitle, { color: colors.text, fontFamily: Fonts?.rounded }]}>
               Today{"'"}s workout logged
             </Text>
             <ThemedText style={[styles.doneHint, { color: colors.textMuted }]}>
               You can post one workout per day. Come back tomorrow for the next one.
             </ThemedText>
-            <View
-              style={[
-                styles.imageWrap,
-                {
-                  backgroundColor: colors.card,
-                  shadowOpacity: isDark ? 0.35 : 0.12,
-                  borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)',
-                },
-              ]}
-            >
-              {todayWorkout.secondary_image_url ? (
-                <DualPhotoPreview
-                  primaryUri={todayWorkout.image_url}
-                  secondaryUri={todayWorkout.secondary_image_url!}
-                />
-              ) : (
-                <Image source={{ uri: todayWorkout.image_url }} style={styles.workoutImage} />
-              )}
-            </View>
-            {todayWorkout.caption ? (
-              <ThemedText style={[styles.caption, { color: colors.textMuted }]}>{todayWorkout.caption}</ThemedText>
-            ) : null}
+            <FeedStylePostCard
+              primaryUri={todayWorkout.image_url}
+              secondaryUri={todayWorkout.secondary_image_url}
+              displayName={profile?.display_name || 'You'}
+              avatarUrl={profile?.avatar_url ?? null}
+              caption={todayWorkout.caption}
+              gymLabel={gymName ?? null}
+              dateLabel={
+                formatFeedPostTimestamp(todayWorkout.created_at) ||
+                formatFeedDate(todayWorkout.workout_date)
+              }
+            />
             <Pressable
-              style={[styles.backButton, { borderColor: CTA_PURPLE, borderWidth: 1.5 }]}
+              style={[styles.backButton, { borderColor: colors.tint + '40', borderWidth: 1 }]}
               onPress={() => router.back()}
             >
               <Text
                 style={[
                   styles.backButtonText,
-                  { color: CTA_PURPLE },
+                  { color: colors.tint },
                   fontsLoaded && { fontFamily: 'Outfit_700Bold' },
                 ]}
               >
@@ -504,12 +684,12 @@ export default function LogWorkoutScreen() {
               style={[
                 styles.cameraIntroGlyph,
                 {
-                  borderColor: `${CTA_PURPLE}4d`,
-                  backgroundColor: isDark ? `${CTA_PURPLE}18` : `${CTA_PURPLE}12`,
+                  borderColor: colors.tint + '45',
+                  backgroundColor: colors.tint + (isDark ? '20' : '14'),
                 },
               ]}
             >
-              <Ionicons name="camera" size={44} color={CTA_PURPLE} />
+              <Ionicons name="camera" size={40} color={colors.tint} />
             </View>
             <Pressable
               onPress={handleTakePhoto}
@@ -518,20 +698,13 @@ export default function LogWorkoutScreen() {
                 styles.cameraIntroCta,
                 styles.cameraOpenButton,
                 {
-                  backgroundColor: CTA_PURPLE,
-                  shadowOpacity: isDark ? 0.5 : 0.22,
-                  borderColor: isDark ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.08)',
+                  backgroundColor: colors.tint,
+                  borderColor: isDark ? 'rgba(255,255,255,0.12)' : colors.tint + '35',
                 },
               ]}
             >
               <Ionicons name="camera" size={24} color="#fff" style={{ marginRight: 10 }} />
-              <Text
-                style={[
-                  styles.primaryButtonText,
-                  styles.cameraOpenButtonText,
-                  fontsLoaded && { fontFamily: 'Outfit_700Bold' },
-                ]}
-              >
+              <Text style={[styles.primaryButtonText, styles.cameraOpenButtonText, { fontFamily: Fonts?.rounded }]}>
                 Open camera
               </Text>
             </Pressable>
@@ -547,23 +720,16 @@ export default function LogWorkoutScreen() {
           </View>
         ) : (
           <View style={[styles.formSection, styles.previewCompose]}>
-            <View
-              style={[
-                styles.imageWrapLarge,
-                {
-                  height: previewPhotoHeight,
-                  backgroundColor: colors.card,
-                  shadowOpacity: isDark ? 0.4 : 0.14,
-                  borderColor: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.07)',
-                },
-              ]}
-            >
-              {pendingSecondaryUri ? (
-                <DualPhotoPreview primaryUri={pendingPhotoUri!} secondaryUri={pendingSecondaryUri!} />
-              ) : (
-                <Image source={{ uri: pendingPhotoUri! }} style={styles.workoutImage} />
-              )}
-            </View>
+            <FeedStylePostCard
+              primaryUri={pendingPhotoUri!}
+              secondaryUri={pendingSecondaryUri}
+              displayName={profile?.display_name || 'You'}
+              avatarUrl={profile?.avatar_url ?? null}
+              caption={caption.trim() || null}
+              gymLabel={gymName ?? null}
+              dateLabel="Today"
+              taggedNames={taggedPreviewNames.length > 0 ? taggedPreviewNames : undefined}
+            />
 
             <Pressable
               style={styles.retakeButton}
@@ -576,17 +742,226 @@ export default function LogWorkoutScreen() {
               }}
               disabled={uploading}
             >
-              <Ionicons name="camera-reverse-outline" size={18} color={CTA_PURPLE} />
+              <Ionicons name="camera-reverse-outline" size={18} color={colors.tint} />
               <Text
                 style={[
                   styles.retakeButtonText,
-                  { color: CTA_PURPLE },
+                  { color: colors.tint },
                   fontsLoaded && { fontFamily: 'Outfit_700Bold' },
                 ]}
               >
                 Retake both photos
               </Text>
             </Pressable>
+
+            <View style={styles.fieldGroup}>
+              <Text
+                style={[
+                  styles.fieldKicker,
+                  { color: colors.textMuted },
+                  fontsLoaded && { fontFamily: 'Outfit_700Bold' },
+                ]}
+              >
+                Caption
+              </Text>
+              <TextInput
+                style={[
+                  styles.input,
+                  {
+                    backgroundColor: isDark ? colors.tint + '12' : colors.cardElevated,
+                    color: colors.text,
+                    borderColor: colors.tint + '30',
+                  },
+                  fontsLoaded && { fontFamily: 'Outfit_600SemiBold' },
+                ]}
+                placeholder="What did you train? (optional)"
+                placeholderTextColor={isDark ? 'rgba(232,228,240,0.42)' : colors.textMuted}
+                value={caption}
+                onChangeText={setCaption}
+                editable={!uploading}
+              />
+            </View>
+
+            <View style={styles.fieldGroup}>
+              <Text
+                style={[
+                  styles.fieldKicker,
+                  { color: colors.textMuted },
+                  fontsLoaded && { fontFamily: 'Outfit_700Bold' },
+                ]}
+              >
+                Who can see this
+              </Text>
+              <View
+                style={[
+                  styles.composeAudienceTabs,
+                  {
+                    backgroundColor: isDark ? colors.cardElevated : colors.card,
+                    borderColor: colors.tabBarBorder,
+                  },
+                ]}
+              >
+                <Pressable
+                  style={[styles.composeAudienceTab, visibility === 'friends' && { backgroundColor: colors.tint }]}
+                  onPress={() => setVisibility('friends')}
+                  disabled={uploading}
+                >
+                  <Text
+                    style={[styles.composeAudienceTabLabel, { color: visibility === 'friends' ? '#fff' : colors.textMuted }]}
+                  >
+                    Friends
+                  </Text>
+                </Pressable>
+                <Pressable
+                  style={[styles.composeAudienceTab, visibility === 'public' && { backgroundColor: colors.tint }]}
+                  onPress={() => setVisibility('public')}
+                  disabled={uploading}
+                >
+                  <Text
+                    style={[styles.composeAudienceTabLabel, { color: visibility === 'public' ? '#fff' : colors.textMuted }]}
+                  >
+                    Global
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
+
+            <Pressable
+              style={[
+                styles.tagToggle,
+                {
+                  backgroundColor: isDark ? colors.tint + '12' : colors.cardElevated,
+                  borderColor: colors.tint + '30',
+                },
+              ]}
+              onPress={() => setShowTagPicker(!showTagPicker)}
+              disabled={uploading}
+            >
+              <Ionicons name="people-outline" size={18} color={colors.tint} />
+              <Text
+                style={[
+                  styles.tagToggleText,
+                  { color: colors.text },
+                  fontsLoaded && { fontFamily: 'Outfit_600SemiBold' },
+                ]}
+              >
+                {taggedFriends.size > 0
+                  ? `${taggedFriends.size} friend${taggedFriends.size > 1 ? 's' : ''} tagged`
+                  : 'Tag friends'}
+              </Text>
+              <Ionicons name={showTagPicker ? 'chevron-up' : 'chevron-down'} size={16} color={colors.textMuted} />
+            </Pressable>
+
+            {showTagPicker && (
+              <View
+                style={[
+                  styles.tagList,
+                  {
+                    backgroundColor: isDark ? colors.tint + '10' : colors.card,
+                    borderColor: colors.tint + '28',
+                  },
+                ]}
+              >
+                {friends.length === 0 ? (
+                  <ThemedText style={[styles.tagEmptyHint, { color: colors.textMuted }]}>
+                    Add friends first to tag them
+                  </ThemedText>
+                ) : (
+                  <>
+                    <View
+                      style={[
+                        styles.tagSearchRow,
+                        {
+                          backgroundColor: isDark ? colors.background : colors.cardElevated,
+                          borderColor: colors.tint + '25',
+                        },
+                      ]}
+                    >
+                      <Ionicons name="search" size={20} color={colors.textMuted} style={styles.tagSearchIcon} />
+                      <TextInput
+                        style={[
+                          styles.tagSearchInput,
+                          { color: colors.text },
+                          fontsLoaded && { fontFamily: 'Outfit_600SemiBold' },
+                        ]}
+                        placeholder="Search friends"
+                        placeholderTextColor={isDark ? 'rgba(232,228,240,0.42)' : colors.textMuted}
+                        value={tagSearchQuery}
+                        onChangeText={setTagSearchQuery}
+                        editable={!uploading}
+                        autoCorrect={false}
+                        autoCapitalize="none"
+                        clearButtonMode="never"
+                      />
+                      {tagSearchQuery.length > 0 ? (
+                        <Pressable
+                          onPress={() => setTagSearchQuery('')}
+                          hitSlop={10}
+                          style={styles.tagSearchClear}
+                          accessibilityLabel="Clear search"
+                        >
+                          <Ionicons name="close-circle" size={22} color={colors.textMuted} />
+                        </Pressable>
+                      ) : null}
+                    </View>
+                    {filteredFriendsForTag.length === 0 ? (
+                      <ThemedText style={[styles.tagEmptyHint, styles.tagNoMatches, { color: colors.textMuted }]}>
+                        {`No friends match "${tagSearchQuery.trim()}"`}
+                      </ThemedText>
+                    ) : (
+                      <ScrollView
+                        style={styles.tagListScroll}
+                        contentContainerStyle={styles.tagListContent}
+                        showsVerticalScrollIndicator
+                        keyboardShouldPersistTaps="handled"
+                        nestedScrollEnabled
+                      >
+                        {filteredFriendsForTag.map((friend) => {
+                          const isTagged = taggedFriends.has(friend.id)
+                          return (
+                            <Pressable
+                              key={friend.id}
+                              style={[
+                                styles.tagRow,
+                                {
+                                  borderBottomColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+                                },
+                              ]}
+                              onPress={() => {
+                                setTaggedFriends((prev) => {
+                                  const next = new Set(prev)
+                                  if (next.has(friend.id)) next.delete(friend.id)
+                                  else next.add(friend.id)
+                                  return next
+                                })
+                              }}
+                            >
+                              <View style={[styles.tagAvatar, { backgroundColor: colors.tint + '28' }]}>
+                                {friend.avatar_url ? (
+                                  <Image source={{ uri: friend.avatar_url }} style={styles.tagAvatarImg} />
+                                ) : (
+                                  <ThemedText style={[styles.tagInitials, { color: colors.tint }]}>
+                                    {getInitials(friend.display_name)}
+                                  </ThemedText>
+                                )}
+                              </View>
+                              <ThemedText style={[styles.tagName, { color: colors.text }]}>
+                                {friend.display_name || 'No name'}
+                              </ThemedText>
+                              <Ionicons
+                                name={isTagged ? 'checkmark-circle' : 'ellipse-outline'}
+                                size={22}
+                                color={isTagged ? colors.tint : colors.textMuted}
+                              />
+                            </Pressable>
+                          )
+                        })}
+                      </ScrollView>
+                    )}
+                  </>
+                )}
+              </View>
+            )}
 
             <Pressable
               onPress={handlePost}
@@ -597,16 +972,17 @@ export default function LogWorkoutScreen() {
                 styles.primaryButton,
                 styles.previewPostButton,
                 {
-                  backgroundColor: CTA_PURPLE,
-                  shadowOpacity: isDark ? 0.45 : 0.2,
-                  borderColor: isDark ? 'rgba(255,255,255,0.16)' : 'rgba(0,0,0,0.08)',
+                  backgroundColor: colors.tint,
+                  borderColor: isDark ? 'rgba(255,255,255,0.12)' : colors.tint + '35',
                 },
               ]}
             >
               {uploading ? (
                 <ActivityIndicator color="#fff" />
               ) : (
-                <Ionicons name="arrow-up-circle" size={34} color="#fff" />
+                <Text style={[styles.primaryButtonText, { fontFamily: Fonts?.rounded }]}>
+                  Post workout
+                </Text>
               )}
             </Pressable>
           </View>
@@ -623,6 +999,7 @@ export default function LogWorkoutScreen() {
           onDismiss={() => {
             setShowLevelUp(false)
             setLevelUpCelebration(null)
+            router.dismissTo('/(tabs)/map')
           }}
           accentColor={levelUpCelebration.level.color}
         />
@@ -659,17 +1036,17 @@ const styles = StyleSheet.create({
   },
   keyboardAvoid: { flex: 1 },
   scrollView: { flex: 1 },
-  scrollContent: { paddingHorizontal: 22, paddingTop: 12, paddingBottom: 48 },
+  scrollContent: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 40 },
   scrollContentPreview: {
     flexGrow: 1,
-    paddingHorizontal: 10,
-    paddingTop: 8,
+    paddingHorizontal: 20,
+    paddingTop: 12,
     justifyContent: 'flex-start',
   },
   scrollContentCameraIntro: {
     flexGrow: 1,
     justifyContent: 'center',
-    paddingTop: 4,
+    paddingTop: 8,
   },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 },
   gateScrollContent: {
@@ -681,11 +1058,11 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: 400,
     alignSelf: 'center',
-    borderRadius: 20,
+    borderRadius: 18,
     paddingHorizontal: 24,
     paddingVertical: 28,
     alignItems: 'center',
-    borderWidth: StyleSheet.hairlineWidth,
+    borderWidth: 1,
   },
   gateIconWrap: {
     width: 64,
@@ -736,7 +1113,7 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     textAlign: 'center',
   },
-  doneHint: { textAlign: 'center', marginBottom: 24, paddingHorizontal: 16 },
+  doneHint: { textAlign: 'center', marginBottom: 20, paddingHorizontal: 16, fontSize: 13, letterSpacing: 0.2 },
   // 4:5 portrait frame so photos are not cropped
   imageWrap: {
     width: '100%',
@@ -750,16 +1127,203 @@ const styles = StyleSheet.create({
     shadowRadius: 22,
     elevation: 14,
   },
-  imageWrapLarge: {
-    width: '100%',
-    borderRadius: 20,
+  /** Leaderboard-aligned preview shell (tint wash + border like list rows). */
+  lbPreviewCard: {
     overflow: 'hidden',
-    marginBottom: 8,
+    marginBottom: 20,
+    borderRadius: 18,
     borderWidth: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowRadius: 22,
-    elevation: 14,
+  },
+  feedStyleImageContainer: {
+    position: 'relative',
+  },
+  feedStyleImageFrame: {
+    width: '100%',
+    aspectRatio: 10 / 16,
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
+    overflow: 'hidden',
+  },
+  feedStyleImagePressable: {
+    flex: 1,
+    width: '100%',
+    height: '100%',
+  },
+  feedStyleMainImage: {
+    width: '100%',
+    height: '100%',
+  },
+  feedStyleCornerInset: {
+    position: 'absolute',
+    top: 14,
+    left: 14,
+    width: '26%',
+    aspectRatio: 2 / 3,
+    borderRadius: 16,
+    overflow: 'hidden',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.92)',
+    zIndex: 5,
+  },
+  feedStyleCornerImage: {
+    width: '100%',
+    height: '100%',
+  },
+  feedStyleGradient: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    paddingTop: 64,
+    paddingBottom: 16,
+    paddingHorizontal: 16,
+    justifyContent: 'flex-end',
+  },
+  feedStyleOverlayRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  feedStyleAvatar: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    overflow: 'hidden',
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.9)',
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  feedStyleAvatarImg: {
+    width: 34,
+    height: 34,
+  },
+  feedStyleAvatarInitials: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  feedStyleOverlayTextCol: {
+    flex: 1,
+    minWidth: 0,
+  },
+  feedStyleName: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '700',
+    letterSpacing: 0.1,
+    textShadowColor: 'rgba(0,0,0,0.5)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+  },
+  feedStyleCaption: {
+    color: 'rgba(255,255,255,0.85)',
+    fontSize: 13,
+    lineHeight: 17,
+    marginTop: 2,
+    textShadowColor: 'rgba(0,0,0,0.5)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+  },
+  feedStyleLocationRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 5,
+    marginTop: 6,
+    paddingRight: 8,
+  },
+  feedStyleLocation: {
+    flex: 1,
+    color: 'rgba(255,255,255,0.88)',
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '500',
+    textShadowColor: 'rgba(0,0,0,0.45)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
+  feedStyleMeta: {
+    color: 'rgba(255,255,255,0.55)',
+    fontSize: 11,
+    marginTop: 2,
+    fontWeight: '600',
+    textShadowColor: 'rgba(0,0,0,0.4)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
+  feedStyleActionCol: {
+    position: 'absolute',
+    right: 14,
+    bottom: 16,
+    alignItems: 'center',
+    gap: 20,
+  },
+  feedStyleTaggedFooter: {
+    borderBottomLeftRadius: 18,
+    borderBottomRightRadius: 18,
+    paddingHorizontal: 14,
+    paddingTop: 10,
+    paddingBottom: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  feedStyleFooterBar: {
+    height: 6,
+    borderBottomLeftRadius: 18,
+    borderBottomRightRadius: 18,
+  },
+  feedStyleTaggedPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    maxWidth: '100%',
+    paddingVertical: 8,
+    paddingRight: 12,
+    paddingLeft: 8,
+    borderRadius: 22,
+    borderWidth: StyleSheet.hairlineWidth,
+    gap: 8,
+  },
+  feedStyleTaggedIconBubble: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  feedStyleTaggedTextWrap: {
+    flex: 1,
+    minWidth: 0,
+  },
+  feedStyleTaggedKicker: {
+    fontSize: 10,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
+  feedStyleTaggedNames: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  composeAudienceTabs: {
+    flexDirection: 'row',
+    padding: 3,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  composeAudienceTab: {
+    flex: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 11,
+    alignItems: 'center',
+  },
+  composeAudienceTabLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+    fontFamily: Fonts?.rounded,
   },
   previewCompose: {
     flex: 1,
@@ -767,45 +1331,26 @@ const styles = StyleSheet.create({
     minHeight: 0,
   },
   previewPostButton: {
-    minHeight: 56,
-    borderRadius: 16,
+    minHeight: 52,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 4,
+    marginTop: 8,
   },
   workoutImage: { width: '100%', height: '100%' },
-  dualPreview: { width: '100%', height: '100%', position: 'relative' },
-  dualPreviewMain: { width: '100%', height: '100%' },
-  dualPreviewSecondaryWrap: {
-    position: 'absolute',
-    top: 14,
-    right: 14,
-    width: '30%',
-    aspectRatio: 4 / 5,
-    borderRadius: 14,
-    overflow: 'hidden',
-    borderWidth: 4,
-    borderColor: '#fff',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-  dualPreviewSecondary: { width: '100%', height: '100%' },
   cameraIntroSection: {
     width: '100%',
     alignItems: 'center',
     paddingHorizontal: 4,
   },
   cameraIntroGlyph: {
-    width: 100,
-    height: 100,
-    borderRadius: 28,
-    borderWidth: 2,
+    width: 88,
+    height: 88,
+    borderRadius: 18,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 28,
+    marginBottom: 24,
   },
   cameraIntroCta: {
     flexDirection: 'row',
@@ -814,20 +1359,20 @@ const styles = StyleSheet.create({
     alignSelf: 'stretch',
   },
   cameraOpenButton: {
-    minHeight: 58,
-    paddingVertical: 18,
-    borderRadius: 16,
+    minHeight: 52,
+    paddingVertical: 16,
+    borderRadius: 14,
   },
   cameraOpenButtonText: {
     fontSize: 18,
     letterSpacing: 0.1,
   },
   cameraIntroFoot: {
-    marginTop: 18,
-    fontSize: 14,
+    marginTop: 16,
+    fontSize: 13,
     lineHeight: 20,
     textAlign: 'center',
-    letterSpacing: -0.05,
+    letterSpacing: 0.2,
   },
   screenTitle: {
     fontSize: 28,
@@ -842,13 +1387,13 @@ const styles = StyleSheet.create({
     letterSpacing: -0.05,
     marginBottom: 20,
   },
-  fieldGroup: { marginBottom: 22 },
+  fieldGroup: { marginBottom: 20 },
   fieldKicker: {
     fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 1.1,
+    fontWeight: '700',
+    letterSpacing: 1,
     textTransform: 'uppercase',
-    marginBottom: 10,
+    marginBottom: 6,
   },
   caption: { marginBottom: 24, textAlign: 'center' },
   backButton: { paddingVertical: 14, paddingHorizontal: 24, borderRadius: 14 },
@@ -867,27 +1412,28 @@ const styles = StyleSheet.create({
   },
   retakeButtonText: { fontSize: 15, letterSpacing: -0.1 },
   input: {
-    borderRadius: 16,
-    paddingHorizontal: 16,
-    paddingVertical: 15,
-    fontSize: 16,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    fontSize: 15,
     borderWidth: 1,
-    letterSpacing: -0.1,
+    letterSpacing: 0.1,
   },
   tagToggle: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    borderRadius: 12,
+    borderRadius: 14,
     paddingHorizontal: 14,
     paddingVertical: 12,
     marginBottom: 12,
+    borderWidth: 1,
   },
   tagToggleText: { flex: 1, fontSize: 15 },
   tagList: {
     borderRadius: 14,
     overflow: 'hidden',
-    marginBottom: 18,
+    marginBottom: 16,
     maxHeight: 318,
     borderWidth: 1,
   },
@@ -941,27 +1487,12 @@ const styles = StyleSheet.create({
   tagInitials: { fontSize: 13, fontWeight: '600' },
   tagName: { flex: 1, fontSize: 15 },
   tagEmptyHint: { padding: 14, fontSize: 14, textAlign: 'center' },
-  visibilityRow: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  visibilityChip: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 14,
-    borderRadius: 14,
-    borderWidth: 1.5,
-  },
-  visibilityLabel: { fontSize: 15, fontWeight: '700', letterSpacing: -0.2 },
   primaryButton: {
-    borderRadius: 16,
-    paddingVertical: 17,
+    borderRadius: 14,
+    paddingVertical: 15,
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 54,
+    minHeight: 52,
     borderWidth: 1,
   },
   primaryButtonText: { color: '#fff', fontSize: 16, fontWeight: '800', letterSpacing: 0.15 },

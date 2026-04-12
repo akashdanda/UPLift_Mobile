@@ -55,11 +55,13 @@ async function enrichWorkouts(workouts: Workout[]): Promise<FeedItem[]> {
   const items: FeedItem[] = workouts.map((workout) => {
     const p = profileMap.get(workout.user_id)
     const g = workout.gym_id ? gymMap.get(workout.gym_id) : undefined
+    const joined = g ? formatGymLabel(g.name, g.address) : null
+    const snap = workout.gym_display_name?.trim() || null
     return {
       workout,
       display_name: p?.display_name ?? null,
       avatar_url: p?.avatar_url ?? null,
-      gym_label: g ? formatGymLabel(g.name, g.address) : null,
+      gym_label: joined || snap,
     }
   })
 
