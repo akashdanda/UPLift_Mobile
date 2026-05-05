@@ -3,7 +3,7 @@ import { useFocusEffect } from '@react-navigation/native'
 import { Image } from 'expo-image'
 
 import { router, useLocalSearchParams } from 'expo-router'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Dimensions, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native'
 import { Gesture, GestureDetector } from 'react-native-gesture-handler'
 import Animated, {
@@ -77,6 +77,7 @@ export default function ProfileScreen() {
   const showAvatarImage = avatarUrl && !avatarLoadError
 
   const [monthWorkoutDates, setMonthWorkoutDates] = useState<Set<string>>(new Set())
+  const [bestStreakOverride, setBestStreakOverride] = useState<number | null>(null)
 
   const [pendingIncoming, setPendingIncoming] = useState<
     { friendship: { id: string }; requester: ProfilePublic }[]
@@ -164,16 +165,44 @@ export default function ProfileScreen() {
     void fetchMonthWorkouts()
   }, [fetchMonthWorkouts])
 
+  const lastFocusFetchRef = useRef<number>(0)
+  const PROFILE_STALE_MS = 30_000
+
   useFocusEffect(
     useCallback(() => {
-      void fetchMonthWorkouts()
+      // Always refresh pending friend requests (lightweight, user-visible badge)
       void loadPendingIncoming()
+      // Only re-fetch calendar workouts if stale — prevents double-fire on mount
+      const now = Date.now()
+      if (now - lastFocusFetchRef.current >= PROFILE_STALE_MS) {
+        lastFocusFetchRef.current = now
+        void fetchMonthWorkouts()
+      }
     }, [fetchMonthWorkouts, loadPendingIncoming])
   )
 
   useEffect(() => {
     setAvatarLoadError(false)
   }, [avatarUrl])
+
+  // Hydrate best streak from canonical backend function (all-time historical max).
+  // Ensures consistency even if stored profile fields are stale.
+  useEffect(() => {
+    if (!session?.user?.id) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const { data } = await supabase.rpc('get_longest_streak', { user_id_param: session.user.id })
+        if (cancelled) return
+        if (typeof data === 'number') setBestStreakOverride(data)
+      } catch {
+        // ignore
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [session?.user?.id])
 
   useEffect(() => {
     if (params.friends !== '1' && params.friends !== 'true') return
@@ -189,7 +218,7 @@ export default function ProfileScreen() {
 
   const stats = [
     { value: profile?.workouts_count ?? 0, label: 'Workouts' },
-    { value: profile?.longest_streak ?? 0, label: 'Best streak' },
+    { value: bestStreakOverride ?? profile?.longest_streak ?? 0, label: 'Best streak' },
     { value: profile?.streak ?? 0, label: 'Streak' },
     { value: profile?.friends_count ?? 0, label: 'Friends' },
   ]

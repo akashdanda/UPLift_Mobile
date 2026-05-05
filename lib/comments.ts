@@ -8,13 +8,12 @@ export async function getCommentsForWorkouts(
 ): Promise<Map<string, WorkoutCommentWithProfile[]>> {
   if (workoutIds.length === 0) return new Map()
 
-  // Use select('*') so this still works if `parent_id` hasn’t been migrated yet
-  // (requesting a missing column makes the whole query fail → empty UI, looks like “deleted”).
   const { data: rows, error } = await supabase
     .from('workout_comments')
-    .select('*')
+    .select('id,workout_id,user_id,parent_id,message,gif_url,created_at')
     .in('workout_id', workoutIds)
     .order('created_at', { ascending: true })
+    .limit(250)
 
   if (error || !rows?.length) return new Map()
 

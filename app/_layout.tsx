@@ -67,8 +67,6 @@ function RootNavigator() {
           name="friend-profile"
           options={{ headerShown: false, presentation: 'modal' }}
         />
-        <Stack.Screen name="create-duel" options={{ title: '1v1 Challenge', presentation: 'modal', headerBackTitle: 'Profile' }} />
-        <Stack.Screen name="duel-detail" options={{ title: 'Challenge', headerBackTitle: 'Profile' }} />
         <Stack.Screen name="settings" options={{ title: 'Settings', headerBackTitle: 'Profile' }} />
       </Stack.Protected>
       <Stack.Protected guard={!isLoggedIn}>

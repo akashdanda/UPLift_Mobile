@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "skills": {
+    "create-video": {
+      "source": "heygen-com/skills",
+      "sourceType": "github",
+      "computedHash": "2c44d77bcb3d159aef61aa63fd52edf3e3050757fc4760fdac75867d01bf533f"
+    }
+  }
+}

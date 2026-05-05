@@ -7,7 +7,7 @@ import {
 import { supabase } from '@/lib/supabase'
 import type { Profile, ProfileUpdate } from '@/types/profile'
 import type { Session } from '@supabase/supabase-js'
-import { PropsWithChildren, useCallback, useEffect, useRef, useState } from 'react'
+import { PropsWithChildren, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 export default function AuthProvider({ children }: PropsWithChildren) {
   const [session, setSession] = useState<Session | null>(null)
@@ -76,7 +76,27 @@ export default function AuthProvider({ children }: PropsWithChildren) {
       const userId = session.user.id
       const { data } = await supabase
         .from('profiles')
-        .select('*')
+        // Avoid pulling large/unneeded columns. This runs in the top-level provider.
+        .select(
+          [
+            'id',
+            'created_at',
+            'updated_at',
+            'full_name',
+            'display_name',
+            'avatar_url',
+            'bio',
+            'location_visible',
+            'notifications_enabled',
+            'streak',
+            'longest_streak',
+            'workouts_count',
+            'groups_count',
+            'friends_count',
+            'xp',
+            'level',
+          ].join(',')
+        )
         .eq('id', userId)
         .single()
       const profileData = data as Profile | null
@@ -85,83 +105,20 @@ export default function AuthProvider({ children }: PropsWithChildren) {
         return
       }
 
-      const now = new Date()
-      const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
-
-      const [allWorkoutsRes, friendsRes] = await Promise.all([
-        supabase
-          .from('workouts')
-          .select('workout_date, workout_type')
-          .eq('user_id', userId)
-          .order('workout_date', { ascending: true }),
-        supabase
-          .from('friendships')
-          .select('id', { count: 'exact', head: true })
-          .eq('status', 'accepted')
-          .or(`requester_id.eq.${userId},addressee_id.eq.${userId}`),
-      ])
-
-      const workouts = (allWorkoutsRes.data ?? []) as { workout_date: string; workout_type: string | null }[]
-
-      // Build a map: date → workout_type. Prefer non-rest if multiple entries exist on same date.
-      const dateMap = new Map<string, string | null>()
-      let nonRestCount = 0
-      for (const w of workouts) {
-        if (w.workout_type !== 'rest') nonRestCount++
-        const existing = dateMap.get(w.workout_date)
-        if (existing === undefined) {
-          dateMap.set(w.workout_date, w.workout_type)
-        } else if (w.workout_type !== 'rest') {
-          dateMap.set(w.workout_date, w.workout_type)
-        }
-      }
-
-      // --- Current streak: walk backwards from today ---
-      // Rest days pause (don't count, don't break). Missing days break.
-      let currentStreak = 0
-      {
-        const d = new Date(todayStr + 'T00:00:00')
-        if (!dateMap.has(todayStr)) {
-          d.setDate(d.getDate() - 1)
-        }
-        while (true) {
-          const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-          if (!dateMap.has(iso)) break
-          if (dateMap.get(iso) !== 'rest') currentStreak++
-          d.setDate(d.getDate() - 1)
-        }
-      }
-
-      // --- Longest streak: walk through all days from first to last workout ---
-      let longestStreak = 0
-      {
-        const sorted = [...dateMap.keys()].sort()
-        if (sorted.length > 0) {
-          const first = new Date(sorted[0] + 'T00:00:00')
-          const last = new Date(sorted[sorted.length - 1] + 'T00:00:00')
-          let run = 0
-          const d = new Date(first)
-          while (d <= last) {
-            const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-            if (dateMap.has(iso)) {
-              if (dateMap.get(iso) !== 'rest') run++
-            } else {
-              longestStreak = Math.max(longestStreak, run)
-              run = 0
-            }
-            d.setDate(d.getDate() + 1)
-          }
-          longestStreak = Math.max(longestStreak, run)
-        }
-      }
+      // Friends count is user-visible and small; keep it accurate without fetching large workout history.
+      const friendsRes = await supabase
+        .from('friendships')
+        .select('id', { count: 'exact', head: true })
+        .eq('status', 'accepted')
+        .or(`requester_id.eq.${userId},addressee_id.eq.${userId}`)
 
       setProfile({
         ...profileData,
-        streak: currentStreak,
-        longest_streak: longestStreak,
-        workouts_count: nonRestCount,
         groups_count: profileData.groups_count ?? 0,
         friends_count: friendsRes.count ?? profileData.friends_count ?? 0,
+        streak: profileData.streak ?? 0,
+        longest_streak: profileData.longest_streak ?? 0,
+        workouts_count: profileData.workouts_count ?? 0,
       })
     } catch {
       setProfile(null)
@@ -256,23 +213,38 @@ export default function AuthProvider({ children }: PropsWithChildren) {
     }
   }, [session?.user?.id, profile?.notifications_enabled])
 
+  const contextValue = useMemo(
+    () => ({
+      session,
+      isLoading,
+      profile,
+      isLoggedIn: !!session,
+      signInWithEmail,
+      signUpWithEmail,
+      signInWithGoogle,
+      signInWithApple,
+      signOut,
+      resetPassword,
+      updateProfile,
+      refreshProfile,
+    }),
+    [
+      session,
+      isLoading,
+      profile,
+      signInWithEmail,
+      signUpWithEmail,
+      signInWithGoogle,
+      signInWithApple,
+      signOut,
+      resetPassword,
+      updateProfile,
+      refreshProfile,
+    ]
+  )
+
   return (
-    <AuthContext.Provider
-      value={{
-        session,
-        isLoading,
-        profile,
-        isLoggedIn: !!session,
-        signInWithEmail,
-        signUpWithEmail,
-        signInWithGoogle,
-        signInWithApple,
-        signOut,
-        resetPassword,
-        updateProfile,
-        refreshProfile,
-      }}
-    >
+    <AuthContext.Provider value={contextValue}>
       {children}
     </AuthContext.Provider>
   )

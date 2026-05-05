@@ -1,8 +1,8 @@
 import Ionicons from '@expo/vector-icons/Ionicons'
 import { Image } from 'expo-image'
 import { router } from 'expo-router'
-import { useCallback, useEffect, useState } from 'react'
-import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native'
+import React, { memo, useCallback, useEffect, useMemo, useState } from 'react'
+import { FlatList, InteractionManager, Modal, Pressable, StyleSheet, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
 import { ThemedText } from '@/components/themed-text'
@@ -10,7 +10,8 @@ import { Colors } from '@/constants/theme'
 import { useAuthContext } from '@/hooks/use-auth-context'
 import { useColorScheme } from '@/hooks/use-color-scheme'
 import { getFriends } from '@/lib/friends'
-import { getNotifications, markNotificationsAsRead, type Notification } from '@/lib/notifications'
+import { preloadNotifications } from '@/lib/notifications-cache'
+import { markNotificationsAsRead, type Notification } from '@/lib/notifications'
 import { supabase } from '@/lib/supabase'
 
 function getInitials(displayName: string | null): string {
@@ -37,7 +38,38 @@ function formatNotificationTime(createdAt: string): string {
   return time.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 }
 
-function NotificationItem({
+function getNotificationContent(notification: Notification) {
+  switch (notification.type) {
+    case 'reaction':
+      return {
+        icon: notification.emoji || '❤️',
+        title: `${notification.actor_display_name || 'Someone'} reacted ${notification.emoji || ''}`,
+        subtitle: 'to your workout',
+      }
+    case 'comment':
+      return {
+        icon: '💬',
+        title: `${notification.actor_display_name || 'Someone'} commented`,
+        subtitle: notification.comment_text || '',
+      }
+    case 'friend_streak':
+      return {
+        icon: '🔥',
+        title: `${notification.friend_display_name || 'A friend'} hit a ${notification.streak_count}-day streak!`,
+        subtitle: 'Keep up the momentum',
+      }
+    case 'friend_activity':
+      return {
+        icon: '💪',
+        title: `${notification.friend_display_name || 'A friend'} ${notification.activity_description || 'was active'}`,
+        subtitle: 'Stay motivated!',
+      }
+    default:
+      return { icon: '🔔', title: 'New notification', subtitle: '' }
+  }
+}
+
+const NotificationItem = memo(function NotificationItem({
   notification,
   colors,
   onPress,
@@ -46,46 +78,7 @@ function NotificationItem({
   colors: any
   onPress: () => void
 }) {
-  const getNotificationContent = () => {
-    switch (notification.type) {
-      case 'reaction':
-        return {
-          icon: notification.emoji || '❤️',
-          title: `${notification.actor_display_name || 'Someone'} reacted ${notification.emoji || ''}`,
-          subtitle: 'to your workout',
-        }
-      case 'comment':
-        return {
-          icon: '💬',
-          title: `${notification.actor_display_name || 'Someone'} commented`,
-          subtitle: notification.comment_text || '',
-        }
-      case 'friend_streak':
-        return {
-          icon: '🔥',
-          title: `${notification.friend_display_name || 'A friend'} hit a ${notification.streak_count}-day streak!`,
-          subtitle: 'Keep up the momentum',
-        }
-      case 'friend_activity':
-        return {
-          icon: '💪',
-          title: `${notification.friend_display_name || 'A friend'} ${notification.activity_description || 'was active'}`,
-          subtitle: 'Stay motivated!',
-        }
-      case 'duel_update':
-        return {
-          icon: '⚔️',
-          title: notification.duel_status === 'pending'
-            ? `${notification.duel_opponent_name || 'A friend'} challenged you to a 1v1`
-            : `Your ${notification.duel_type === 'streak' ? 'streak' : 'workout'} challenge was updated`,
-          subtitle: 'Open your challenges to see the latest score',
-        }
-      default:
-        return { icon: '🔔', title: 'New notification', subtitle: '' }
-    }
-  }
-
-  const content = getNotificationContent()
+  const content = getNotificationContent(notification)
   const avatarUrl =
     notification.actor_avatar_url ||
     notification.friend_avatar_url
@@ -136,6 +129,18 @@ function NotificationItem({
       </View>
     </Pressable>
   )
+})
+
+function NotificationSkeletonRow({ colors }: { colors: any }) {
+  return (
+    <View style={[styles.notificationItem, { backgroundColor: colors.card }]}>
+      <View style={[styles.skelAvatar, { backgroundColor: colors.textMuted + '22' }]} />
+      <View style={{ flex: 1 }}>
+        <View style={[styles.skelLine, { backgroundColor: colors.textMuted + '22', width: '78%' }]} />
+        <View style={[styles.skelLine, { backgroundColor: colors.textMuted + '18', width: '55%', marginTop: 8 }]} />
+      </View>
+    </View>
+  )
 }
 
 export function NotificationsModal({
@@ -151,24 +156,25 @@ export function NotificationsModal({
   const colorScheme = useColorScheme()
   const colors = Colors[colorScheme ?? 'light']
   const [notifications, setNotifications] = useState<Notification[]>([])
-  const [loading, setLoading] = useState(true)
+  const [hasAnyCache, setHasAnyCache] = useState(false)
 
-  const loadNotifications = useCallback(() => {
-    if (!session) return
-    setLoading(true)
-    getNotifications(session.user.id)
-      .then(setNotifications)
-      .catch(() => setNotifications([]))
-      .finally(() => setLoading(false))
-  }, [session])
+  const openSkeletonCount = 8
 
   useEffect(() => {
     if (visible && session) {
-      // Mark as read when modal opens
-      markNotificationsAsRead()
-      loadNotifications()
+      // Open instantly with cached notifications (if any), then refresh silently.
+      // Mark-as-read is local storage only; do it without blocking UI.
+      void markNotificationsAsRead()
+      void preloadNotifications({
+        userId: session.user.id,
+        limit: 60,
+        onItems: (items, source) => {
+          if (source === 'cache') setHasAnyCache(true)
+          setNotifications(items)
+        },
+      })
     }
-  }, [visible, session, loadNotifications])
+  }, [visible, session])
 
   // Real-time subscription for notifications when modal is visible
   useEffect(() => {
@@ -176,93 +182,109 @@ export function NotificationsModal({
 
     const channels: ReturnType<typeof supabase.channel>[] = []
     let isMounted = true
-
-    // Subscribe to reactions on user's workouts
-    const reactionsChannel = supabase
-      .channel('modal-notifications-reactions')
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'workout_reactions',
-        },
-        (payload) => {
-          supabase
-            .from('workouts')
-            .select('user_id')
-            .eq('id', payload.new.workout_id)
-            .single()
-            .then(({ data }) => {
-              if (data && data.user_id === session.user.id) {
-                loadNotifications()
-              }
-            })
-        }
-      )
-      .subscribe()
-    channels.push(reactionsChannel)
-
-    // Subscribe to comments on user's workouts
-    const commentsChannel = supabase
-      .channel('modal-notifications-comments')
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'workout_comments',
-        },
-        (payload) => {
-          supabase
-            .from('workouts')
-            .select('user_id')
-            .eq('id', payload.new.workout_id)
-            .single()
-            .then(({ data }) => {
-              if (data && data.user_id === session.user.id) {
-                loadNotifications()
-              }
-            })
-        }
-      )
-      .subscribe()
-    channels.push(commentsChannel)
-
-    // Subscribe to friend workouts
-    getFriends(session.user.id).then((friends) => {
+    const task = InteractionManager.runAfterInteractions(() => {
       if (!isMounted) return
-      const friendIds = friends.map((f) => f.id)
-      if (friendIds.length > 0) {
-        const friendWorkoutsChannel = supabase
-          .channel('modal-notifications-friend-workouts')
-          .on(
-            'postgres_changes',
-            {
-              event: 'INSERT',
-              schema: 'public',
-              table: 'workouts',
-            },
-            (payload) => {
-              if (friendIds.includes(payload.new.user_id)) {
-                loadNotifications()
+
+      // Subscribe to reactions on user's workouts
+      const reactionsChannel = supabase
+        .channel('modal-notifications-reactions')
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'workout_reactions',
+          },
+          (payload) => {
+            supabase
+              .from('workouts')
+              .select('user_id')
+              .eq('id', payload.new.workout_id)
+              .single()
+              .then(({ data }) => {
+                if (data && data.user_id === session.user.id) {
+                  void preloadNotifications({
+                    userId: session.user.id,
+                    limit: 60,
+                    onItems: (items) => setNotifications(items),
+                  })
+                }
+              })
+          }
+        )
+        .subscribe()
+      channels.push(reactionsChannel)
+
+      // Subscribe to comments on user's workouts
+      const commentsChannel = supabase
+        .channel('modal-notifications-comments')
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'workout_comments',
+          },
+          (payload) => {
+            supabase
+              .from('workouts')
+              .select('user_id')
+              .eq('id', payload.new.workout_id)
+              .single()
+              .then(({ data }) => {
+                if (data && data.user_id === session.user.id) {
+                  void preloadNotifications({
+                    userId: session.user.id,
+                    limit: 60,
+                    onItems: (items) => setNotifications(items),
+                  })
+                }
+              })
+          }
+        )
+        .subscribe()
+      channels.push(commentsChannel)
+
+      // Subscribe to friend workouts
+      getFriends(session.user.id).then((friends) => {
+        if (!isMounted) return
+        const friendIds = friends.map((f) => f.id)
+        if (friendIds.length > 0) {
+          const friendWorkoutsChannel = supabase
+            .channel('modal-notifications-friend-workouts')
+            .on(
+              'postgres_changes',
+              {
+                event: 'INSERT',
+                schema: 'public',
+                table: 'workouts',
+              },
+              (payload) => {
+                if (friendIds.includes(payload.new.user_id)) {
+                  void preloadNotifications({
+                    userId: session.user.id,
+                    limit: 60,
+                    onItems: (items) => setNotifications(items),
+                  })
+                }
               }
-            }
-          )
-          .subscribe()
-        channels.push(friendWorkoutsChannel)
-      }
+            )
+            .subscribe()
+          channels.push(friendWorkoutsChannel)
+        }
+      })
     })
 
     return () => {
       isMounted = false
+      task.cancel()
       channels.forEach((channel) => {
         supabase.removeChannel(channel)
       })
     }
-  }, [visible, session, loadNotifications])
+  }, [visible, session])
 
-  const handleNotificationPress = (notification: Notification) => {
+  const handleNotificationPress = useCallback((notification: Notification) => {
     if (notification.workout_id) {
       // Navigate to the specific workout in the feed
       if (onNavigateToWorkout) {
@@ -273,10 +295,6 @@ export function NotificationsModal({
         router.push('/(tabs)')
         onClose()
       }
-    } else if (notification.type === 'duel_update' && notification.duel_id) {
-      // Navigate directly to the duel detail screen
-      router.push(`/duel-detail?id=${notification.duel_id}`)
-      onClose()
     } else if (notification.friend_id) {
       router.push({ pathname: '/friend-profile', params: { id: notification.friend_id } })
       onClose()
@@ -284,7 +302,9 @@ export function NotificationsModal({
       // Default: just close
       onClose()
     }
-  }
+  }, [onClose, onNavigateToWorkout])
+
+  const skeletonData = useMemo(() => Array.from({ length: openSkeletonCount }).map((_, i) => ({ id: `skel-${i}` })), [])
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
@@ -300,10 +320,13 @@ export function NotificationsModal({
         </View>
 
         {/* Content */}
-        {loading ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={colors.tint} />
-          </View>
+        {!hasAnyCache && notifications.length === 0 ? (
+          <FlatList
+            data={skeletonData}
+            keyExtractor={(i) => i.id}
+            renderItem={() => <NotificationSkeletonRow colors={colors} />}
+            contentContainerStyle={{ paddingBottom: 16 }}
+          />
         ) : notifications.length === 0 ? (
           <View style={styles.emptyContainer}>
             <ThemedText style={[styles.emptyText, { color: colors.textMuted }]}>
@@ -314,16 +337,23 @@ export function NotificationsModal({
             </ThemedText>
           </View>
         ) : (
-          <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-            {notifications.map((notification) => (
+          <FlatList
+            data={notifications}
+            keyExtractor={(n) => n.id}
+            initialNumToRender={12}
+            maxToRenderPerBatch={16}
+            windowSize={7}
+            removeClippedSubviews
+            renderItem={({ item }) => (
               <NotificationItem
-                key={notification.id}
-                notification={notification}
+                notification={item}
                 colors={colors}
-                onPress={() => handleNotificationPress(notification)}
+                onPress={() => handleNotificationPress(item)}
               />
-            ))}
-          </ScrollView>
+            )}
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={{ paddingBottom: 16 }}
+          />
         )}
       </SafeAreaView>
     </Modal>
@@ -350,11 +380,8 @@ const styles = StyleSheet.create({
   closeButton: {
     padding: 4,
   },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
+  skelAvatar: { width: 44, height: 44, borderRadius: 22, marginRight: 12 },
+  skelLine: { height: 12, borderRadius: 6 },
   emptyContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -369,9 +396,6 @@ const styles = StyleSheet.create({
   emptySubtext: {
     fontSize: 14,
     textAlign: 'center',
-  },
-  scrollView: {
-    flex: 1,
   },
   notificationItem: {
     flexDirection: 'row',

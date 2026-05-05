@@ -152,7 +152,17 @@ export default function FriendProfileScreen() {
       if (error || !data) {
         setProfile(null)
       } else {
-        setProfile(data as Profile)
+        // Set profile immediately for instant UI, then hydrate best-streak from canonical RPC.
+        const base = data as Profile
+        setProfile(base)
+        try {
+          const { data: longest } = await supabase.rpc('get_longest_streak', { user_id_param: id })
+          if (!cancelled && typeof longest === 'number') {
+            setProfile((prev) => (prev ? { ...prev, longest_streak: longest } : prev))
+          }
+        } catch {
+          // ignore; keep stored value
+        }
       }
       setLoading(false)
     })()

@@ -8,7 +8,6 @@ export type NotificationType =
   | 'comment'
   | 'friend_streak'
   | 'friend_activity'
-  | 'duel_update'
 
 export type Notification = {
   id: string
@@ -30,11 +29,6 @@ export type Notification = {
   // Friend activity notifications
   activity_type?: string
   activity_description?: string
-  // Duel / challenge notifications
-  duel_id?: string
-  duel_status?: string
-  duel_opponent_name?: string | null
-  duel_type?: string
 }
 
 /**
@@ -190,48 +184,7 @@ export async function getNotifications(userId: string, limit = 50): Promise<Noti
     }
   }
 
-  // 4. Recent duel / challenge updates involving the user (last 7 days)
-  const { data: duels } = await supabase
-    .from('duels')
-    .select('*')
-    .or(`challenger_id.eq.${userId},opponent_id.eq.${userId}`)
-    .gte('updated_at', sevenDaysAgoStr)
-    .order('updated_at', { ascending: false })
-    .limit(20)
-
-  if (duels && duels.length > 0) {
-    const participantIds = new Set<string>()
-    for (const d of duels as any[]) {
-      participantIds.add(d.challenger_id)
-      participantIds.add(d.opponent_id)
-    }
-
-    const { data: duelProfiles } = await supabase
-      .from('profiles')
-      .select('id, display_name')
-      .in('id', [...participantIds])
-
-    const duelProfileMap = new Map(
-      (duelProfiles ?? []).map((p: { id: string; display_name: string | null }) => [p.id, p])
-    )
-
-    for (const d of duels as any[]) {
-      const iAmChallenger = d.challenger_id === userId
-      const opponentId = iAmChallenger ? d.opponent_id : d.challenger_id
-      const opponent = duelProfileMap.get(opponentId)
-      notifications.push({
-        id: `duel_${d.id}_${d.updated_at}`,
-        type: 'duel_update',
-        created_at: d.updated_at,
-        duel_id: d.id,
-        duel_status: d.status,
-        duel_type: d.type,
-        duel_opponent_name: opponent?.display_name ?? null,
-      })
-    }
-  }
-
-  // 5. Friend activity incentives (friends who worked out today)
+  // 4. Friend activity incentives (friends who worked out today)
   if (friends.length > 0) {
     const friendIds = friends.map((f) => f.id).filter(Boolean)
 

@@ -67,6 +67,8 @@ export default function LeaderboardScreen() {
   const [levelsMap, setLevelsMap] = useState<Map<string, UserLevel>>(new Map())
   const [myPrevRank, setMyPrevRank] = useState<number | null>(null)
   const [rankDeltas, setRankDeltas] = useState<Map<string, 'up' | 'down'>>(new Map())
+  const lastLoadRef = useRef<{ scope: LeaderboardScope; ts: number } | null>(null)
+  const LEADERBOARD_STALE_MS = 60_000
 
   useEffect(() => {
     const paramScope = params.scope
@@ -80,6 +82,7 @@ export default function LeaderboardScreen() {
   }, [scope])
 
   const load = useCallback(() => {
+    lastLoadRef.current = { scope, ts: Date.now() }
     setLoading(true)
     getLeaderboard(50, session?.user?.id, scope, undefined)
       .then(async ({ rows: r, myRow: m }) => {
@@ -115,7 +118,11 @@ export default function LeaderboardScreen() {
       .finally(() => setLoading(false))
   }, [session?.user?.id, scope])
 
-  useFocusEffect(useCallback(() => load(), [load]))
+  useFocusEffect(useCallback(() => {
+    const last = lastLoadRef.current
+    if (last && last.scope === scope && Date.now() - last.ts < LEADERBOARD_STALE_MS) return
+    load()
+  }, [load, scope]))
   useEffect(() => {
     if (!scopeChanged.current) {
       scopeChanged.current = true
@@ -323,12 +330,7 @@ export default function LeaderboardScreen() {
                         <Ionicons name="arrow-down" size={13} color="#EF4444" style={styles.rankArrow} />
                       )}
                     </View>
-                    <View
-                      style={[
-                        styles.avatarRing,
-                        { borderColor: rowLevel?.level.color ?? colors.tint + '40' },
-                      ]}
-                    >
+                    <View style={styles.avatarRing}>
                       <View style={[styles.avatar, { backgroundColor: colors.tint + '25' }]}>
                         {row.avatar_url ? (
                           <Image source={{ uri: row.avatar_url }} style={styles.avatarImage} />
@@ -483,7 +485,6 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    borderWidth: 2,
     alignItems: 'center',
     justifyContent: 'center',
     marginLeft: 6,

@@ -10,6 +10,8 @@ import {
   ActivityIndicator,
   Alert,
   Dimensions,
+  FlatList,
+  InteractionManager,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -38,10 +40,12 @@ import { useAuthContext } from '@/hooks/use-auth-context';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { hasStreakFreezeAvailable } from '@/lib/streak-freeze';
 import { addComment, getCommentsForWorkouts } from '@/lib/comments';
+import { preloadComments, seedCommentsCache } from '@/lib/comments-cache';
 import {
   getDailyReminderInfo,
   type DailyReminderInfo
 } from '@/lib/daily-reminder';
+import { preloadFeeds } from '@/lib/feed-cache';
 import { formatGymLabel, getFriendsWorkouts, getGlobalWorkouts, type FeedItem } from '@/lib/feed';
 import { getRememberedGymLabel, rememberGymLabel } from '@/lib/gym-label-cache';
 import { getFriends } from '@/lib/friends';
@@ -254,7 +258,7 @@ type CommentBranchProps = {
   onCloseModal: () => void;
 };
 
-function CommentBranch({
+const CommentBranch = React.memo(function CommentBranch({
   node,
   depth,
   session,
@@ -377,7 +381,7 @@ function CommentBranch({
       )}
     </View>
   );
-}
+})
 
 function getTodayLocalDate(): string {
   const d = new Date();
@@ -404,6 +408,8 @@ export default function HomeScreen() {
   const [feedTab, setFeedTab] = useState<'friends' | 'public'>('friends');
   const [feedItems, setFeedItems] = useState<FeedItem[]>([]);
   const [globalFeedItems, setGlobalFeedItems] = useState<FeedItem[]>([]);
+  const [friendsFirstLoadDone, setFriendsFirstLoadDone] = useState(false);
+  const [globalFirstLoadDone, setGlobalFirstLoadDone] = useState(false);
   const [socialNudges, setSocialNudges] = useState<SocialNudge[]>([]);
   const [freezeAvailable, setFreezeAvailable] = useState(false);
   const [freezeLoading, setFreezeLoading] = useState(false);
@@ -429,6 +435,9 @@ export default function HomeScreen() {
   const [commentThreadExpanded, setCommentThreadExpanded] = useState<Record<string, boolean>>({});
   const [commentSubmittingWorkoutId, setCommentSubmittingWorkoutId] = useState<string | null>(null);
   const commentInputRef = useRef<TextInput>(null);
+  const [commentModalComments, setCommentModalComments] = useState<WorkoutCommentWithProfile[]>([]);
+  const [commentModalHasCache, setCommentModalHasCache] = useState(false);
+  const [commentModalLoading, setCommentModalLoading] = useState(false);
 
   useEffect(() => {
     if (commentModalWorkoutId) {
@@ -437,6 +446,32 @@ export default function HomeScreen() {
       setCommentModalMessage('');
       setCommentThreadExpanded({});
     }
+  }, [commentModalWorkoutId]);
+
+  // Instant open: show cached comments immediately, then refresh silently.
+  useEffect(() => {
+    if (!commentModalWorkoutId) {
+      setCommentModalComments([]);
+      setCommentModalHasCache(false);
+      setCommentModalLoading(false);
+      return;
+    }
+    let alive = true;
+    setCommentModalLoading(true);
+    void preloadComments({
+      workoutId: commentModalWorkoutId,
+      onItems: (items, source) => {
+        if (!alive) return;
+        if (source === 'cache') setCommentModalHasCache(true);
+        setCommentModalComments(items);
+        // Only show "loading" skeleton when we have nothing cached.
+        if (source === 'cache') setCommentModalLoading(false);
+        if (source === 'network') setCommentModalLoading(false);
+      },
+    });
+    return () => {
+      alive = false;
+    };
   }, [commentModalWorkoutId]);
 
   // Highlight workout when navigating from notification
@@ -454,9 +489,25 @@ export default function HomeScreen() {
   // Notifications
   const [notificationsVisible, setNotificationsVisible] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
-  const scrollViewRef = useRef<ScrollView>(null);
-  const workoutRefs = useRef<Map<string, { ref: View | null; y: number }>>(new Map());
+  const friendsScrollRef = useRef<ScrollView>(null);
+  const globalScrollRef = useRef<ScrollView>(null);
+  const friendsScrollYRef = useRef(0);
+  const globalScrollYRef = useRef(0);
+  const friendsListRef = useRef<FlatList<FeedItem> | null>(null);
+  const globalListRef = useRef<FlatList<FeedItem> | null>(null);
+  const lastFeedLoadRef = useRef<{ userId: string; ts: number } | null>(null);
+  const FEED_STALE_MS = 15_000;
   const [pendingWorkoutNavigation, setPendingWorkoutNavigation] = useState<{ workoutId: string; expandComments: boolean } | null>(null);
+
+  // Preserve scroll position per feed tab (single ScrollView).
+  useEffect(() => {
+    const y = feedTab === 'friends' ? friendsScrollYRef.current : globalScrollYRef.current
+    // Next tick so layout has a chance to update (prevents jump/flicker).
+    const id = setTimeout(() => {
+      friendsScrollRef.current?.scrollTo({ y, animated: false })
+    }, 0)
+    return () => clearTimeout(id)
+  }, [feedTab])
 
   // Keep ref in sync for realtime subscriptions
   todayWorkoutIdRef.current = todayWorkout?.id ?? null;
@@ -512,26 +563,52 @@ export default function HomeScreen() {
     ]).then(([reactionsMap, commentsMap]) => {
       setTodayWorkoutReactions(reactionsMap.get(workoutId) ?? []);
       setTodayWorkoutComments(commentsMap.get(workoutId) ?? []);
+      seedCommentsCache(workoutId, commentsMap.get(workoutId) ?? []);
     });
   }, [todayWorkout?.id]);
 
+  // Seed cache from feed payloads and prefetch comments for likely-tapped posts (top items).
+  useEffect(() => {
+    for (const it of feedItems.slice(0, 6)) {
+      if (it.comments) seedCommentsCache(it.workout.id, it.comments);
+      void preloadComments({ workoutId: it.workout.id });
+    }
+  }, [feedItems]);
+  useEffect(() => {
+    for (const it of globalFeedItems.slice(0, 6)) {
+      if (it.comments) seedCommentsCache(it.workout.id, it.comments);
+      void preloadComments({ workoutId: it.workout.id });
+    }
+  }, [globalFeedItems]);
+
   const refreshFeed = useCallback(() => {
     if (!session) return;
-    getFriendsWorkouts(session.user.id).then((items) => {
-      setFeedItems(items);
-      if (items.length === 0) setFeedTab('public');
+    // Background refresh only; never block UI or clear on tab switches.
+    preloadFeeds({
+      userId: session.user.id,
+      onFriends: (items) => {
+        setFeedItems(items);
+        setFriendsFirstLoadDone(true);
+        if (items.length === 0) setFeedTab('public');
+      },
+      onGlobal: (items) => {
+        setGlobalFeedItems(items);
+        setGlobalFirstLoadDone(true);
+      },
     });
-    getGlobalWorkouts(session.user.id).then(setGlobalFeedItems);
   }, [session]);
 
   const handleOpenNotifications = () => {
     setNotificationsVisible(true);
-    // Mark as read when opened
-    markNotificationsAsRead().then(() => {
-      // Refresh unread count
-      if (session) {
-        getUnreadNotificationCount(session.user.id).then(setUnreadCount).catch(() => setUnreadCount(0));
-      }
+    // Decouple open animation from any storage/network work.
+    InteractionManager.runAfterInteractions(() => {
+      void markNotificationsAsRead().then(() => {
+        if (session) {
+          void getUnreadNotificationCount(session.user.id)
+            .then(setUnreadCount)
+            .catch(() => setUnreadCount(0));
+        }
+      });
     });
   };
 
@@ -565,11 +642,16 @@ export default function HomeScreen() {
         // Highlight the workout temporarily
         setHighlightedWorkoutId(workoutId);
         
-        // Scroll to workout after a short delay to ensure layout is complete
+        // Scroll to workout after a short delay to ensure the list is mounted
         setTimeout(() => {
-          const workoutData = workoutRefs.current.get(workoutId);
-          if (workoutData?.y !== undefined && scrollViewRef.current) {
-            scrollViewRef.current.scrollTo({ y: workoutData.y - 100, animated: true });
+          try {
+            friendsListRef.current?.scrollToIndex({ index: workoutIndex, animated: true, viewPosition: 0 });
+          } catch {
+            // ignore
+          }
+          // Also attempt ScrollView fallback if list virtualization is not yet wired everywhere.
+          if (friendsScrollRef.current) {
+            friendsScrollRef.current.scrollTo({ y: 0, animated: false });
           }
           
           // Remove highlight after a few seconds
@@ -929,77 +1011,98 @@ export default function HomeScreen() {
   useFocusEffect(
     useCallback(() => {
       if (!session) {
+        lastFeedLoadRef.current = null;
         setTodayWorkout(null);
         setFeedItems([]);
         return;
       }
-      const today = getTodayLocalDate();
-      supabase
-        .from('workouts')
-        .select('*')
-        .eq('user_id', session.user.id)
-        .eq('workout_date', today)
-        .maybeSingle()
-        .then(async ({ data }) => {
-          const workout = (data as Workout) ?? null;
-          setTodayWorkout(workout);
-        });
-      getFriendsWorkouts(session.user.id).then((items) => {
-        setFeedItems(items);
-        if (items.length === 0) setFeedTab('public');
-      });
-      getGlobalWorkouts(session.user.id).then(setGlobalFeedItems);
-      // Load social nudges
-      supabase
-        .from('workouts')
-        .select('id')
-        .eq('user_id', session.user.id)
-        .eq('workout_date', today)
-        .maybeSingle()
-        .then(({ data: w }) => {
-          const hasLogged = !!w;
-          // Compute XP for level-up nudge
-          const xp = computeXP(
-            {
-              workouts_count: profile?.workouts_count ?? 0,
-              streak: profile?.streak ?? 0,
-              groups_count: profile?.groups_count ?? 0,
-              friends_count: profile?.friends_count ?? 0,
-            },
-            0
-          );
-          const lvl = getLevelFromXP(xp);
-          getSocialNudges(
-            session.user.id,
-            profile?.streak ?? 0,
-            lvl.xp,
-            lvl.xpToNext,
-            hasLogged
-          ).then(setSocialNudges);
-        });
-      // Check streak risk (after 6pm and no workout logged today)
-      const now = new Date();
-      const hour = now.getHours();
-      if (hour >= 18 && profile?.streak && profile.streak > 0) {
+
+      // Skip reload if data is still fresh (prevents lag on rapid tab switching)
+      const now = Date.now();
+      const last = lastFeedLoadRef.current;
+      if (last && last.userId === session.user.id && now - last.ts < FEED_STALE_MS) return;
+      lastFeedLoadRef.current = { userId: session.user.id, ts: now };
+
+      // Defer network + heavier state updates until after current interactions/gestures
+      // to keep taps/scrolls responsive on tab switches.
+      const task = InteractionManager.runAfterInteractions(() => {
+        const today = getTodayLocalDate();
+
+        // Single query for today's workout — result reused for social nudges + streak risk
         supabase
           .from('workouts')
-          .select('id')
+          .select(
+            [
+              'id',
+              'user_id',
+              'workout_date',
+              'created_at',
+              'caption',
+              'workout_type',
+              'gym_id',
+              'image_url',
+              'secondary_image_url',
+              'visibility',
+            ].join(',')
+          )
           .eq('user_id', session.user.id)
           .eq('workout_date', today)
           .maybeSingle()
-          .then(({ data: w }) => {
-            setStreakAtRisk(!w);
+          .then(({ data }) => {
+            const workout = data ? (data as unknown as Workout) : null;
+            setTodayWorkout(workout);
+            const hasLogged = !!data;
+
+            // Social nudges (reuse hasLogged — no extra query)
+            const xp = computeXP(
+              {
+                workouts_count: profile?.workouts_count ?? 0,
+                streak: profile?.streak ?? 0,
+                groups_count: profile?.groups_count ?? 0,
+                friends_count: profile?.friends_count ?? 0,
+              },
+              0
+            );
+            const lvl = getLevelFromXP(xp);
+            getSocialNudges(
+              session.user.id,
+              profile?.streak ?? 0,
+              lvl.xp,
+              lvl.xpToNext,
+              hasLogged
+            ).then(setSocialNudges);
+
+            // Streak risk check (reuse hasLogged — no extra query)
+            const hour = new Date().getHours();
+            if (hour >= 18 && profile?.streak && profile.streak > 0) {
+              setStreakAtRisk(!hasLogged);
+            } else {
+              setStreakAtRisk(false);
+            }
           });
-      } else {
-        setStreakAtRisk(false);
-      }
-      // Check if streak freeze is available
-      hasStreakFreezeAvailable(session.user.id).then(setFreezeAvailable);
-      // Daily reminder (for in-app banner and future push)
-      getDailyReminderInfo(session.user.id).then(setReminderInfo);
-      // Load unread notification count
-      getUnreadNotificationCount(session.user.id).then(setUnreadCount).catch(() => setUnreadCount(0));
-    }, [session])
+
+        // Preload both feeds (cache first, refresh in background). Tab switch becomes pure UI.
+        preloadFeeds({
+          userId: session.user.id,
+          onFriends: (items, source) => {
+            setFeedItems(items);
+            if (source === 'network') setFriendsFirstLoadDone(true);
+            if (items.length === 0) setFeedTab('public');
+          },
+          onGlobal: (items, source) => {
+            setGlobalFeedItems(items);
+            if (source === 'network') setGlobalFirstLoadDone(true);
+          },
+        });
+        hasStreakFreezeAvailable(session.user.id).then(setFreezeAvailable);
+        getDailyReminderInfo(session.user.id).then(setReminderInfo);
+        getUnreadNotificationCount(session.user.id).then(setUnreadCount).catch(() => setUnreadCount(0));
+      });
+
+      return () => {
+        task.cancel();
+      };
+    }, [session, profile?.friends_count, profile?.groups_count, profile?.streak, profile?.workouts_count])
   );
 
   const streak = profile?.streak ?? 0;
@@ -1008,10 +1111,17 @@ export default function HomeScreen() {
   <>
     <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]} edges={['top']}>
       <ScrollView
-        ref={scrollViewRef}
+        ref={friendsScrollRef}
         style={styles.scrollView}
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
+        pointerEvents={feedTab === 'friends' ? 'auto' : 'none'}
+        onScroll={(e) => {
+          const y = e.nativeEvent.contentOffset.y
+          if (feedTab === 'friends') friendsScrollYRef.current = y
+          else globalScrollYRef.current = y
+        }}
+        scrollEventThrottle={16}
       >
         {/* Header — Friends / Global feed scope + notifications */}
         <View style={styles.headerRow}>
@@ -1193,55 +1303,45 @@ export default function HomeScreen() {
 
         {/* Feed */}
         <View style={styles.feedSection}>
-          {(feedTab === 'friends' ? feedItems : globalFeedItems).length === 0 ? (
-            !todayWorkout ? (
-              <View style={[styles.emptyCard, { backgroundColor: colors.cardElevated, marginHorizontal: 20, borderColor: colors.tint + '25' }]}>
-                <Ionicons
-                  name={feedTab === 'friends' ? 'people-outline' : 'globe-outline'}
-                  size={32}
-                  color={colors.textMuted + '60'}
-                  style={{ marginBottom: 8 }}
-                />
-                <ThemedText style={[styles.emptyText, { color: colors.textMuted }]}>
-                  {feedTab === 'friends'
-                    ? 'Add friends to see their workout posts here'
-                    : 'No global posts yet — be the first to share with everyone!'}
-                </ThemedText>
-                {feedTab === 'friends' && (
+          {/* Keep BOTH feeds mounted; switching tabs is only a display toggle. */}
+          <View style={{ display: feedTab === 'friends' ? 'flex' : 'none' }}>
+            {feedItems.length === 0 ? (
+              !todayWorkout ? (
+                <View
+                  style={[
+                    styles.emptyCard,
+                    { backgroundColor: colors.cardElevated, marginHorizontal: 20, borderColor: colors.tint + '25' },
+                  ]}
+                >
+                  <Ionicons
+                    name="people-outline"
+                    size={32}
+                    color={colors.textMuted + '60'}
+                    style={{ marginBottom: 8 }}
+                  />
+                  <ThemedText style={[styles.emptyText, { color: colors.textMuted }]}>
+                    Add friends to see their workout posts here
+                  </ThemedText>
                   <Pressable
-                    onPress={() =>
-                      router.push({ pathname: '/(tabs)/profile', params: { friends: '1' } })
-                    }
+                    onPress={() => router.push({ pathname: '/(tabs)/profile', params: { friends: '1' } })}
                     style={[styles.emptyCta, { backgroundColor: colors.tint }]}
                   >
                     <ThemedText style={styles.emptyCtaText}>Find friends</ThemedText>
                   </Pressable>
-                )}
-              </View>
-            ) : null
-          ) : (
-            <View style={styles.feedList}>
-              {(feedTab === 'friends' ? feedItems : globalFeedItems).map((item) => {
-                const isHighlighted = highlightedWorkoutId === item.workout.id;
-                return (
-                <View
-                  key={item.workout.id}
-                  ref={(ref) => {
-                    if (ref) {
-                      const existing = workoutRefs.current.get(item.workout.id) || { ref: null, y: 0 };
-                      workoutRefs.current.set(item.workout.id, { ...existing, ref });
-                    }
-                  }}
-                  onLayout={(event) => {
-                    const { y } = event.nativeEvent.layout;
-                    const existing = workoutRefs.current.get(item.workout.id) || { ref: null, y: 0 };
-                    workoutRefs.current.set(item.workout.id, { ...existing, y });
-                  }}
-                  style={[
-                    styles.feedCard,
-                    isHighlighted && { borderWidth: 2, borderColor: colors.tint },
-                  ]}
-                >
+                </View>
+              ) : null
+            ) : (
+              <View style={styles.feedList}>
+                {feedItems.map((item) => {
+                  const isHighlighted = highlightedWorkoutId === item.workout.id;
+                  return (
+                    <View
+                      key={item.workout.id}
+                      style={[
+                        styles.feedCard,
+                        isHighlighted && { borderWidth: 2, borderColor: colors.tint },
+                      ]}
+                    >
                   {/* Image with overlays */}
                   <View style={styles.feedImageContainer}>
                     <ZoomableFeedImage
@@ -1437,10 +1537,145 @@ export default function HomeScreen() {
                     </View>
                   </View>
                 </View>
-                )
-              })}
-            </View>
-          )}
+                    )
+                  })}
+              </View>
+            )}
+          </View>
+
+          <View style={{ display: feedTab === 'public' ? 'flex' : 'none' }}>
+            {globalFeedItems.length === 0 ? (
+              !todayWorkout ? (
+                <View
+                  style={[
+                    styles.emptyCard,
+                    { backgroundColor: colors.cardElevated, marginHorizontal: 20, borderColor: colors.tint + '25' },
+                  ]}
+                >
+                  <Ionicons
+                    name="globe-outline"
+                    size={32}
+                    color={colors.textMuted + '60'}
+                    style={{ marginBottom: 8 }}
+                  />
+                  <ThemedText style={[styles.emptyText, { color: colors.textMuted }]}>
+                    No global posts yet — be the first to share with everyone!
+                  </ThemedText>
+                </View>
+              ) : null
+            ) : (
+              <View style={styles.feedList}>
+                {globalFeedItems.map((item) => {
+                  const isHighlighted = highlightedWorkoutId === item.workout.id;
+                  return (
+                    <View
+                      key={item.workout.id}
+                      style={[
+                        styles.feedCard,
+                        isHighlighted && { borderWidth: 2, borderColor: colors.tint },
+                      ]}
+                    >
+                      {/* Duplicate card body from friends feed */}
+                      <View style={styles.feedImageContainer}>
+                        <ZoomableFeedImage
+                          imageUrl={item.workout.image_url}
+                          secondaryImageUrl={item.workout.secondary_image_url}
+                          style={styles.feedImage}
+                        />
+                        <LinearGradient colors={['transparent', 'rgba(0,0,0,0.65)']} style={styles.feedGradient}>
+                          <Pressable
+                            style={styles.feedOverlayInfo}
+                            onPress={() => router.push(`/friend-profile?id=${item.workout.user_id}`)}
+                          >
+                            <View style={styles.feedOverlayAvatar}>
+                              {item.avatar_url ? (
+                                <Image source={{ uri: item.avatar_url }} style={styles.feedOverlayAvatarImg} />
+                              ) : (
+                                <ThemedText style={styles.feedOverlayAvatarInitials}>
+                                  {getInitials(item.display_name)}
+                                </ThemedText>
+                              )}
+                            </View>
+                            <View style={{ flex: 1 }}>
+                              <ThemedText type="defaultSemiBold" style={styles.feedOverlayName}>
+                                {item.display_name || 'Anonymous'}
+                              </ThemedText>
+                              {item.workout.caption ? (
+                                <ThemedText style={styles.feedOverlayCaption} numberOfLines={1}>
+                                  {item.workout.caption}
+                                </ThemedText>
+                              ) : null}
+                              {item.gym_label ? (
+                                <View style={styles.feedOverlayLocationRow}>
+                                  <Ionicons name="location-outline" size={13} color="rgba(255,255,255,0.78)" />
+                                  <ThemedText style={styles.feedOverlayLocation} numberOfLines={2}>
+                                    {item.gym_label}
+                                  </ThemedText>
+                                </View>
+                              ) : null}
+                              <ThemedText style={styles.feedOverlayMeta}>
+                                {formatFeedPostTimestamp(item.workout.created_at) ||
+                                  formatFeedDate(item.workout.workout_date)}
+                              </ThemedText>
+                            </View>
+                          </Pressable>
+                        </LinearGradient>
+                        <View style={styles.feedActionColumn}>
+                          <Pressable
+                            onPress={() => {
+                              setCommentModalWorkoutId(item.workout.id);
+                              setCommentModalMessage('');
+                            }}
+                            style={styles.feedActionBtn}
+                          >
+                            <Ionicons name="chatbubble" size={24} color="rgba(255,255,255,0.9)" />
+                            {(item.comments ?? []).length > 0 && (
+                              <ThemedText style={styles.feedActionCount}>
+                                {(item.comments ?? []).length}
+                              </ThemedText>
+                            )}
+                          </Pressable>
+                          <Pressable onPress={() => openReactModal(item)} style={styles.feedActionBtn}>
+                            <ReactionsIcon size={20} color={colors.tint} />
+                          </Pressable>
+                          <Pressable
+                            onPress={() =>
+                              void handleShareWorkout(
+                                item.workout.image_url,
+                                item.workout.secondary_image_url,
+                                item.workout.workout_date,
+                                item.workout.caption,
+                                item.display_name,
+                                item.gym_label,
+                                item.workout.gym_id ?? null,
+                                item.workout.workout_type ?? null,
+                              )
+                            }
+                            style={styles.feedActionBtn}
+                          >
+                            <Ionicons name="paper-plane" size={22} color="rgba(255,255,255,0.9)" />
+                          </Pressable>
+                          <Pressable
+                            onPress={() => {
+                              setReportTarget({
+                                workoutId: item.workout.id,
+                                userId: item.workout.user_id,
+                                name: item.display_name || 'User',
+                              })
+                              setReportModalVisible(true)
+                            }}
+                            style={styles.feedActionBtn}
+                          >
+                            <Ionicons name="flag-outline" size={22} color="rgba(255,255,255,0.9)" />
+                          </Pressable>
+                        </View>
+                      </View>
+                    </View>
+                  )
+                })}
+              </View>
+            )}
+          </View>
         </View>
       </ScrollView>
 
@@ -1792,14 +2027,17 @@ export default function HomeScreen() {
                 keyboardShouldPersistTaps="handled"
               >
                 {(() => {
-                  let comments: WorkoutCommentWithProfile[] = [];
-                  if (commentModalWorkoutId && todayWorkout?.id === commentModalWorkoutId) {
-                    comments = todayWorkoutComments;
-                  } else if (commentModalWorkoutId) {
-                    const feedItem =
-                      feedItems.find((fi) => fi.workout.id === commentModalWorkoutId) ??
-                      globalFeedItems.find((fi) => fi.workout.id === commentModalWorkoutId);
-                    comments = feedItem?.comments ?? [];
+                  const comments = commentModalComments;
+
+                  if (!commentModalHasCache && commentModalLoading) {
+                    return (
+                      <View style={styles.commentModalEmpty}>
+                        <View style={[styles.commentSkelRow, { backgroundColor: colors.textMuted + '14' }]} />
+                        <View style={[styles.commentSkelRow, { backgroundColor: colors.textMuted + '12' }]} />
+                        <View style={[styles.commentSkelRow, { backgroundColor: colors.textMuted + '10' }]} />
+                        <View style={[styles.commentSkelRow, { backgroundColor: colors.textMuted + '08' }]} />
+                      </View>
+                    );
                   }
 
                   if (comments.length === 0) {
@@ -1816,27 +2054,28 @@ export default function HomeScreen() {
                     );
                   }
 
+                  // Build thread tree (expensive) only when comment data changes.
                   const tree = buildCommentTree(comments);
-                  return tree.map((n) => (
-                    <CommentBranch
-                      key={n.id}
-                      node={n}
-                      depth={0}
-                      session={session}
-                      colors={colors}
-                      expanded={commentThreadExpanded}
-                      setExpanded={setCommentThreadExpanded}
-                      onReply={(c) => {
-                        setCommentReplyParentId(c.id);
-                        setCommentReplyToName(c.display_name || 'Member');
-                        const firstName = (c.display_name || '').trim().split(/\s+/)[0] || 'friend';
-                        setCommentModalMessage(`@${firstName} `);
-                        commentInputRef.current?.focus();
-                      }}
-                      onOpenProfile={(userId) => router.push(`/friend-profile?id=${userId}`)}
-                      onCloseModal={() => setCommentModalWorkoutId(null)}
-                    />
-                  ));
+                  return tree.slice(0, 20).map((n) => (
+                      <CommentBranch
+                        key={n.id}
+                        node={n}
+                        depth={0}
+                        session={session}
+                        colors={colors}
+                        expanded={commentThreadExpanded}
+                        setExpanded={setCommentThreadExpanded}
+                        onReply={(c) => {
+                          setCommentReplyParentId(c.id);
+                          setCommentReplyToName(c.display_name || 'Member');
+                          const firstName = (c.display_name || '').trim().split(/\s+/)[0] || 'friend';
+                          setCommentModalMessage(`@${firstName} `);
+                          commentInputRef.current?.focus();
+                        }}
+                        onOpenProfile={(userId) => router.push(`/friend-profile?id=${userId}`)}
+                        onCloseModal={() => setCommentModalWorkoutId(null)}
+                      />
+                    ));
                 })()}
               </ScrollView>
 
@@ -2589,6 +2828,12 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     textAlign: 'center',
     lineHeight: 20,
+  },
+  commentSkelRow: {
+    width: '100%',
+    height: 14,
+    borderRadius: 8,
+    marginBottom: 10,
   },
   commentModalInputRow: {
     flexDirection: 'column',
