@@ -26,7 +26,7 @@ import { ThemedText } from '@/components/themed-text'
 import { Colors, Fonts } from '@/constants/theme'
 import { useAuthContext } from '@/hooks/use-auth-context'
 import { useColorScheme } from '@/hooks/use-color-scheme'
-import { formatGymLabel } from '@/lib/feed'
+import { cleanupGymLabel, fetchGymLabel } from '@/lib/feed'
 import { getRememberedGymLabel, rememberGymLabel } from '@/lib/gym-label-cache'
 import { getFriends, type FriendWithProfile } from '@/lib/friends'
 import { computeXP, getLevelFromXP } from '@/lib/levels'
@@ -241,6 +241,14 @@ function isMissingWorkoutsGymIdColumn(err: { message?: string }): boolean {
   return m.includes('gym_id') && (m.includes('schema cache') || m.includes('could not find'))
 }
 
+/** PostgREST when `workouts.gym_display_label` has not been migrated yet. */
+function isMissingWorkoutsGymDisplayLabelColumn(err: { message?: string }): boolean {
+  const m = (err.message ?? '').toLowerCase()
+  return (
+    m.includes('gym_display_label') && (m.includes('schema cache') || m.includes('could not find'))
+  )
+}
+
 function LogWorkoutBackRow({
   colors,
   isDark,
@@ -342,41 +350,26 @@ export default function LogWorkoutScreen() {
       setResolvedGymLine(null)
       return
     }
-    const mem = getRememberedGymLabel(activeGymId)
+    const stored =
+      todayWorkout?.gym_id === activeGymId ? cleanupGymLabel(todayWorkout.gym_display_label) : null
+    if (stored) {
+      setResolvedGymLine(stored)
+      rememberGymLabel(activeGymId, stored)
+      return
+    }
+    const mem = cleanupGymLabel(getRememberedGymLabel(activeGymId))
     if (mem) {
       setResolvedGymLine(mem)
       return
     }
-    if (gymName?.trim() && gymId && gymId === activeGymId) {
-      const line = gymName.trim()
-      rememberGymLabel(activeGymId, line)
-      setResolvedGymLine(line)
-      return
-    }
     let cancelled = false
-    void supabase
-      .from('gyms')
-      .select('name,address')
-      .eq('id', activeGymId)
-      .maybeSingle()
-      .then(({ data, error }) => {
-        if (cancelled) return
-        if (!error && data) {
-          const line = formatGymLabel(data.name, data.address)
-          if (line) {
-            rememberGymLabel(activeGymId, line)
-            setResolvedGymLine(line)
-          } else {
-            setResolvedGymLine(null)
-          }
-        } else {
-          setResolvedGymLine(null)
-        }
-      })
+    void fetchGymLabel(activeGymId, gymId === activeGymId ? gymName : null).then((line) => {
+      if (!cancelled) setResolvedGymLine(line)
+    })
     return () => {
       cancelled = true
     }
-  }, [activeGymId, gymId, gymName, todayWorkout?.gym_id])
+  }, [activeGymId, gymId, gymName, todayWorkout?.gym_id, todayWorkout?.gym_display_label])
 
   useEffect(() => {
     if (!session) return
@@ -472,9 +465,12 @@ export default function LogWorkoutScreen() {
       if (!('error' in sec)) secondaryUrl = sec.url
     }
 
+    const gymDisplayLabel = await fetchGymLabel(gymId, gymName)
+
     const rowWithGym = {
       user_id: session.user.id,
       gym_id: gymId,
+      gym_display_label: gymDisplayLabel,
       workout_date: today,
       image_url: uploadResult.url,
       secondary_image_url: secondaryUrl,
@@ -492,37 +488,45 @@ export default function LogWorkoutScreen() {
       visibility,
     }
 
-    const first = await supabase.from('workouts').insert(rowWithGym).select().single()
-    let workoutRow = first.data
-    let error = first.error
-    if (error && isMissingWorkoutsGymIdColumn(error)) {
-      const second = await supabase.from('workouts').insert(rowLegacy).select().single()
-      workoutRow = second.data
-      error = second.error
+    let workoutRow: Workout | null = null
+    let error: { code?: string; message?: string } | null = null
+    let insertRow: Record<string, unknown> = rowWithGym
+
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const result = await supabase.from('workouts').insert(insertRow).select().single()
+      workoutRow = result.data as Workout | null
+      error = result.error
+      if (!error) break
+      if (isMissingWorkoutsGymDisplayLabelColumn(error)) {
+        const { gym_display_label: _omit, ...rest } = rowWithGym
+        insertRow = rest
+        continue
+      }
+      if (isMissingWorkoutsGymIdColumn(error)) {
+        const fallback = await supabase.from('workouts').insert(rowLegacy).select().single()
+        workoutRow = fallback.data as Workout | null
+        error = fallback.error
+        break
+      }
+      break
     }
 
     setUploading(false)
     if (error) {
       if (error.code === '23505') {
         Alert.alert('Already logged', "You've already logged a workout for today.")
-      } else if (error.code === '42501' || /row-level security|violates row level security/i.test(error.message)) {
+      } else if (
+        error.code === '42501' ||
+        /row-level security|violates row level security/i.test(error.message ?? '')
+      ) {
         Alert.alert(
           'Check-in required',
           'You must be checked in at this gym to post. Open the Map and check in at your gym, then try again.',
         )
       } else {
-        Alert.alert('Error', error.message)
+        Alert.alert('Error', error.message ?? 'Something went wrong')
       }
       return
-    }
-
-    if (gymId) {
-      let lbl = gymName?.trim() || null
-      if (!lbl) {
-        const { data: g } = await supabase.from('gyms').select('name,address').eq('id', gymId).maybeSingle()
-        if (g) lbl = formatGymLabel(g.name, g.address)
-      }
-      if (lbl) rememberGymLabel(gymId, lbl)
     }
 
     if (taggedFriends.size > 0 && workoutRow) {
@@ -550,6 +554,7 @@ export default function LogWorkoutScreen() {
         id: '',
         user_id: session.user.id,
         gym_id: gymId,
+        gym_display_label: gymDisplayLabel,
         workout_date: today,
         image_url: uploadResult.url,
         secondary_image_url: secondaryUrl ?? null,

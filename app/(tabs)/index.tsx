@@ -31,6 +31,7 @@ import Animated, {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import ViewShot from 'react-native-view-shot';
 
+import { FeedCard } from '@/components/feed-card';
 import { NotificationsModal } from '@/components/notifications-modal';
 import { ReactionsIcon } from '@/components/reactions-icon';
 import { ReportModal } from '@/components/report-modal';
@@ -46,7 +47,15 @@ import {
   type DailyReminderInfo
 } from '@/lib/daily-reminder';
 import { preloadFeeds } from '@/lib/feed-cache';
-import { formatGymLabel, getFriendsWorkouts, getGlobalWorkouts, type FeedItem } from '@/lib/feed';
+import {
+  cleanupGymLabel,
+  extractCityState,
+  formatGymLabel,
+  getFriendsWorkouts,
+  getGlobalWorkouts,
+  gymLabelFromWorkout,
+  type FeedItem,
+} from '@/lib/feed';
 import { getRememberedGymLabel, rememberGymLabel } from '@/lib/gym-label-cache';
 import { getFriends } from '@/lib/friends';
 import { computeXP, getLevelFromXP } from '@/lib/levels';
@@ -489,7 +498,6 @@ export default function HomeScreen() {
   // Notifications
   const [notificationsVisible, setNotificationsVisible] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
-  const friendsScrollRef = useRef<ScrollView>(null);
   const globalScrollRef = useRef<ScrollView>(null);
   const friendsScrollYRef = useRef(0);
   const globalScrollYRef = useRef(0);
@@ -499,12 +507,12 @@ export default function HomeScreen() {
   const FEED_STALE_MS = 15_000;
   const [pendingWorkoutNavigation, setPendingWorkoutNavigation] = useState<{ workoutId: string; expandComments: boolean } | null>(null);
 
-  // Preserve scroll position per feed tab (single ScrollView).
+  // Preserve scroll position per feed tab (using FlatList).
   useEffect(() => {
     const y = feedTab === 'friends' ? friendsScrollYRef.current : globalScrollYRef.current
     // Next tick so layout has a chance to update (prevents jump/flicker).
     const id = setTimeout(() => {
-      friendsScrollRef.current?.scrollTo({ y, animated: false })
+      friendsListRef.current?.scrollToOffset({ offset: y, animated: false })
     }, 0)
     return () => clearTimeout(id)
   }, [feedTab])
@@ -513,6 +521,12 @@ export default function HomeScreen() {
   todayWorkoutIdRef.current = todayWorkout?.id ?? null;
 
   useEffect(() => {
+    const stored = todayWorkout ? gymLabelFromWorkout(todayWorkout) : null;
+    if (stored) {
+      setTodayWorkoutGymLabel(stored);
+      if (todayWorkout?.gym_id) rememberGymLabel(todayWorkout.gym_id, stored);
+      return;
+    }
     const gymId = todayWorkout?.gym_id;
     if (!gymId) {
       setTodayWorkoutGymLabel(null);
@@ -520,7 +534,7 @@ export default function HomeScreen() {
     }
     const cached = getRememberedGymLabel(gymId);
     if (cached) {
-      setTodayWorkoutGymLabel(cached);
+      setTodayWorkoutGymLabel(cleanupGymLabel(cached));
     } else {
       setTodayWorkoutGymLabel(null);
     }
@@ -547,7 +561,7 @@ export default function HomeScreen() {
     return () => {
       cancelled = true;
     };
-  }, [todayWorkout?.gym_id]);
+  }, [todayWorkout?.gym_id, todayWorkout?.gym_display_label]);
 
   // Fetch reactions and comments for the user's own "Today's workout" post
   useEffect(() => {
@@ -647,13 +661,8 @@ export default function HomeScreen() {
           try {
             friendsListRef.current?.scrollToIndex({ index: workoutIndex, animated: true, viewPosition: 0 });
           } catch {
-            // ignore
+            // ignore - index out of range on initial mount
           }
-          // Also attempt ScrollView fallback if list virtualization is not yet wired everywhere.
-          if (friendsScrollRef.current) {
-            friendsScrollRef.current.scrollTo({ y: 0, animated: false });
-          }
-          
           // Remove highlight after a few seconds
           setTimeout(() => setHighlightedWorkoutId(null), 3000);
         }, 500);
@@ -664,20 +673,20 @@ export default function HomeScreen() {
     }
   }, [pendingWorkoutNavigation, feedItems]);
 
-  const openReactModal = (item: FeedItem) => {
+  const openReactModal = useCallback((item: FeedItem) => {
     setReactModalItem(item);
     setReactModalKey((k) => k + 1);
     setReactPendingPhoto(null);
     setReactPendingEmoji(null);
     setReactCameraOpen(false);
-  };
+  }, []);
 
-  const closeReactModal = () => {
+  const closeReactModal = useCallback(() => {
     setReactModalItem(null);
     setReactPendingPhoto(null);
     setReactPendingEmoji(null);
     setReactCameraOpen(false);
-  };
+  }, []);
 
   const handleTakeReactionPhoto = () => {
     setReactPendingPhoto(null);
@@ -798,9 +807,12 @@ export default function HomeScreen() {
     workoutDate?: string | null;
     caption?: string | null;
     displayName?: string | null;
-    /** Top-right pill: resolved from label and/or gym id at tap time */
-    gymLabel?: string | null;
-    workoutType?: string | null;
+    /** Gym name (first line) */
+    gymName?: string | null;
+    /** City, State (second line) */
+    gymCityState?: string | null;
+    /** Workout creation timestamp */
+    createdAt?: string | null;
   };
   const [shareData, setShareData] = useState<ShareData | null>(null);
   const shareViewRef = useRef<ViewShot>(null);
@@ -813,27 +825,46 @@ export default function HomeScreen() {
     displayName?: string | null,
     gymLabel?: string | null,
     gymId?: string | null,
-    workoutType?: string | null,
+    _workoutType?: string | null,
+    createdAt?: string | null,
   ) => {
-    let resolvedGymLabel = gymLabel?.trim() || null;
-    if (!resolvedGymLabel && gymId) {
-      resolvedGymLabel = getRememberedGymLabel(gymId);
-    }
-    if (!resolvedGymLabel && gymId) {
-      const { data, error } = await supabase.from('gyms').select('name, address').eq('id', gymId).maybeSingle();
-      if (!error && data) {
-        resolvedGymLabel = formatGymLabel(data.name, data.address);
-        if (resolvedGymLabel) rememberGymLabel(gymId, resolvedGymLabel);
+    let gymName: string | null = null;
+    let gymCityState: string | null = null;
+
+    // Try to parse gym label into name and city/state
+    const label = cleanupGymLabel(gymLabel) || (gymId ? cleanupGymLabel(getRememberedGymLabel(gymId)) : null);
+    if (label) {
+      const parts = label.split(',').map((p) => p.trim());
+      if (parts.length >= 2) {
+        gymName = parts[0];
+        gymCityState = parts.slice(1).join(', ');
+      } else {
+        gymName = label;
       }
     }
+
+    // Fetch from DB if name exists but city/state is missing, or if no name at all
+    if (gymId && (!gymName || !gymCityState)) {
+      const { data, error } = await supabase.from('gyms').select('name, address').eq('id', gymId).maybeSingle();
+      if (!error && data) {
+        if (!gymName) gymName = data.name?.trim() || null;
+        if (!gymCityState && data.address) {
+          gymCityState = extractCityState(data.address);
+        }
+        const full = formatGymLabel(data.name, data.address);
+        if (full) rememberGymLabel(gymId, full);
+      }
+    }
+
     setShareData({
       primaryUrl: imageUrl,
       secondaryUrl: secondaryImageUrl,
       workoutDate,
       caption,
       displayName,
-      gymLabel: resolvedGymLabel,
-      workoutType: workoutType ?? null,
+      gymName,
+      gymCityState,
+      createdAt,
     });
   };
 
@@ -868,7 +899,7 @@ export default function HomeScreen() {
     return () => clearTimeout(timer);
   }, [shareData]);
 
-  const handleRemoveReaction = async (item: FeedItem) => {
+  const handleRemoveReaction = useCallback(async (item: FeedItem) => {
     if (!session) return;
     const existing = item.reactions?.find((r) => r.user_id === session.user.id);
     if (!existing) return;
@@ -884,7 +915,126 @@ export default function HomeScreen() {
           : i
       )
     );
-  };
+    setGlobalFeedItems((prev) =>
+      prev.map((i) =>
+        i.workout.id === item.workout.id
+          ? { ...i, reactions: (i.reactions ?? []).filter((r) => r.user_id !== session.user.id) }
+          : i
+      )
+    );
+  }, [session]);
+
+  // Memoized callbacks for FeedCard
+  const handleFeedCardComment = useCallback((workoutId: string) => {
+    setCommentModalWorkoutId(workoutId);
+    setCommentModalMessage('');
+  }, []);
+
+  const handleFeedCardShare = useCallback((item: FeedItem) => {
+    void handleShareWorkout(
+      item.workout.image_url,
+      item.workout.secondary_image_url,
+      item.workout.workout_date,
+      item.workout.caption,
+      item.display_name,
+      item.gym_label,
+      item.workout.gym_id ?? null,
+      item.workout.workout_type ?? null,
+      item.workout.created_at ?? null,
+    );
+  }, []);
+
+  const handleFeedCardReport = useCallback((item: FeedItem) => {
+    setReportTarget({
+      workoutId: item.workout.id,
+      userId: item.workout.user_id,
+      name: item.display_name || 'User',
+    });
+    setReportModalVisible(true);
+  }, []);
+
+  const handleFeedCardViewReaction = useCallback((reaction: WorkoutReactionWithProfile) => {
+    setViewReaction(reaction);
+  }, []);
+
+  // Memoized rendered feed lists to prevent re-renders on tab switch
+  // FlatList renderItem - memoized to prevent re-renders
+  const renderFeedItem = useCallback(({ item }: { item: FeedItem }) => (
+    <FeedCard
+      key={item.workout.id}
+      item={item}
+      isHighlighted={highlightedWorkoutId === item.workout.id}
+      isOwnPost={item.workout.user_id === session?.user?.id}
+      currentUserId={session?.user?.id}
+      onComment={handleFeedCardComment}
+      onReact={openReactModal}
+      onRemoveReaction={handleRemoveReaction}
+      onShare={handleFeedCardShare}
+      onReport={handleFeedCardReport}
+      onViewReaction={handleFeedCardViewReaction}
+      ImageComponent={ZoomableFeedImage}
+    />
+  ), [highlightedWorkoutId, session?.user?.id, handleFeedCardComment, handleFeedCardShare, handleFeedCardReport, handleFeedCardViewReaction, openReactModal, handleRemoveReaction]);
+
+  // Stable key extractor for FlatList
+  const keyExtractor = useCallback((item: FeedItem) => item.workout.id, []);
+
+  // Calculate item height for getItemLayout (image aspect ratio 10/16 + footer ~68px)
+  const cardPadding = 12; // feedList paddingHorizontal
+  const cardGap = 16; // feedList gap
+  const cardWidth = windowWidth - cardPadding * 2;
+  const imageHeight = cardWidth * (16 / 10); // aspectRatio 10/16 inverted
+  const footerHeight = 68; // approximate footer height
+  const cardHeight = imageHeight + footerHeight;
+  const itemHeight = cardHeight + cardGap;
+
+  const getItemLayout = useCallback((_data: ArrayLike<FeedItem> | null | undefined, index: number) => ({
+    length: itemHeight,
+    offset: itemHeight * index,
+    index,
+  }), [itemHeight]);
+
+  // Friends feed empty state component
+  const friendsEmptyComponent = useMemo(() => {
+    if (feedItems.length > 0) return null;
+    return (
+      <View
+        style={[
+          styles.emptyCard,
+          { backgroundColor: colors.cardElevated, marginHorizontal: 20, borderColor: colors.tint + '25' },
+        ]}
+      >
+        <Ionicons name="people-outline" size={32} color={colors.textMuted + '60'} style={{ marginBottom: 8 }} />
+        <ThemedText style={[styles.emptyText, { color: colors.textMuted }]}>
+          Add friends to see their workout posts here
+        </ThemedText>
+        <Pressable
+          onPress={() => router.push({ pathname: '/(tabs)/profile', params: { friends: '1' } })}
+          style={[styles.emptyCta, { backgroundColor: colors.tint }]}
+        >
+          <ThemedText style={styles.emptyCtaText}>Find friends</ThemedText>
+        </Pressable>
+      </View>
+    );
+  }, [feedItems.length, colors]);
+
+  // Global feed empty state component
+  const globalEmptyComponent = useMemo(() => {
+    if (globalFeedItems.length > 0) return null;
+    return (
+      <View
+        style={[
+          styles.emptyCard,
+          { backgroundColor: colors.cardElevated, marginHorizontal: 20, borderColor: colors.tint + '25' },
+        ]}
+      >
+        <Ionicons name="globe-outline" size={32} color={colors.textMuted + '60'} style={{ marginBottom: 8 }} />
+        <ThemedText style={[styles.emptyText, { color: colors.textMuted }]}>
+          No global posts yet — be the first to share with everyone!
+        </ThemedText>
+      </View>
+    );
+  }, [globalFeedItems.length, colors]);
 
   // Real-time notification subscriptions
   useEffect(() => {
@@ -1040,6 +1190,7 @@ export default function HomeScreen() {
               'caption',
               'workout_type',
               'gym_id',
+              'gym_display_label',
               'image_url',
               'secondary_image_url',
               'visibility',
@@ -1107,577 +1258,127 @@ export default function HomeScreen() {
 
   const streak = profile?.streak ?? 0;
 
+  // Memoized header component for FlatList
+  const ListHeaderComponent = useMemo(() => (
+    <>
+      {/* Header — Friends / Global feed scope + notifications */}
+      <View style={styles.headerRow}>
+        <ThemedText type="title" style={styles.greeting}>
+          UPLIFT
+        </ThemedText>
+        <View style={styles.headerActions}>
+          <View
+            style={[
+              styles.feedScopeSegmented,
+              {
+                backgroundColor: colorScheme === 'dark' ? colors.cardElevated : colors.card,
+                borderColor: colors.tabBarBorder,
+              },
+            ]}
+          >
+            <Pressable
+              onPress={() => setFeedTab('friends')}
+              accessibilityRole="button"
+              accessibilityLabel="Friends feed"
+              accessibilityState={{ selected: feedTab === 'friends' }}
+              style={[
+                styles.feedScopeSeg,
+                feedTab === 'friends' && { backgroundColor: colors.tint },
+              ]}
+            >
+              <Ionicons
+                name={feedTab === 'friends' ? 'people' : 'people-outline'}
+                size={18}
+                color={feedTab === 'friends' ? '#fff' : colors.textMuted}
+              />
+            </Pressable>
+            <Pressable
+              onPress={() => setFeedTab('public')}
+              accessibilityRole="button"
+              accessibilityLabel="Global feed"
+              accessibilityState={{ selected: feedTab === 'public' }}
+              style={[
+                styles.feedScopeSeg,
+                feedTab === 'public' && { backgroundColor: colors.tint },
+              ]}
+            >
+              <Ionicons
+                name={feedTab === 'public' ? 'globe' : 'globe-outline'}
+                size={18}
+                color={feedTab === 'public' ? '#fff' : colors.textMuted}
+              />
+            </Pressable>
+          </View>
+          <Pressable
+            onPress={handleOpenNotifications}
+            style={({ pressed }) => [
+              styles.notificationsButton,
+              pressed && { opacity: 0.7 },
+            ]}
+          >
+            <Ionicons name="notifications-outline" size={24} color={colors.text} />
+            {unreadCount > 0 && (
+              <View style={[styles.notificationBadge, { backgroundColor: '#EF4444' }]}>
+                <ThemedText style={styles.notificationBadgeText}>
+                  {unreadCount > 99 ? '99+' : unreadCount}
+                </ThemedText>
+              </View>
+            )}
+          </Pressable>
+        </View>
+      </View>
+    </>
+  ), [colorScheme, colors, feedTab, unreadCount, handleOpenNotifications]);
+
   return (
   <>
     <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]} edges={['top']}>
-      <ScrollView
-        ref={friendsScrollRef}
-        style={styles.scrollView}
-        contentContainerStyle={styles.content}
+      {/* Friends Feed - FlatList (always mounted, toggles visibility) */}
+      <FlatList
+        ref={friendsListRef}
+        data={feedItems}
+        renderItem={renderFeedItem}
+        keyExtractor={keyExtractor}
+        getItemLayout={getItemLayout}
+        ListHeaderComponent={ListHeaderComponent}
+        ListEmptyComponent={friendsEmptyComponent}
+        contentContainerStyle={styles.flatListContent}
         showsVerticalScrollIndicator={false}
+        style={[styles.scrollView, { display: feedTab === 'friends' ? 'flex' : 'none' }]}
         pointerEvents={feedTab === 'friends' ? 'auto' : 'none'}
         onScroll={(e) => {
-          const y = e.nativeEvent.contentOffset.y
-          if (feedTab === 'friends') friendsScrollYRef.current = y
-          else globalScrollYRef.current = y
+          if (feedTab === 'friends') friendsScrollYRef.current = e.nativeEvent.contentOffset.y;
         }}
         scrollEventThrottle={16}
-      >
-        {/* Header — Friends / Global feed scope + notifications */}
-        <View style={styles.headerRow}>
-          <ThemedText type="title" style={styles.greeting}>
-            UPLIFT
-          </ThemedText>
-          <View style={styles.headerActions}>
-            <View
-              style={[
-                styles.feedScopeSegmented,
-                {
-                  backgroundColor: colorScheme === 'dark' ? colors.cardElevated : colors.card,
-                  borderColor: colors.tabBarBorder,
-                },
-              ]}
-            >
-              <Pressable
-                onPress={() => setFeedTab('friends')}
-                accessibilityRole="button"
-                accessibilityLabel="Friends feed"
-                accessibilityState={{ selected: feedTab === 'friends' }}
-                style={[
-                  styles.feedScopeSeg,
-                  feedTab === 'friends' && { backgroundColor: colors.tint },
-                ]}
-              >
-                <Ionicons
-                  name={feedTab === 'friends' ? 'people' : 'people-outline'}
-                  size={18}
-                  color={feedTab === 'friends' ? '#fff' : colors.textMuted}
-                />
-              </Pressable>
-              <Pressable
-                onPress={() => setFeedTab('public')}
-                accessibilityRole="button"
-                accessibilityLabel="Global feed"
-                accessibilityState={{ selected: feedTab === 'public' }}
-                style={[
-                  styles.feedScopeSeg,
-                  feedTab === 'public' && { backgroundColor: colors.tint },
-                ]}
-              >
-                <Ionicons
-                  name={feedTab === 'public' ? 'globe' : 'globe-outline'}
-                  size={18}
-                  color={feedTab === 'public' ? '#fff' : colors.textMuted}
-                />
-              </Pressable>
-            </View>
-            <Pressable
-              onPress={handleOpenNotifications}
-              style={({ pressed }) => [
-                styles.notificationsButton,
-                pressed && { opacity: 0.7 },
-              ]}
-            >
-              <Ionicons name="notifications-outline" size={24} color={colors.text} />
-              {unreadCount > 0 && (
-                <View style={[styles.notificationBadge, { backgroundColor: '#EF4444' }]}>
-                  <ThemedText style={styles.notificationBadgeText}>
-                    {unreadCount > 99 ? '99+' : unreadCount}
-                  </ThemedText>
-                </View>
-              )}
-            </Pressable>
-          </View>
-        </View>
+        initialNumToRender={3}
+        maxToRenderPerBatch={5}
+        windowSize={7}
+        removeClippedSubviews={Platform.OS !== 'ios'}
+        updateCellsBatchingPeriod={50}
+      />
 
-        {/* Today's workout */}
-        {todayWorkout && (
-          <View style={[styles.feedCard, styles.feedTodayCard]}>
-            <View style={styles.feedImageContainer}>
-              <ZoomableFeedImage
-                imageUrl={todayWorkout.image_url}
-                secondaryImageUrl={todayWorkout.secondary_image_url}
-                style={styles.feedImage}
-              />
-              <LinearGradient colors={['transparent', 'rgba(0,0,0,0.65)']} style={styles.feedGradient}>
-                <View style={styles.feedOverlayInfo}>
-                  <View style={{ flex: 1 }}>
-                    <ThemedText type="defaultSemiBold" style={styles.feedOverlayName}>
-                      Your workout
-            </ThemedText>
-                    {todayWorkout.caption ? (
-                      <ThemedText style={styles.feedOverlayCaption} numberOfLines={1}>
-                        {todayWorkout.caption}
-                      </ThemedText>
-                    ) : null}
-                    {todayWorkoutGymLabel ? (
-                      <View style={styles.feedOverlayLocationRow}>
-                        <Ionicons name="location-outline" size={13} color="rgba(255,255,255,0.78)" />
-                        <ThemedText style={styles.feedOverlayLocation} numberOfLines={2}>
-                          {todayWorkoutGymLabel}
-                        </ThemedText>
-                      </View>
-                    ) : null}
-                    <ThemedText style={styles.feedOverlayMeta}>
-                      {formatFeedPostTimestamp(todayWorkout.created_at) || 'Today'}
-                    </ThemedText>
-          </View>
-        </View>
-              </LinearGradient>
-              {/* Action buttons on right side */}
-              <View style={styles.feedActionColumn}>
-          <Pressable
-                  onPress={() => {
-                    setCommentModalWorkoutId(todayWorkout.id);
-                    setCommentModalMessage('');
-                  }}
-                  style={styles.feedActionBtn}
-                >
-                  <Ionicons name="chatbubble" size={24} color="rgba(255,255,255,0.9)" />
-                  {todayWorkoutComments.length > 0 && (
-                    <ThemedText style={styles.feedActionCount}>
-                      {todayWorkoutComments.length}
-            </ThemedText>
-                  )}
-          </Pressable>
-          <Pressable
-                  onPress={() =>
-                    void handleShareWorkout(
-                      todayWorkout.image_url,
-                      todayWorkout.secondary_image_url,
-                      todayWorkout.workout_date,
-                      todayWorkout.caption,
-                      profile?.display_name,
-                      todayWorkoutGymLabel,
-                      todayWorkout.gym_id ?? null,
-                      todayWorkout.workout_type ?? null,
-                    )
-                  }
-                  style={styles.feedActionBtn}
-                >
-                  <Ionicons name="paper-plane" size={22} color="rgba(255,255,255,0.9)" />
-                </Pressable>
-              </View>
-            </View>
-            <View style={styles.postCardFooter}>
-              <View style={styles.postEngagementReactionsRow}>
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.reactionBubbles}
-                  style={styles.reactionScrollFlex}
-                >
-                  {todayWorkoutReactions.map((r) => (
-                    <Pressable
-                      key={r.id}
-                      onPress={() => setViewReaction(r)}
-                      style={({ pressed }) => [styles.reactionBubbleWrap, pressed && { opacity: 0.75 }]}
-                    >
-                      <View style={styles.reactionBubble}>
-                        <View style={styles.reactionBubblePhotoWrap}>
-                          {r.reaction_image_url ? (
-                            <Image source={{ uri: r.reaction_image_url }} style={styles.reactionBubbleImage} />
-                          ) : (
-                            <View style={[styles.reactionBubblePlaceholder, { backgroundColor: colors.tint + '22' }]}>
-                              {r.avatar_url ? (
-                                <Image source={{ uri: r.avatar_url }} style={styles.reactionBubbleImage} />
-                              ) : (
-                                <ThemedText style={[styles.reactionBubbleInitials, { color: colors.tint }]}>
-                                  {getInitials(r.display_name)}
-                                </ThemedText>
-                              )}
-                            </View>
-                          )}
-                        </View>
-                        <View style={styles.reactionEmojiBadge}>
-                          <ThemedText style={styles.reactionEmojiText}>{r.emoji}</ThemedText>
-                        </View>
-                      </View>
-                    </Pressable>
-                  ))}
-                </ScrollView>
-              </View>
-            </View>
-          </View>
-        )}
-
-        {/* Feed */}
-        <View style={styles.feedSection}>
-          {/* Keep BOTH feeds mounted; switching tabs is only a display toggle. */}
-          <View style={{ display: feedTab === 'friends' ? 'flex' : 'none' }}>
-            {feedItems.length === 0 ? (
-              !todayWorkout ? (
-                <View
-                  style={[
-                    styles.emptyCard,
-                    { backgroundColor: colors.cardElevated, marginHorizontal: 20, borderColor: colors.tint + '25' },
-                  ]}
-                >
-                  <Ionicons
-                    name="people-outline"
-                    size={32}
-                    color={colors.textMuted + '60'}
-                    style={{ marginBottom: 8 }}
-                  />
-                  <ThemedText style={[styles.emptyText, { color: colors.textMuted }]}>
-                    Add friends to see their workout posts here
-                  </ThemedText>
-                  <Pressable
-                    onPress={() => router.push({ pathname: '/(tabs)/profile', params: { friends: '1' } })}
-                    style={[styles.emptyCta, { backgroundColor: colors.tint }]}
-                  >
-                    <ThemedText style={styles.emptyCtaText}>Find friends</ThemedText>
-                  </Pressable>
-                </View>
-              ) : null
-            ) : (
-              <View style={styles.feedList}>
-                {feedItems.map((item) => {
-                  const isHighlighted = highlightedWorkoutId === item.workout.id;
-                  return (
-                    <View
-                      key={item.workout.id}
-                      style={[
-                        styles.feedCard,
-                        isHighlighted && { borderWidth: 2, borderColor: colors.tint },
-                      ]}
-                    >
-                  {/* Image with overlays */}
-                  <View style={styles.feedImageContainer}>
-                    <ZoomableFeedImage
-                      imageUrl={item.workout.image_url}
-                      secondaryImageUrl={item.workout.secondary_image_url}
-                      style={styles.feedImage}
-                    />
-                    {/* Bottom gradient with user info */}
-                    <LinearGradient colors={['transparent', 'rgba(0,0,0,0.65)']} style={styles.feedGradient}>
-                      <Pressable
-                        style={styles.feedOverlayInfo}
-                        onPress={() => router.push(`/friend-profile?id=${item.workout.user_id}`)}
-                      >
-                        <View style={styles.feedOverlayAvatar}>
-                      {item.avatar_url ? (
-                            <Image source={{ uri: item.avatar_url }} style={styles.feedOverlayAvatarImg} />
-                      ) : (
-                            <ThemedText style={styles.feedOverlayAvatarInitials}>
-                          {getInitials(item.display_name)}
-                        </ThemedText>
-                      )}
-                    </View>
-                        <View style={{ flex: 1 }}>
-                          <ThemedText type="defaultSemiBold" style={styles.feedOverlayName}>
-                        {item.display_name || 'Anonymous'}
-                      </ThemedText>
-                          {item.workout.caption ? (
-                            <ThemedText style={styles.feedOverlayCaption} numberOfLines={1}>
-                              {item.workout.caption}
-                            </ThemedText>
-                          ) : null}
-                          {item.gym_label ? (
-                            <View style={styles.feedOverlayLocationRow}>
-                              <Ionicons name="location-outline" size={13} color="rgba(255,255,255,0.78)" />
-                              <ThemedText style={styles.feedOverlayLocation} numberOfLines={2}>
-                                {item.gym_label}
-                              </ThemedText>
-                            </View>
-                          ) : null}
-                          <ThemedText style={styles.feedOverlayMeta}>
-                            {formatFeedPostTimestamp(item.workout.created_at) ||
-                              formatFeedDate(item.workout.workout_date)}
-                          </ThemedText>
-                    </View>
-                      </Pressable>
-                    </LinearGradient>
-                    {/* Action buttons on right side */}
-                    <View style={styles.feedActionColumn}>
-                <Pressable
-                  onPress={() => {
-                    setCommentModalWorkoutId(item.workout.id);
-                    setCommentModalMessage('');
-                  }}
-                  style={styles.feedActionBtn}
-                >
-                        <Ionicons name="chatbubble" size={24} color="rgba(255,255,255,0.9)" />
-                        {(item.comments ?? []).length > 0 && (
-                          <ThemedText style={styles.feedActionCount}>
-                            {(item.comments ?? []).length}
-                          </ThemedText>
-                        )}
-                      </Pressable>
-                      {item.workout.user_id === session?.user?.id && (
-                        <Pressable
-                          onPress={() =>
-                            void handleShareWorkout(
-                              item.workout.image_url,
-                              item.workout.secondary_image_url,
-                              item.workout.workout_date,
-                              item.workout.caption,
-                              item.display_name,
-                              item.gym_label,
-                              item.workout.gym_id ?? null,
-                              item.workout.workout_type ?? null,
-                            )
-                          }
-                          style={styles.feedActionBtn}
-                        >
-                          <Ionicons name="paper-plane" size={22} color="rgba(255,255,255,0.9)" />
-                        </Pressable>
-                      )}
-                      {item.workout.user_id !== session?.user?.id && (
-                        <Pressable
-                          onPress={() => {
-                            setReportTarget({
-                              workoutId: item.workout.id,
-                              name: `${item.display_name}'s post`,
-                            });
-                            setReportModalVisible(true);
-                          }}
-                          style={styles.feedActionBtn}
-                        >
-                          <Ionicons name="ellipsis-horizontal" size={22} color="rgba(255,255,255,0.6)" />
-                        </Pressable>
-                      )}
-                  </View>
-                  </View>
-                  <View style={styles.postCardFooter}>
-                    {(item.tags ?? []).length > 0 && (
-                      <View style={styles.taggedRowFooter}>
-                        <View
-                          style={[
-                            styles.taggedPill,
-                            {
-                              backgroundColor: colors.tint + '18',
-                              borderColor: colors.tint + '32',
-                            },
-                          ]}
-                        >
-                          <View style={[styles.taggedPillIconBubble, { backgroundColor: colors.tint + '22' }]}>
-                            <Ionicons name="people" size={14} color={colors.tint} />
-                          </View>
-                          <View style={styles.taggedPillTextRow}>
-                            <ThemedText style={styles.taggedPillKicker}>With</ThemedText>
-                            {(item.tags ?? []).map((tag, tIdx) => (
-                              <View key={tag.id} style={styles.taggedNameChip}>
-                                {tIdx > 0 ? (
-                                  <ThemedText style={styles.taggedNameDot}>·</ThemedText>
-                                ) : null}
-                                <Pressable
-                                  onPress={() => router.push(`/friend-profile?id=${tag.tagged_user_id}`)}
-                                  style={({ pressed }) => [{ opacity: pressed ? 0.78 : 1 }]}
-                                >
-                                  <ThemedText style={styles.taggedNameFooter} numberOfLines={1}>
-                                    {tag.display_name || 'Friend'}
-                                  </ThemedText>
-                                </Pressable>
-                              </View>
-                            ))}
-                          </View>
-                        </View>
-                      </View>
-                    )}
-                    <View style={styles.postEngagementReactionsRow}>
-                      {session && (
-                        <Pressable
-                          onPress={() => {
-                            const myReaction = item.reactions?.find((r) => r.user_id === session.user.id);
-                            if (myReaction) {
-                              handleRemoveReaction(item);
-                            } else {
-                              openReactModal(item);
-                            }
-                          }}
-                          style={({ pressed }) => [
-                            styles.postReactCompact,
-                            pressed && { opacity: 0.82 },
-                          ]}
-                          accessibilityLabel={
-                            item.reactions?.find((r) => r.user_id === session.user.id)
-                              ? 'Remove your reaction'
-                              : 'Add reaction'
-                          }
-                        >
-                          <ReactionsIcon size={20} color={colors.tint} />
-                        </Pressable>
-                      )}
-                      <ScrollView
-                        horizontal
-                        showsHorizontalScrollIndicator={false}
-                        contentContainerStyle={styles.reactionBubbles}
-                        style={styles.reactionScrollFlex}
-                      >
-                        {(item.reactions ?? []).map((r) => (
-                          <Pressable
-                            key={r.id}
-                            onPress={() => setViewReaction(r)}
-                            style={({ pressed }) => [styles.reactionBubbleWrap, pressed && { opacity: 0.75 }]}
-                          >
-                            <View style={styles.reactionBubble}>
-                              <View style={styles.reactionBubblePhotoWrap}>
-                                {r.reaction_image_url ? (
-                                  <Image source={{ uri: r.reaction_image_url }} style={styles.reactionBubbleImage} />
-                                ) : (
-                                  <View style={[styles.reactionBubblePlaceholder, { backgroundColor: colors.tint + '22' }]}>
-                                    {r.avatar_url ? (
-                                      <Image source={{ uri: r.avatar_url }} style={styles.reactionBubbleImage} />
-                                    ) : (
-                                      <ThemedText style={[styles.reactionBubbleInitials, { color: colors.tint }]}>
-                                        {getInitials(r.display_name)}
-                                      </ThemedText>
-                                    )}
-                                  </View>
-                                )}
-                              </View>
-                              <View style={styles.reactionEmojiBadge}>
-                                <ThemedText style={styles.reactionEmojiText}>{r.emoji}</ThemedText>
-                              </View>
-                            </View>
-                          </Pressable>
-                        ))}
-                      </ScrollView>
-                    </View>
-                  </View>
-                </View>
-                    )
-                  })}
-              </View>
-            )}
-          </View>
-
-          <View style={{ display: feedTab === 'public' ? 'flex' : 'none' }}>
-            {globalFeedItems.length === 0 ? (
-              !todayWorkout ? (
-                <View
-                  style={[
-                    styles.emptyCard,
-                    { backgroundColor: colors.cardElevated, marginHorizontal: 20, borderColor: colors.tint + '25' },
-                  ]}
-                >
-                  <Ionicons
-                    name="globe-outline"
-                    size={32}
-                    color={colors.textMuted + '60'}
-                    style={{ marginBottom: 8 }}
-                  />
-                  <ThemedText style={[styles.emptyText, { color: colors.textMuted }]}>
-                    No global posts yet — be the first to share with everyone!
-                  </ThemedText>
-                </View>
-              ) : null
-            ) : (
-              <View style={styles.feedList}>
-                {globalFeedItems.map((item) => {
-                  const isHighlighted = highlightedWorkoutId === item.workout.id;
-                  return (
-                    <View
-                      key={item.workout.id}
-                      style={[
-                        styles.feedCard,
-                        isHighlighted && { borderWidth: 2, borderColor: colors.tint },
-                      ]}
-                    >
-                      {/* Duplicate card body from friends feed */}
-                      <View style={styles.feedImageContainer}>
-                        <ZoomableFeedImage
-                          imageUrl={item.workout.image_url}
-                          secondaryImageUrl={item.workout.secondary_image_url}
-                          style={styles.feedImage}
-                        />
-                        <LinearGradient colors={['transparent', 'rgba(0,0,0,0.65)']} style={styles.feedGradient}>
-                          <Pressable
-                            style={styles.feedOverlayInfo}
-                            onPress={() => router.push(`/friend-profile?id=${item.workout.user_id}`)}
-                          >
-                            <View style={styles.feedOverlayAvatar}>
-                              {item.avatar_url ? (
-                                <Image source={{ uri: item.avatar_url }} style={styles.feedOverlayAvatarImg} />
-                              ) : (
-                                <ThemedText style={styles.feedOverlayAvatarInitials}>
-                                  {getInitials(item.display_name)}
-                                </ThemedText>
-                              )}
-                            </View>
-                            <View style={{ flex: 1 }}>
-                              <ThemedText type="defaultSemiBold" style={styles.feedOverlayName}>
-                                {item.display_name || 'Anonymous'}
-                              </ThemedText>
-                              {item.workout.caption ? (
-                                <ThemedText style={styles.feedOverlayCaption} numberOfLines={1}>
-                                  {item.workout.caption}
-                                </ThemedText>
-                              ) : null}
-                              {item.gym_label ? (
-                                <View style={styles.feedOverlayLocationRow}>
-                                  <Ionicons name="location-outline" size={13} color="rgba(255,255,255,0.78)" />
-                                  <ThemedText style={styles.feedOverlayLocation} numberOfLines={2}>
-                                    {item.gym_label}
-                                  </ThemedText>
-                                </View>
-                              ) : null}
-                              <ThemedText style={styles.feedOverlayMeta}>
-                                {formatFeedPostTimestamp(item.workout.created_at) ||
-                                  formatFeedDate(item.workout.workout_date)}
-                              </ThemedText>
-                            </View>
-                          </Pressable>
-                        </LinearGradient>
-                        <View style={styles.feedActionColumn}>
-                          <Pressable
-                            onPress={() => {
-                              setCommentModalWorkoutId(item.workout.id);
-                              setCommentModalMessage('');
-                            }}
-                            style={styles.feedActionBtn}
-                          >
-                            <Ionicons name="chatbubble" size={24} color="rgba(255,255,255,0.9)" />
-                            {(item.comments ?? []).length > 0 && (
-                              <ThemedText style={styles.feedActionCount}>
-                                {(item.comments ?? []).length}
-                              </ThemedText>
-                            )}
-                          </Pressable>
-                          <Pressable onPress={() => openReactModal(item)} style={styles.feedActionBtn}>
-                            <ReactionsIcon size={20} color={colors.tint} />
-                          </Pressable>
-                          <Pressable
-                            onPress={() =>
-                              void handleShareWorkout(
-                                item.workout.image_url,
-                                item.workout.secondary_image_url,
-                                item.workout.workout_date,
-                                item.workout.caption,
-                                item.display_name,
-                                item.gym_label,
-                                item.workout.gym_id ?? null,
-                                item.workout.workout_type ?? null,
-                              )
-                            }
-                            style={styles.feedActionBtn}
-                          >
-                            <Ionicons name="paper-plane" size={22} color="rgba(255,255,255,0.9)" />
-                          </Pressable>
-                          <Pressable
-                            onPress={() => {
-                              setReportTarget({
-                                workoutId: item.workout.id,
-                                userId: item.workout.user_id,
-                                name: item.display_name || 'User',
-                              })
-                              setReportModalVisible(true)
-                            }}
-                            style={styles.feedActionBtn}
-                          >
-                            <Ionicons name="flag-outline" size={22} color="rgba(255,255,255,0.9)" />
-                          </Pressable>
-                        </View>
-                      </View>
-                    </View>
-                  )
-                })}
-              </View>
-            )}
-          </View>
-        </View>
-      </ScrollView>
+      {/* Global Feed - FlatList (always mounted, toggles visibility) */}
+      <FlatList
+        data={globalFeedItems}
+        renderItem={renderFeedItem}
+        keyExtractor={keyExtractor}
+        getItemLayout={getItemLayout}
+        ListHeaderComponent={ListHeaderComponent}
+        ListEmptyComponent={globalEmptyComponent}
+        contentContainerStyle={styles.flatListContent}
+        showsVerticalScrollIndicator={false}
+        style={[styles.scrollView, { display: feedTab === 'public' ? 'flex' : 'none' }]}
+        pointerEvents={feedTab === 'public' ? 'auto' : 'none'}
+        onScroll={(e) => {
+          if (feedTab === 'public') globalScrollYRef.current = e.nativeEvent.contentOffset.y;
+        }}
+        scrollEventThrottle={16}
+        initialNumToRender={3}
+        maxToRenderPerBatch={5}
+        windowSize={7}
+        removeClippedSubviews={Platform.OS !== 'ios'}
+        updateCellsBatchingPeriod={50}
+      />
 
       <Modal
         visible={!!reactModalItem && !reactCameraOpen}
@@ -2171,18 +1872,30 @@ export default function HomeScreen() {
     {/* Share card — story-optimized 9:16 branded card, rendered off-screen */}
     <Modal visible={!!shareData} transparent animationType="none" statusBarTranslucent>
       {shareData && (() => {
-        const locationLine = shareData.gymLabel?.trim() ?? '';
-        const wt = WORKOUT_TYPES.find((t) => t.value === shareData.workoutType);
-        const dateLabel = shareData.workoutDate ? formatFeedDate(shareData.workoutDate) : 'Today';
         const screenW = Dimensions.get('window').width;
         const cardW = screenW;
         const cardH = cardW * (16 / 9);
+
+        // Format time from createdAt (e.g., "7:45 PM")
+        const timeLabel = (() => {
+          if (!shareData.createdAt) return null;
+          const d = new Date(shareData.createdAt);
+          if (Number.isNaN(d.getTime())) return null;
+          return d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+        })();
+
+        // Format date label
+        const dateLabel = shareData.workoutDate ? formatFeedDate(shareData.workoutDate) : 'Today';
+
+        // Format caption for display (uppercase workout title style)
+        const workoutTitle = shareData.caption?.trim().toUpperCase() || null;
+
         return (
           <View style={{ position: 'absolute', left: -screenW * 2, top: 0 }} collapsable={false}>
             <ViewShot
               ref={shareViewRef}
               options={{ format: 'jpg', quality: 0.95 }}
-              style={{ width: cardW, height: cardH, backgroundColor: '#000' }}
+              style={{ width: cardW, height: cardH, backgroundColor: '#0A0A0F' }}
             >
               {/* Full-bleed workout photo */}
               <Image
@@ -2191,41 +1904,71 @@ export default function HomeScreen() {
                 contentFit="cover"
               />
 
-              {/* Dark overlay for readability */}
-              <LinearGradient
-                colors={['transparent', 'rgba(0,0,0,0.55)']}
+              {/* Cinematic vignette overlay */}
+              <View
                 style={{
                   position: 'absolute',
                   width: cardW,
                   height: cardH,
+                  backgroundColor: 'transparent',
+                  shadowColor: '#000',
+                  shadowOffset: { width: 0, height: 0 },
+                  shadowOpacity: 0.4,
+                  shadowRadius: cardW * 0.3,
                 }}
               />
 
-              {/* Top bar — left: UPLIFT; right: gym name, or workout type as fallback */}
+              {/* Top gradient for header readability */}
+              <LinearGradient
+                colors={['rgba(0,0,0,0.5)', 'transparent']}
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  height: cardH * 0.25,
+                }}
+              />
+
+              {/* Strong bottom gradient for text readability */}
+              <LinearGradient
+                colors={['transparent', 'rgba(0,0,0,0.3)', 'rgba(0,0,0,0.75)']}
+                locations={[0, 0.4, 1]}
+                style={{
+                  position: 'absolute',
+                  bottom: 0,
+                  left: 0,
+                  right: 0,
+                  height: cardH * 0.45,
+                }}
+              />
+
+              {/* Top bar — brand pill left, location right */}
               <View style={shareStyles.topBar}>
+                {/* Premium UPLIFT brand pill */}
                 <View style={shareStyles.brandPill}>
                   <ThemedText style={shareStyles.brandText}>UPLIFT</ThemedText>
                 </View>
-                {locationLine.length > 0 ? (
-                  <View style={[shareStyles.typePill, { maxWidth: cardW * 0.52 }]}>
-                    <Ionicons name="location-outline" size={14} color="rgba(255,255,255,0.92)" />
-                    <ThemedText
-                      style={[shareStyles.typePillLabel, { flexShrink: 1, minWidth: 0 }]}
-                      numberOfLines={1}
-                      ellipsizeMode="tail"
-                    >
-                      {locationLine}
-                    </ThemedText>
+
+                {/* Location pill with gym name and city/state */}
+                {shareData.gymName && (
+                  <View style={shareStyles.locationPill}>
+                    <Ionicons name="location" size={13} color="rgba(255,255,255,0.95)" />
+                    <View style={shareStyles.locationTextContainer}>
+                      <ThemedText style={shareStyles.locationGymName} numberOfLines={1}>
+                        {shareData.gymName}
+                      </ThemedText>
+                      {shareData.gymCityState && (
+                        <ThemedText style={shareStyles.locationCityState} numberOfLines={1}>
+                          {shareData.gymCityState}
+                        </ThemedText>
+                      )}
+                    </View>
                   </View>
-                ) : wt ? (
-                  <View style={shareStyles.typePill}>
-                    <ThemedText style={shareStyles.typePillEmoji}>{wt.emoji}</ThemedText>
-                    <ThemedText style={shareStyles.typePillLabel}>{wt.label}</ThemedText>
-                  </View>
-                ) : null}
+                )}
               </View>
 
-              {/* Selfie overlay — top-left with glow border */}
+              {/* Selfie overlay — premium rounded with subtle border */}
               {shareData.secondaryUrl && shareData.secondaryUrl.trim().length > 0 && (
                 <View style={shareStyles.selfieContainer}>
                   <Image
@@ -2236,24 +1979,28 @@ export default function HomeScreen() {
                 </View>
               )}
 
-              {/* Bottom info panel — name + date (bottom-left) */}
+              {/* Bottom info panel — premium layout */}
               <View style={shareStyles.bottomPanel}>
+                {/* Workout title (caption) - bold uppercase */}
+                {workoutTitle && (
+                  <ThemedText style={shareStyles.workoutTitle} numberOfLines={1}>
+                    {workoutTitle}
+                  </ThemedText>
+                )}
+
+                {/* Meta row: date + time */}
+                <View style={shareStyles.metaRow}>
+                  <ThemedText style={shareStyles.metaText}>
+                    {dateLabel}{timeLabel ? ` • ${timeLabel}` : ''}
+                  </ThemedText>
+                </View>
+
+                {/* User display name */}
                 {shareData.displayName && (
                   <ThemedText style={shareStyles.displayName} numberOfLines={1}>
                     {shareData.displayName}
                   </ThemedText>
                 )}
-                {shareData.caption && shareData.caption.trim().length > 0 && (
-                  <ThemedText style={shareStyles.caption} numberOfLines={2}>
-                    {shareData.caption}
-                  </ThemedText>
-                )}
-                <View style={shareStyles.metaRow}>
-                  <View style={shareStyles.datePill}>
-                    <Ionicons name="calendar-outline" size={12} color="rgba(255,255,255,0.7)" />
-                    <ThemedText style={shareStyles.dateText}>{dateLabel}</ThemedText>
-                  </View>
-                </View>
               </View>
             </ViewShot>
           </View>
@@ -2268,6 +2015,7 @@ const styles = StyleSheet.create({
   safe: { flex: 1 },
   scrollView: { flex: 1 },
   content: { paddingTop: 10, paddingBottom: 40 },
+  flatListContent: { paddingTop: 10, paddingBottom: 40, paddingHorizontal: 12, gap: 16 },
   // Header
   headerRow: {
     flexDirection: 'row',
@@ -3025,118 +2773,122 @@ const styles = StyleSheet.create({
   reactCancelText: { fontSize: 15, fontWeight: '600' },
 });
 
-// ─── Share Card Styles (story-optimized) ─────────────────
+// ─── Share Card Styles (premium story-optimized) ─────────────────
 const shareStyles = StyleSheet.create({
   topBar: {
     position: 'absolute',
-    top: 40,
-    left: 24,
-    right: 24,
+    top: 48,
+    left: 20,
+    right: 20,
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     zIndex: 10,
   },
   brandPill: {
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 24,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
+    borderColor: 'rgba(255,255,255,0.12)',
+    backdropFilter: 'blur(20px)',
   },
   brandText: {
-    color: '#fff',
-    fontSize: 15,
-    fontWeight: '900',
-    letterSpacing: 3,
+    color: 'rgba(255,255,255,0.95)',
+    fontSize: 13,
+    fontWeight: '800',
+    letterSpacing: 3.5,
   },
-  typePill: {
+  locationPill: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: 'rgba(255,255,255,0.12)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    alignItems: 'flex-start',
+    gap: 8,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.15)',
+    borderColor: 'rgba(255,255,255,0.08)',
+    maxWidth: '55%',
   },
-  typePillEmoji: {
-    fontSize: 14,
+  locationTextContainer: {
+    flexShrink: 1,
+    gap: 1,
   },
-  typePillLabel: {
-    color: 'rgba(255,255,255,0.9)',
-    fontSize: 12,
+  locationGymName: {
+    color: '#fff',
+    fontSize: 13,
     fontWeight: '700',
-    letterSpacing: 0.3,
+    letterSpacing: 0.2,
+    lineHeight: 16,
+  },
+  locationCityState: {
+    color: 'rgba(255,255,255,0.65)',
+    fontSize: 11,
+    fontWeight: '500',
+    letterSpacing: 0.1,
+    lineHeight: 14,
   },
   selfieContainer: {
     position: 'absolute',
-    top: 90,
-    left: 24,
-    width: '24%',
-    aspectRatio: 2 / 3,
-    borderRadius: 18,
+    top: 105,
+    left: 20,
+    width: '26%',
+    aspectRatio: 3 / 4,
+    borderRadius: 16,
     overflow: 'hidden',
-    borderWidth: 2.5,
-    borderColor: 'rgba(255,255,255,0.85)',
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.75)',
     zIndex: 5,
-    },
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.4,
+    shadowRadius: 16,
+  },
   selfieImage: {
     width: '100%',
     height: '100%',
   },
   bottomPanel: {
     position: 'absolute',
-    bottom: 40,
+    bottom: 56,
     left: 24,
     right: 24,
     zIndex: 10,
-    paddingBottom: 8,
   },
-  displayName: {
+  workoutTitle: {
     color: '#fff',
-    fontSize: 24,
+    fontSize: 28,
     fontWeight: '800',
-    letterSpacing: -0.3,
-    lineHeight: 28,
-    textShadowColor: 'rgba(0,0,0,0.6)',
+    letterSpacing: 1.5,
+    lineHeight: 32,
+    textShadowColor: 'rgba(0,0,0,0.7)',
     textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 6,
-    marginBottom: 10,
-  },
-  caption: {
-    color: 'rgba(255,255,255,0.92)',
-    fontSize: 16,
-    fontWeight: '700',
-    lineHeight: 22,
-    letterSpacing: 0.1,
-    textShadowColor: 'rgba(0,0,0,0.6)',
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 6,
-    marginBottom: 12,
+    textShadowRadius: 8,
+    marginBottom: 8,
   },
   metaRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    marginBottom: 16,
   },
-  datePill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    backgroundColor: 'rgba(255,255,255,0.12)',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.15)',
+  metaText: {
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: 14,
+    fontWeight: '600',
+    letterSpacing: 0.3,
+    textShadowColor: 'rgba(0,0,0,0.5)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
   },
-  dateText: {
-    color: 'rgba(255,255,255,0.8)',
-    fontSize: 12,
-    fontWeight: '700',
+  displayName: {
+    color: 'rgba(255,255,255,0.85)',
+    fontSize: 15,
+    fontWeight: '600',
     letterSpacing: 0.2,
+    textShadowColor: 'rgba(0,0,0,0.5)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
   },
 });

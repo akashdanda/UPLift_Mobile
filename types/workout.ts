@@ -14,6 +14,8 @@ export type Workout = {
   user_id: string
   /** Gym where the user was checked in when posting (optional on older rows). */
   gym_id?: string | null
+  /** Gym name/address snapshot at post time — shown on friends & global feed for all viewers. */
+  gym_display_label?: string | null
   workout_date: string // YYYY-MM-DD
   image_url: string
   /** Optional second photo (BeReal-style dual camera); tap to swap which is big. */
